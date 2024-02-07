@@ -641,7 +641,6 @@ mutable private class Verifier(
       this.verifySimple(instr, tFloat, tInt)
     | FloatToString _ -> this.verifySimple(instr, tFloat, tString)
     | IntToFloat _ -> this.verifySimple(instr, tInt, tFloat)
-    | IntToString _ -> this.verifySimple(instr, tInt, tString)
 
     | t @ Jump _ -> this.verifySimpleTerminator(t, 1)
     | t @ Unreachable _ -> this.verifySimpleTerminator(t, 0)

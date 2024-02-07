@@ -245,7 +245,6 @@ private fun alwaysLive(instr: Stmt): Bool {
   | IntSrl _
   | IntSub _
   | IntToFloat _
-  | IntToString _
   | IntXor _
   | Intern _
   | Load _

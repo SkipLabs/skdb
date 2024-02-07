@@ -678,7 +678,6 @@ fun estimateSize(instr: Stmt, env: GlobalEnv): Int {
   | IntPopcount _ -> 1
   | IntSwitch{successors} -> 3 + successors.size()
   | IntToFloat _ -> 1
-  | IntToString _ -> 2
   | Intern _ -> 2
   | LandingPad _ -> 0
   | Load _ -> 1

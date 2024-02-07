@@ -62,7 +62,6 @@ mutable class .Peephole{
     | v @ IntCtz _ -> peepholeIntCtz(v, this)
     | v @ IntPopcount _ -> peepholeIntPopcount(v, this)
     | v @ IntToFloat _ -> peepholeIntToFloat(v, this)
-    | v @ IntToString _ -> peepholeIntToString(v, this)
     | v @ Intern _ -> peepholeIntern(v, this)
     | v @ Object _ -> peepholeObject(v, this)
     | v @ Reinterpret _ -> peepholeReinterpret(v, this)
@@ -465,7 +464,6 @@ private fun canModifyExistingMemory(
   | IntSub _
   | IntSwitch _
   | IntToFloat _
-  | IntToString _
   | IntXor _
   | Intern _
   | Jump _
@@ -570,7 +568,6 @@ private fun canCSE(
   | IntSrl _
   | IntSub _
   | IntToFloat _
-  | IntToString _
   | IntXor _
   | LoadVTableEntry _
   | Reinterpret _
@@ -1853,13 +1850,6 @@ private fun peepholeFloatToString(
 private fun peepholeIntToFloat(peep: IntToFloat, s: mutable Peephole): Instr {
   s.getInstr(peep.value) match {
   | ConstantInt{value} -> s.constantFloat(value.toFloat())
-  | _ -> peep
-  }
-}
-
-private fun peepholeIntToString(peep: IntToString, s: mutable Peephole): Instr {
-  s.getInstr(peep.value) match {
-  | ConstantInt{value} -> s.constantString(value.toString())
   | _ -> peep
   }
 }

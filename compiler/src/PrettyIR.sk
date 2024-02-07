@@ -1691,7 +1691,6 @@ private fun prettyWriteName(instr: Instr, out: mutable PrettyDefBuilder): void {
   | IntSub _
   | IntSwitch _
   | IntToFloat _
-  | IntToString _
   | IntXor _
   | Intern _
   | InvokeFunction _
@@ -1892,7 +1891,6 @@ private fun debugWriteName(instr: Instr, out: mutable PrettyDefBuilder): void {
   | IntSub _
   | IntSwitch _
   | IntToFloat _
-  | IntToString _
   | IntXor _
   | Intern _
   | InvokeFunction _

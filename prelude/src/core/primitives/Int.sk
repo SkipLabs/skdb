@@ -274,10 +274,6 @@ native value class Int uses Number, Integral {
   }
 
   fun toString(): String {
-    this.toStringImpl()
-  }
-  @intrinsic
-  private fun toStringImpl(): String {
     compare(this, 0) match {
     | LT() -> "-" + this.toStringNegative()
     | EQ() -> "0"

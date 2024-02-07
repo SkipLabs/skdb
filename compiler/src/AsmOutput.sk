@@ -2520,7 +2520,6 @@ private fun llvmWriteName(instr: Instr, asm: mutable AsmDefBuilder): void {
   | IntSub _
   | IntSwitch _
   | IntToFloat _
-  | IntToString _
   | IntXor _
   | Intern _
   | InvokeFunction _
@@ -3324,8 +3323,6 @@ private fun llvmWrite(instr: Stmt, asm: mutable FunAsmDefBuilder): void {
     llvmWriteIntrinsicCall(asm, instr, "llvm.ctpop.i64", Array[value])
   | IntToFloat{value} ->
     asm.print("  %n = sitofp i64 %n to double, %D\n" % instr % value % instr)
-  | IntToString{value} ->
-    llvmWriteIntrinsicCall(asm, instr, "SKIP_Int_toString", Array[value])
   | IntSwitch{value, cases, successors} ->
     asm.print("  switch ");
 

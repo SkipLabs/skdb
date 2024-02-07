@@ -46,4 +46,11 @@ fun testLargestString(): void {
   )
 }
 
+@test
+fun testEmbeddedNul(): void {
+  s1 = "foo" + Char::fromCode(0).toString() + "bar";
+  s2 = "foo bar";
+  T.expectEq(s1.length(), s2.length(), "length of string with embedded nul");
+}
+
 module end;

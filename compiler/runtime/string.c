@@ -189,6 +189,13 @@ SkipInt SKIP_String_cmp(unsigned char* str1, unsigned char* str2) {
   }
 }
 
+/* 8 bytes with all bits set, which is not valid utf8, but is larger than
+   any valid utf8 when compared bytewise */
+char* SKIP_largest_string() {
+  static unsigned char buffer[] = {255, 255, 255, 255, 255, 255, 255, 255};
+  return sk_string_create((char*)buffer, 8);
+}
+
 /*****************************************************************************/
 /* Unsafe char access */
 /*****************************************************************************/
@@ -373,9 +380,4 @@ char* SKIP_invalid_utf8_test_string() {
     string_utf8_buffer[i] = (unsigned char)test_utf8_data[i];
   }
   return sk_string_create((char*)string_utf8_buffer, 2);
-}
-
-char* SKIP_largest_string() {
-  static unsigned char buffer[] = {255, 255, 255, 255, 255, 255, 255, 255};
-  return sk_string_create((char*)buffer, 8);
 }

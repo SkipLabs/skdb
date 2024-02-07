@@ -30,4 +30,20 @@ fun testString(): void {
   )
 }
 
+@cpp_extern("SKIP_largest_string")
+native fun largestString(): String;
+
+// largestString compares larger than any valid utf8, but by constructing
+// strings that are not valid utf8, strings larger than largestString exist
+//
+// note that largestString is only mean to be used as the upper bound
+// of Ranges and should only be involved in comparison operations
+@test
+fun testLargestString(): void {
+  T.expectFalse(
+    largestString() + largestString() < largestString(),
+    "Largest string isn't largest",
+  )
+}
+
 module end;

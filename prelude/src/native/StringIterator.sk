@@ -13,8 +13,7 @@ module String;
 
 mutable class StringIterator private (
   // This object is manipulated by the native methods directly.  It's important
-  // that the fields match the native implementation
-  // (String.cpp:StringIterator).
+  // that the fields match the native implementation (string.c).
   private s: String,
   private mutable i: Int,
 ) extends Iterator<Char> uses Equality {

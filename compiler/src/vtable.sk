@@ -178,7 +178,7 @@ mutable private class VTableBuilderIterator(
   //
   // Returns:
   // - the next legal bit offset >= begin
-  // - "cost" of the next choice (higher is worse
+  // - "cost" of the next choice (higher is worse)
   // - a flag indicating whether we had to grow the vtable to make room
   mutable fun next(begin: Int, align: Int): (Int, Int, Bool) {
     env = this.builder.env;
@@ -581,7 +581,7 @@ private fun createGCType(
   // Inserting names into GC info prevents SkipGcTypes from being shared
   // between different classes, which prevents their vtables from being
   // shared, which can bloat the binary. So we only include detailed
-  // information in release mode.
+  // information in non-release mode.
   provideName = !config.release;
 
   fields = mutable Vector[];
@@ -592,7 +592,7 @@ private fun createGCType(
     !fieldBitOffset = fieldBitOffset + f.typ.getScalarType(env).bitSize
   };
 
-  // m_refsHint
+  // m_refsHintMask
   pushField(kByteConstants[refsHint]);
 
   // m_kind
@@ -979,9 +979,7 @@ private fun verifyVTableInfo(
   };
 
   // Make sure every vtable starts at an address with the kFrozenMask bit clear.
-  // TODO: Catastrophically stupid that we need to clone a mutable version of
-  // this table to iterate through it.
-  for (byteOffset in vti.classByteOffsets.clone().values()) {
+  for (byteOffset in vti.classByteOffsets.values()) {
     invariant(
       byteOffset.and(kFrozenMask) == 0,
       "Mutable vtable variant has kFrozenMask bit set.",

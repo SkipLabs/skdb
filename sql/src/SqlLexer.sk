@@ -1,11 +1,8 @@
 module SKDB;
 
-@cpp_extern("SKIP_String_unsafe_get")
-native fun stringUnsafeGet(str: String, idx: Int): Char;
-
 mutable class Buffer(content: String) {
   readonly fun get(idx: Int): Char {
-    stringUnsafeGet(this.content, idx)
+    String.getByte(this.content, idx).toInt().chr()
   }
 
   readonly fun size(): Int {

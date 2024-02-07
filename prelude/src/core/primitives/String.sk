@@ -8,6 +8,9 @@
 module String;
 
 @cpp_extern
+native fun getByte(String, Int): UInt8;
+
+@cpp_extern
 native fun byteSize(String): UInt32;
 
 @cpp_extern
@@ -254,7 +257,7 @@ native class .String uses Hashable, Show, Orderable {
   fun utf8(): Array<UInt8> {
     result = mutable Vector[];
     for (i in Range(0, String.byteSize(this).toInt())) {
-      result.push(Unsafe.string_utf8_get(this, i));
+      result.push(String.getByte(this, i));
     };
     result.toArray()
   }

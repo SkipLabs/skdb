@@ -5,14 +5,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-module String;
-
-@cpp_extern
-native fun getByte(String, Int): UInt32;
-
 fun igetByte(str: String, n: Int): Int {
-  getByte(str, n).toInt()
+  String.getByte(str, n).toInt()
 }
+
+module String;
 
 mutable class StringIterator private (
   // This object is manipulated by the native methods directly.  It's important

@@ -54,8 +54,8 @@ char* SKIP_String__fromUtf8(char* /* class */, char* array) {
   return sk_string_create(array, size);
 }
 
-uint32_t SKIP_String_getByte(unsigned char* bytes, SkipInt idx) {
-  return (uint32_t)bytes[idx];
+uint8_t SKIP_String_getByte(unsigned char* bytes, SkipInt idx) {
+  return (uint8_t)bytes[idx];
 }
 
 char* SKIP_String_StringIterator__substring(char* argStart, char* argEnd) {
@@ -193,10 +193,6 @@ char* SKIP_largest_string() {
 /*****************************************************************************/
 /* Unsafe char access */
 /*****************************************************************************/
-
-uint32_t SKIP_String_unsafe_get(unsigned char* str, SkipInt n) {
-  return (uint32_t)str[n];
-}
 
 void* SKIP_String_unsafeSlice(unsigned char* str, SkipInt n1, SkipInt n2) {
   size_t size = n2 - n1;

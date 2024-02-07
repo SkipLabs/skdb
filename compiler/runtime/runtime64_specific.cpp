@@ -341,9 +341,6 @@ void SKIP_print_debug(char* str) {
   SKIP_print_error(str);
 }
 
-char* sk_string_alloc(size_t);
-void sk_string_set_hash(char*);
-
 char* SKIP_open_file(char* filename_obj) {
   struct stat s;
   char* filename = sk2c_string(filename_obj);
@@ -352,11 +349,8 @@ char* SKIP_open_file(char* filename_obj) {
   int status = fstat(fd, &s);
   size_t size = s.st_size;
 
-  char* result = nullptr;
   if (size == 0) {
-    result = sk_string_alloc(0);
-    sk_string_set_hash(result);
-    return result;
+    return sk_string_create("", 0);
   }
 
   char* f = (char*)mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
@@ -365,9 +359,7 @@ char* SKIP_open_file(char* filename_obj) {
     fprintf(stderr, "Could not open file: %s\n", filename);
     exit(ERROR_FILE_IO);
   }
-  result = sk_string_alloc(size);
-  memcpy(result, f, size);
-  sk_string_set_hash(result);
+  char* result = sk_string_create(f, size);
   if (filename != filename_obj) free(filename);
   munmap(f, size);
   close(fd);

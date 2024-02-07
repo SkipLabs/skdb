@@ -1,8 +1,8 @@
 target triple = "x86_64-pc-linux-gnu"
 
 declare ptr @SKIP_Obstack_alloc(i64)
-declare ptr @SKIP_Obstack_calloc(i64) #0
-declare ptr @SKIP_Int_toString(i64) #0
+declare ptr @SKIP_Obstack_calloc(i64)
+declare ptr @SKIP_Int_toString(i64)
 declare i1 @SKIP_String__contains(ptr, ptr)
 declare ptr @SKIP_String_concat2(ptr, ptr)
 declare void @SKIP_print_last_exception_stack_trace_and_exit(ptr)
@@ -114,7 +114,7 @@ define void @SKIP_debug_break() {
 }
 
 ; Function Attrs: noinline nounwind optnone
-define i1 @SKIP_String_eq(ptr %0, ptr %1) #0 {
+define i1 @SKIP_String_eq(ptr %0, ptr %1) {
   %3 = call i64 @SKIP_String_cmp(ptr %0, ptr %1)
   %4 = icmp eq i64 %3, 0
   ret i1 %4

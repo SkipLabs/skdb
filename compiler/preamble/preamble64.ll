@@ -125,11 +125,9 @@ declare void @SKIP_saveExn(ptr)
 define void @SKIP_etry(ptr %f.0, ptr %onError.1) unnamed_addr uwtable personality ptr bitcast (i32 (...)* @__gxx_personality_v0 to ptr) {
 b0.entry:
   %r20 = getelementptr inbounds i8, ptr %f.0, i64 -8
-  %r21 = bitcast ptr %r20 to ptr
-  %r2 = load ptr, ptr %r21, align 8
+  %r2 = load ptr, ptr %r20, align 8
   %r22 = getelementptr inbounds i8, ptr %r2, i64 0
-  %r23 = bitcast ptr %r22 to ptr
-  %r3 = load ptr, ptr %r23, align 8
+  %r3 = load ptr, ptr %r22, align 8
   %methodCode.24 = bitcast ptr %r3 to void(ptr) *
   invoke void %methodCode.24(ptr %f.0) to label %b6.exit unwind label %b1.rawcatch_5
 b1.rawcatch_5:
@@ -145,18 +143,15 @@ catch.29:
   %r31 = extractvalue { ptr, i32 } %excpair.25, 0
   %cpp_exc.32 = tail call ptr @__cxa_begin_catch(ptr %r31) nounwind
   %exc_field_addr1.33 = getelementptr inbounds i8, ptr %cpp_exc.32, i64 8
-  %exc_field_addr2.34 = bitcast ptr %exc_field_addr1.33 to ptr
-  %r8 = load ptr, ptr %exc_field_addr2.34, align 8
+  %r8 = load ptr, ptr %exc_field_addr1.33, align 8
   tail call void @__cxa_end_catch()
   br label %b2.record_exc_5
 b2.record_exc_5:
   tail call void @SKIP_saveExn(ptr %r8)
   %r35 = getelementptr inbounds i8, ptr %onError.1, i64 -8
-  %r36 = bitcast ptr %r35 to ptr
-  %r6 = load ptr, ptr %r36, align 8
+  %r6 = load ptr, ptr %r35, align 8
   %r37 = getelementptr inbounds i8, ptr %r6, i64 0
-  %r38 = bitcast ptr %r37 to ptr
-  %r9 = load ptr, ptr %r38, align 8
+  %r9 = load ptr, ptr %r37, align 8
   %methodCode.39 = bitcast ptr %r9 to void(ptr) *
   tail call void %methodCode.39(ptr %onError.1)
   ret void

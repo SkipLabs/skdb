@@ -473,10 +473,9 @@ mutable private class .Lower{
     this.loadInvariantUInt32(vs, -(this.config.vtableByteSize + 4))
   }
 
-  private mutable fun lowerStringHash(sh: StringHash): Bool {
+  private mutable fun lowerStringHash(sh: StringHash): void {
     // All strings are LongString, so we can just load the hash.
-    this.loadInvariantUInt32(sh, -4);
-    true
+    this.loadInvariantUInt32(sh, -4)
   }
 
   private mutable fun lowerCallFunction(call: CallFunction): void {
@@ -1122,7 +1121,9 @@ mutable private class .Lower{
         this.lowerObject(make, t);
         true
       }
-    | x @ StringHash _ -> this.lowerStringHash(x)
+    | x @ StringHash _ ->
+      this.lowerStringHash(x);
+      true
     | Suspend _ ->
       this.emitUnreachable{why => "Suspend not written yet", pos};
       true

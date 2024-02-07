@@ -3408,8 +3408,8 @@ private fun llvmWrite(instr: Stmt, asm: mutable FunAsmDefBuilder): void {
   | StringCmpEq{lhs, rhs} ->
     llvmWriteIntrinsicCall(asm, instr, "SKIP_String_eq", Array[lhs, rhs])
   | v @ StringConcat{args} ->
-    // The runtime provides special versions for 2, 3 or 4 arguments.
-    varargs = v.args.size() < 2 || v.args.size() > 4;
+    // The runtime provides a special version for 2 arguments.
+    varargs = v.args.size() != 2;
 
     suffix = if (!varargs) {
       v.args.size().toString()

@@ -115,15 +115,9 @@ define void @SKIP_debug_break() {
 
 ; Function Attrs: noinline nounwind optnone
 define i1 @SKIP_String_eq(ptr %0, ptr %1) #0 {
-  %3 = alloca ptr, align 4
-  %4 = alloca ptr, align 4
-  store ptr %0, ptr %3, align 4
-  store ptr %1, ptr %4, align 4
-  %5 = load ptr, ptr %3, align 4
-  %6 = load ptr, ptr %4, align 4
-  %7 = call i64 @SKIP_String_cmp(ptr %5, ptr %6)
-  %8 = icmp eq i64 %7, 0
-  ret i1 %8
+  %3 = call i64 @SKIP_String_cmp(ptr %0, ptr %1)
+  %4 = icmp eq i64 %3, 0
+  ret i1 %4
 }
 
 declare void @SKIP_saveExn(ptr)

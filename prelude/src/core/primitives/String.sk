@@ -531,26 +531,4 @@ private fun isWhitespace(c: Char): Bool {
   }
 }
 
-// --- Support for String::convert()
-
-base class Encoding {
-  children =
-  | Utf8()
-  | Ascii()
-  | Cp437()
-  | Utf16LE()
-  | Utf16BE()
-  | Iso8859_1()
-  | CustomEncoding(name: String)
-
-  fun code(): String
-  | Utf8() -> "utf8"
-  | Ascii() -> "ascii"
-  | Cp437() -> "cp437"
-  | Utf16LE() -> "utf16le"
-  | Utf16BE() -> "utf16be"
-  | Iso8859_1() -> "iso8859-1"
-  | CustomEncoding(name) -> name
-}
-
 module end;

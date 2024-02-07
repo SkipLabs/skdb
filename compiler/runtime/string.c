@@ -251,43 +251,10 @@ void* SKIP_String_unsafe_create(SkipInt size) {
   return result;
 }
 
-char* SKIP_unsafe_int_to_string(SkipInt n) {
-  return (char*)n;
-}
-
-SkipInt SKIP_unsafe_string_to_int(char* n) {
-  return (SkipInt)n;
-}
-
-SkipInt SKIP_unsafe_float_to_int(double f) {
-  SkipInt* x = (SkipInt*)&f;
-  return *x;
-}
-
-double SKIP_unsafe_int_to_float(SkipInt f) {
-  double* x = (double*)&f;
-  return *x;
-}
-
-int ipow(int x, int y) {
-  if (y == 0) {
-    return 1;
-  }
-  int tmp = ipow(x, y / 2);
-  if (y % 2 == 0) {
-    return tmp * tmp;
-  } else {
-    return tmp * tmp * x;
-  }
-}
 extern char* SKIP_floatToString(double origf);
 
 char* SKIP_Float_toString(double origf) {
   return SKIP_floatToString(origf);
-}
-
-SkipInt SKIP_unsafe_get_svalue(SkipInt* buffer, SkipInt n) {
-  return buffer[n];
 }
 
 #ifdef SKIP32

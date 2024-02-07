@@ -89,12 +89,7 @@ unsigned char* SKIP_String__fromChars(const unsigned char* /* dumb */,
       SKIP_invalid_utf8();
     }
   }
-  uint32_t* iresult =
-      (uint32_t*)SKIP_Obstack_alloc(result_size + 2 * sizeof(uint32_t));
-  uint32_t* bsize = iresult;
-  iresult++;
-  iresult++;
-  unsigned char* result = (unsigned char*)iresult;
+  unsigned char* result = (unsigned char*)sk_string_alloc(result_size);
   int j = 0;
   for (i = 0; i < size; i++) {
     uint32_t code = src[i];
@@ -128,7 +123,6 @@ unsigned char* SKIP_String__fromChars(const unsigned char* /* dumb */,
       SKIP_invalid_utf8();
     }
   }
-  *bsize = (uint32_t)j;
   sk_string_set_hash((char*)result);
   return result;
 }

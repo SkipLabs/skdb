@@ -28,11 +28,4 @@ extension class .String {
   }
 }
 
-class InvalidUtf8() extends Exception
-
-@export("SKIP_invalid_utf8")
-fun invalidUtf8(): void {
-  throw (InvalidUtf8())
-}
-
 module end;

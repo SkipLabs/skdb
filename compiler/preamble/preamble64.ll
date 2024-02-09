@@ -65,9 +65,6 @@ declare void @__cxa_end_catch()
 
 @_ZTIN4skip13SkipExceptionE = external constant { ptr, ptr, ptr }, align 8
 
-; Delete after update_lkg
-declare void @abort() noreturn
-
 ; Awaitable
 
 define void @SKIP_awaitableNotifyWaitersValueIsReady(ptr) {

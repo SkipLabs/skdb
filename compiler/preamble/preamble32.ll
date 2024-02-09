@@ -66,9 +66,6 @@ declare void @__cxa_end_catch()
 
 @_ZTIN4skip13SkipExceptionE = external constant { ptr, ptr, ptr }, align 8
 
-; Delete after update_lkg
-declare void @abort() noreturn
-
 ; Obstack code
 
 ; Function Attrs: alwaysinline nounwind uwtable

@@ -129,9 +129,6 @@ define i1 @SKIP_String_eq(ptr %0, ptr %1) #0 {
   ret i1 %8
 }
 
-
-%struct._FunctionSignature = type { ptr, ptr, i8, i8, ptr }
-
 declare void @SKIP_saveExn(ptr)
 
 define void @SKIP_etry(ptr %f.0, ptr %onError.1) unnamed_addr uwtable personality ptr bitcast (i32 (...)* @__gxx_personality_v0 to ptr) {

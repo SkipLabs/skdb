@@ -114,6 +114,3 @@ define i1 @SKIP_String_eq(ptr %0, ptr %1) #0 {
   %8 = icmp eq i64 %7, 0
   ret i1 %8
 }
-
-
-%struct._FunctionSignature = type { ptr, ptr, i8, i8, ptr }

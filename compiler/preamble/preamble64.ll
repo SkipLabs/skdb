@@ -1,22 +1,13 @@
 target triple = "x86_64-pc-linux-gnu"
 
-declare ptr @SKIP_Obstack_alloc(i64)
-declare ptr @SKIP_Obstack_calloc(i64)
-declare ptr @SKIP_String_concat2(ptr, ptr)
 declare void @SKIP_print_last_exception_stack_trace_and_exit(ptr)
 declare void @SKIP_throw(ptr)
 declare void @SKIP_unreachableMethodCall(ptr, ptr)
 declare void @SKIP_unreachableWithExplanation(ptr)
-declare void @SKIP_Obstack_vectorUnsafeSet(ptr, ptr)
-declare void @SKIP_Obstack_collect(ptr, ptr, i64)
-declare ptr @SKIP_Obstack_shallowClone(i64, ptr)
-declare i64 @SKIP_String_cmp(ptr, ptr)
 declare ptr @SKIP_intern(ptr)
 declare void @SKIP_llvm_memcpy(ptr, ptr, i64)
-declare ptr @SKIP_Float_toString(double)
-declare void @llvm.debugtrap() nounwind
 
-; LLVM
+; LLVM intrinsics
 
 declare void @llvm.lifetime.start(i64, ptr nocapture) argmemonly nounwind
 declare void @llvm.lifetime.end(i64, ptr nocapture) argmemonly nounwind
@@ -31,7 +22,13 @@ declare i32 @__gxx_personality_v0(...)
 declare ptr @__cxa_begin_catch(ptr)
 declare void @__cxa_end_catch()
 
-@_ZTIN4skip13SkipExceptionE = external constant { ptr, ptr, ptr }, align 8
+declare void @llvm.debugtrap() nounwind
+
+; Function Attrs: alwaysinline nounwind uwtable
+define void @SKIP_debug_break() {
+  tail call void @llvm.debugtrap()
+  ret void
+}
 
 ; Awaitable
 
@@ -47,7 +44,13 @@ define void @SKIP_awaitableThrow(ptr, ptr) {
   ret void
 }
 
-; Obstack code
+; Obstack
+
+declare ptr @SKIP_Obstack_alloc(i64)
+declare ptr @SKIP_Obstack_calloc(i64)
+declare void @SKIP_Obstack_vectorUnsafeSet(ptr, ptr)
+declare void @SKIP_Obstack_collect(ptr, ptr, i64)
+declare ptr @SKIP_Obstack_shallowClone(i64, ptr)
 
 ; Function Attrs: alwaysinline nounwind uwtable
 define void @SKIP_Obstack_inl_collect(ptr, ptr, i64) {
@@ -75,11 +78,11 @@ define void @SKIP_Obstack_store(ptr %obj, ptr %val) {
   ret void
 }
 
-; Function Attrs: alwaysinline nounwind uwtable
-define void @SKIP_debug_break() {
-  tail call void @llvm.debugtrap()
-  ret void
-}
+; String
+
+declare ptr @SKIP_String_concat2(ptr, ptr)
+declare i64 @SKIP_String_cmp(ptr, ptr)
+declare ptr @SKIP_Float_toString(double)
 
 ; Function Attrs: noinline nounwind optnone
 define i1 @SKIP_String_eq(ptr %0, ptr %1) {
@@ -87,6 +90,11 @@ define i1 @SKIP_String_eq(ptr %0, ptr %1) {
   %4 = icmp eq i64 %3, 0
   ret i1 %4
 }
+
+
+; Exception
+
+@_ZTIN4skip13SkipExceptionE = external constant { ptr, ptr, ptr }, align 8
 
 declare void @SKIP_saveExn(ptr)
 

@@ -2227,19 +2227,19 @@ mutable class .AsmOutput{
       forceExternal => true,
       symbol => "SKIP_initializeSkip",
       common => this,
-      typeString => Some("%struct._FunctionSignature* ()"),
+      typeString => Some("void ()"),
       typeRef => None(),
     };
 
     // Dump initializer call
     asm.print("define ");
     asm.writeLinkage();
-    asm.print("%%struct._FunctionSignature* %n() {\n" % asm);
+    asm.print("void %n() {\n" % asm);
     asm.print(
       "  call void %n()\n" %
         this.env.getFunction(this.env.initializeAllConstsID, FileRange.builtin),
     );
-    asm.print("  ret %struct._FunctionSignature* zeroinitializer\n");
+    asm.print("  ret void\n");
     asm.print("}\n\n");
 
     _ = asm.finish()

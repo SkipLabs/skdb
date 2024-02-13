@@ -113,11 +113,6 @@ native fun print_error_raw(String): void;
 @cpp_extern
 native fun print_debug_raw(String): void;
 
-@debug
-@no_throw
-@cpp_runtime
-native fun flush_stdout(): void;
-
 // Prints to stderr
 @debug
 @no_throw

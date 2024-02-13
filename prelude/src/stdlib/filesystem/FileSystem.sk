@@ -103,7 +103,7 @@ fun readFilesRecursive(
 private native fun .open_file(String): String;
 
 @debug
-@cpp_extern("SKIP_string_to_file")
+@cpp_extern
 private native fun .string_to_file(s: String, file: String): void;
 
 @cpp_extern("SKIP_is_directory")

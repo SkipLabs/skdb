@@ -23,6 +23,9 @@ SKIP_gc_type_t* get_gc_type(char* skip_object) {
 
 void SKIP_Regex_initialize() {}
 
+void SKIP_print_stack_trace() {
+  todo();
+}
 void SKIP_print_last_exception_stack_trace_and_exit() {
   todo();
 }

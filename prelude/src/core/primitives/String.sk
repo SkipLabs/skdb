@@ -245,6 +245,14 @@ native class .String uses Hashable, Show, Orderable {
     this.getIter().collect(Vector)
   }
 
+  fun utf8(): Array<UInt8> {
+    result = mutable Vector[];
+    for (i in Range(0, Unsafe.string_utf8_size(this))) {
+      result.push(Unsafe.string_utf8_get(this, i));
+    };
+    result.toArray()
+  }
+
   fun splitLast(substring: String): (String, String) {
     i = this.getEndIter();
     if (!i.reverseSearch(substring)) {

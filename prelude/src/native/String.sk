@@ -15,17 +15,3 @@ fun string_utf8_size(s: String): Int {
 native fun string_utf8_get(s: String, i: Int): UInt8;
 
 module end;
-
-module String;
-
-extension class .String {
-  fun utf8(): Array<UInt8> {
-    result = mutable Vector[];
-    for (i in Range(0, Unsafe.string_utf8_size(this))) {
-      result.push(Unsafe.string_utf8_get(this, i));
-    };
-    result.toArray()
-  }
-}
-
-module end;

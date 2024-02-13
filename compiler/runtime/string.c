@@ -198,32 +198,6 @@ uint32_t SKIP_String_unsafe_get(unsigned char* str, SkipInt n) {
   return (uint32_t)str[n];
 }
 
-void SKIP_String_unsafe_set(unsigned char* str, SkipInt n, SkipInt v) {
-  str[n] = v;
-}
-
-void SKIP_String_unsafe_write_int(unsigned char* str, SkipInt n, SkipInt v) {
-  memcpy(&str[n], &v, sizeof(SkipInt));
-}
-
-void SKIP_String_unsafe_write_string(unsigned char* str, SkipInt n, char* v) {
-  memcpy(&str[n], v, SKIP_String_byteSize(v));
-}
-
-SkipInt SKIP_String_unsafe_read_int(unsigned char* str, SkipInt n) {
-  SkipInt v;
-  memcpy(&v, &str[n], sizeof(SkipInt));
-  return v;
-}
-
-char* SKIP_String_unsafe_read_string(unsigned char* str, SkipInt n,
-                                     SkipInt size) {
-  char* v = sk_string_alloc((uint32_t)size);
-  memcpy(v, &str[n], size);
-  sk_string_set_hash(v);
-  return v;
-}
-
 SkipInt SKIP_String_unsafe_size(unsigned char* str) {
   return SKIP_String_byteSize((char*)str);
 }
@@ -232,15 +206,6 @@ void* SKIP_String_unsafe_slice(unsigned char* str, SkipInt n1, SkipInt n2) {
   size_t size = n2 - n1;
   char* result = sk_string_alloc(size);
   memcpy(result, str + n1, size);
-  sk_string_set_hash(result);
-  return result;
-}
-
-void* SKIP_String_unsafe_create(SkipInt size) {
-  char* result = SKIP_Obstack_alloc(size + 2 * sizeof(uint32_t));
-  *(uint32_t*)result = (uint32_t)size;
-  result += sizeof(uint32_t);
-  result += sizeof(uint32_t);
   sk_string_set_hash(result);
   return result;
 }

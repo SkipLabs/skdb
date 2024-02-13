@@ -3,40 +3,15 @@ module SKDB;
 @cpp_extern("SKIP_String_unsafe_get")
 native fun stringUnsafeGet(str: String, idx: Int): Char;
 
-@cpp_extern("SKIP_String_unsafe_get")
-native fun stringUnsafeGetInt(str: String, idx: Int): UInt32;
-
-@cpp_extern("SKIP_String_unsafe_set")
-native fun stringUnsafeSet(str: String, idx: Int, Int): void;
-
-@cpp_extern("SKIP_String_unsafe_write_int")
-native fun stringUnsafeWriteInt(str: String, idx: Int, Int): void;
-
-@cpp_extern("SKIP_String_unsafe_write_string")
-native fun stringUnsafeWriteString(str: String, idx: Int, String): void;
-
-@cpp_extern("SKIP_String_unsafe_read_int")
-native fun stringUnsafeReadInt(str: String, idx: Int): Int;
-
-@cpp_extern("SKIP_String_unsafe_read_string")
-native fun stringUnsafeReadString(str: String, idx: Int, Int): String;
-
 @cpp_extern("SKIP_String_unsafe_size")
 native fun stringUnsafeSize(str: String): Int;
 
 @cpp_extern("SKIP_String_unsafe_slice")
 native fun stringUnsafeSlice(str: String, Int, Int): String;
 
-@cpp_extern("SKIP_String_unsafe_create")
-native fun stringUnsafeCreate(Int): String;
-
 mutable class Buffer(content: String) {
   readonly fun get(idx: Int): Char {
     stringUnsafeGet(this.content, idx)
-  }
-
-  readonly fun getInt(idx: Int): Int {
-    stringUnsafeGetInt(this.content, idx).toInt()
   }
 
   readonly fun size(): Int {
@@ -45,26 +20,6 @@ mutable class Buffer(content: String) {
 
   readonly fun slice(n1: Int, n2: Int): String {
     stringUnsafeSlice(this.content, n1, n2)
-  }
-
-  mutable fun set(n: Int, v: Int): void {
-    stringUnsafeSet(this.content, n, v)
-  }
-
-  mutable fun writeInt(n: Int, v: Int): void {
-    stringUnsafeWriteInt(this.content, n, v)
-  }
-
-  mutable fun writeString(n: Int, str: String): void {
-    stringUnsafeWriteString(this.content, n, str)
-  }
-
-  readonly fun readInt(n: Int): Int {
-    stringUnsafeReadInt(this.content, n)
-  }
-
-  readonly fun readString(n: Int, size: Int): String {
-    stringUnsafeReadString(this.content, n, size)
   }
 }
 

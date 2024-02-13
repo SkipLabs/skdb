@@ -23,7 +23,7 @@ native class .String uses Hashable, Show, Orderable {
   private native fun concat(String): String;
   @cpp_extern
   native private fun toFloat_raw(): Float;
-  @cpp_runtime
+  @intrinsic
   native fun compare_raw(other: String): Int;
 
   fun take(len: Int): String {

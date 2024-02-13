@@ -14,9 +14,6 @@ native fun getcwd(): String;
 
 module FileSystem;
 
-@cpp_extern("SKIP_open_file")
-native fun open_file(fileName: String): String;
-
 // This is really broken - you can't read a file into a String without an
 // encoding!
 fun readTextFile(filename: String): String {
@@ -106,7 +103,7 @@ fun readFilesRecursive(
 
 // TODO: Rename the C++ entrypoints and merge these into the
 // public API above.
-@cpp_runtime
+@cpp_extern
 private native fun .open_file(String): String;
 
 @debug

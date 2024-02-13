@@ -15,11 +15,6 @@ native fun sin(val: Float): Float;
 @cpp_extern("llvm.cos.f64")
 native fun cos(val: Float): Float;
 
-@cpp_runtime
-native fun asin(val: Float): Float;
-@cpp_runtime
-native fun acos(val: Float): Float;
-
 @cpp_extern("llvm.floor.f64")
 native fun floor(val: Float): Float;
 

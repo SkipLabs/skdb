@@ -14,9 +14,6 @@ fun igetByte(str: String, n: Int): Int {
   getByte(str, n).toInt()
 }
 
-@cpp_extern
-native fun byteSize(String): UInt32;
-
 mutable class StringIterator private (
   // This object is manipulated by the native methods directly.  It's important
   // that the fields match the native implementation
@@ -33,7 +30,7 @@ mutable class StringIterator private (
   }
 
   static fun makeEnd(s: String): mutable StringIterator {
-    mutable StringIterator(s, Unsafe.string_utf8_size(s))
+    mutable StringIterator(s, String.byteSize(s).toInt())
   }
 
   readonly fun clone(): mutable StringIterator {

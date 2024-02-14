@@ -7,10 +7,6 @@
 
 module Unsafe;
 
-fun string_utf8_size(s: String): Int {
-  String.byteSize(s).toInt()
-}
-
 @cpp_extern("SKIP_Unsafe_string_utf8_get")
 native fun string_utf8_get(s: String, i: Int): UInt8;
 

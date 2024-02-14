@@ -3,16 +3,13 @@ module SKDB;
 @cpp_extern("SKIP_String_unsafe_get")
 native fun stringUnsafeGet(str: String, idx: Int): Char;
 
-@cpp_extern("SKIP_String_unsafe_size")
-native fun stringUnsafeSize(str: String): Int;
-
 mutable class Buffer(content: String) {
   readonly fun get(idx: Int): Char {
     stringUnsafeGet(this.content, idx)
   }
 
   readonly fun size(): Int {
-    stringUnsafeSize(this.content)
+    String.byteSize(this.content).toInt()
   }
 
   readonly fun slice(n1: Int, n2: Int): String {

@@ -7,14 +7,14 @@
 
 module String;
 
-@cpp_runtime
+@cpp_extern
 native fun getByte(String, Int): UInt32;
 
 fun igetByte(str: String, n: Int): Int {
   getByte(str, n).toInt()
 }
 
-@cpp_runtime
+@cpp_extern
 native fun byteSize(String): UInt32;
 
 mutable class StringIterator private (
@@ -176,7 +176,7 @@ mutable class StringIterator private (
     this.currentCode();
   }
 
-  @cpp_runtime
+  @cpp_extern
   native readonly fun substring(end: readonly StringIterator): String;
 
   readonly fun <(other: readonly StringIterator): Bool {

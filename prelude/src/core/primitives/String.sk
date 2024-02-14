@@ -8,7 +8,7 @@
 module String;
 
 native class .String uses Hashable, Show, Orderable {
-  @cpp_runtime
+  @cpp_extern
   @may_alloc
   native static fun fromChars(chars: readonly Array<Char>): String;
   @cpp_extern
@@ -21,7 +21,7 @@ native class .String uses Hashable, Show, Orderable {
 
   @intrinsic
   private native fun concat(String): String;
-  @cpp_runtime
+  @cpp_extern
   native private fun toFloat_raw(): Float;
   @cpp_runtime
   native fun compare_raw(other: String): Int;

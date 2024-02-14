@@ -65,38 +65,6 @@ fun print_string<T: readonly Show>(value: T): void {
   print_newline()
 }
 
-// Returns the current time in nanoseconds.
-// Marked as @debug bc it is non-deterministic
-@debug
-@cpp_runtime
-@no_throw
-native fun nowNanos(): Int;
-
-// Returns the current time in milli-seconds.
-@debug
-fun now(): Float {
-  nowNanos().toFloat() * (1.0 / 1000000.0);
-}
-
-@debug
-@no_throw
-@cpp_runtime
-untracked native fun profile_start(): void;
-
-// Returns the elapsed time (in ms) since profile_start was called,
-// minus time between pause/resume calls.
-@debug
-@no_throw
-@cpp_runtime
-untracked native fun profile_stop(): Float;
-
-// Print the collected results when everytime profile_stop is called,
-// then clear the collected cache.
-@debug
-@no_throw
-@cpp_runtime
-untracked native fun profile_report(): void;
-
 // Prints without a new line
 @debug
 @no_throw
@@ -208,38 +176,11 @@ module Debug;
 @intrinsic
 native fun getMemoryFrameUsage(): Int;
 
-@debug
-@no_throw
-@cpp_runtime
-native fun printMemoryStatistics(): void;
-
-@debug
-@no_throw
-@cpp_runtime
-native fun getLeakCounter(classname: String): Int;
-
-base class DebugBoxBase
-class DebugBox<T>(value: T) extends DebugBoxBase
-
-@debug
-@no_throw
-@cpp_runtime
-private native fun printBoxedObjectSize(box: readonly DebugBoxBase): void;
-
-@gc
-fun printObjectSize<T>(value: T): void {
-  printBoxedObjectSize(DebugBox(value));
-}
-
 module end;
 
 @cpp_extern("SKIP_getBuildVersion")
 @may_alloc
 native fun getBuildVersion(): String;
-
-@cpp_runtime
-@may_alloc
-untracked native fun read_stdin(): String;
 
 @cpp_extern
 @may_alloc
@@ -248,10 +189,6 @@ native fun read_line(): ?String;
 @cpp_extern
 @may_alloc
 native fun read_to_end(): String;
-
-@cpp_runtime
-@may_alloc
-untracked native fun read_stdin_bytes(bytes: Int): String;
 
 @cpp_extern("SKIP_flush_stdout")
 native fun flushStdout(): void;

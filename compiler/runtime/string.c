@@ -202,7 +202,7 @@ SkipInt SKIP_String_unsafe_size(unsigned char* str) {
   return SKIP_String_byteSize((char*)str);
 }
 
-void* SKIP_String_unsafe_slice(unsigned char* str, SkipInt n1, SkipInt n2) {
+void* SKIP_String_unsafeSlice(unsigned char* str, SkipInt n1, SkipInt n2) {
   size_t size = n2 - n1;
   char* result = sk_string_alloc(size);
   memcpy(result, str + n1, size);

@@ -7,6 +7,9 @@
 
 module String;
 
+@cpp_extern
+native fun unsafeSlice(str: String, Int, Int): String;
+
 native class .String uses Hashable, Show, Orderable {
   @cpp_extern
   @may_alloc

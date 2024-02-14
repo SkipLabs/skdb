@@ -6,9 +6,6 @@ native fun stringUnsafeGet(str: String, idx: Int): Char;
 @cpp_extern("SKIP_String_unsafe_size")
 native fun stringUnsafeSize(str: String): Int;
 
-@cpp_extern("SKIP_String_unsafe_slice")
-native fun stringUnsafeSlice(str: String, Int, Int): String;
-
 mutable class Buffer(content: String) {
   readonly fun get(idx: Int): Char {
     stringUnsafeGet(this.content, idx)
@@ -19,7 +16,7 @@ mutable class Buffer(content: String) {
   }
 
   readonly fun slice(n1: Int, n2: Int): String {
-    stringUnsafeSlice(this.content, n1, n2)
+    String.unsafeSlice(this.content, n1, n2)
   }
 }
 

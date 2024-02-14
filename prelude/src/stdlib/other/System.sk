@@ -100,12 +100,12 @@ untracked native fun profile_report(): void;
 // Prints without a new line
 @debug
 @no_throw
-@cpp_runtime
+@cpp_extern
 native fun print_raw(String): void;
 
 @debug
 @no_throw
-@cpp_runtime
+@cpp_extern
 native fun print_error_raw(String): void;
 
 @debug
@@ -121,7 +121,7 @@ native fun flush_stdout(): void;
 // Prints to stderr
 @debug
 @no_throw
-@cpp_runtime
+@cpp_extern
 native fun print_error(String): void;
 
 @debug
@@ -160,7 +160,7 @@ fun skipExit<T>(res: Int): T {
 
 @debug
 @no_return
-@cpp_runtime
+@cpp_extern
 native fun exit(Int): void;
 
 class DivisionByZeroException() extends Exception {
@@ -246,11 +246,11 @@ native fun getBuildVersion(): String;
 @may_alloc
 untracked native fun read_stdin(): String;
 
-@cpp_runtime
+@cpp_extern
 @may_alloc
 native fun read_line(): ?String;
 
-@cpp_runtime
+@cpp_extern
 @may_alloc
 native fun read_to_end(): String;
 

@@ -36,10 +36,6 @@ fun isDirectory(filename: String): Bool {
   is_directory(filename);
 }
 
-fun ensureDirectory(dirname: String): void {
-  ensure_directory(dirname);
-}
-
 // Returns the contents of dirname without the 'dirname' prefix.
 fun readDirectory(dirname: String): Array<String> {
   dh = opendir(dirname);
@@ -112,10 +108,6 @@ private native fun .string_to_file(s: String, file: String): void;
 
 @cpp_extern("SKIP_is_directory")
 private native fun is_directory(filename: String): Bool;
-
-@debug
-@cpp_runtime
-private native fun ensure_directory(dirname: String): void;
 
 @cpp_extern("SKIP_opendir")
 private native fun opendir(dirname: String): Int;

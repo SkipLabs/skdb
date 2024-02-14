@@ -39,7 +39,6 @@ declare void @SKIP_etry(ptr, ptr)
 declare ptr @SKIP_Float_toString(double)
 declare double @SKIP_String__toFloat_raw(ptr)
 declare void @SKIP_saveExn(ptr)
-declare void @SKIP_FileSystem_appendTextFile(ptr, ptr)
 
 ; LLVM
 

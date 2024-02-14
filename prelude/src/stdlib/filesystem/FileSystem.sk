@@ -29,7 +29,7 @@ fun writeTextFile(filename: String, contents: String): void {
 
 @synonym("appendFile")
 @synonym("appendFileSync")
-@cpp_runtime
+@cpp_extern
 native fun appendTextFile(filename: String, contents: String): void;
 
 @cpp_extern("SKIP_check_if_file_exists")

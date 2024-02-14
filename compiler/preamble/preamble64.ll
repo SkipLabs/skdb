@@ -36,7 +36,6 @@ declare i32 @SKIP_String_getByte(ptr, i64)
 declare i32 @SKIP_String_byteSize(ptr)
 declare ptr @SKIP_Float_toString(double)
 declare double @SKIP_String__toFloat_raw(ptr)
-declare void @SKIP_FileSystem_appendTextFile(ptr, ptr)
 declare ptr @SKIP_System_subprocess(ptr)
 declare void @llvm.debugtrap() nounwind
 

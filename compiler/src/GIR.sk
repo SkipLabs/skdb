@@ -548,22 +548,6 @@ base class GTypedStmt{typ: GType} extends GStmt {
   | GZeroExtend{value: GInstr}
 }
 
-// A GCustomInstr is given a lambda to emit the body for one-off custom
-// instructions.
-class GCustomInstr{
-  emit: (ginstr: GCustomInstr, mutable FunSpecializer) ~> void,
-  request: ?(
-    mutable Specializer,
-    targs: Array<Tclass>,
-    tparamEnv: UnorderedMap<GTparam, Tclass>,
-  ) ~> void,
-  args: Array<GInstr> = Array[],
-} extends GTypedStmt {
-  fun hash(): Int {
-    (hash(this.emit), hash(this.request), this.args.hash()).hash()
-  }
-}
-
 // Stmts that are appear only as the last Stmt in a Block. They cannot
 // appear anywhere else, and a Block must always end with one of these.
 base class GTerminator{

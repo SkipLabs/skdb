@@ -842,12 +842,6 @@ mutable class Specializer{
             this.requestMethod(context, "isSome", valType, Array[])
           }
 
-        | GCustomInstr{request} ->
-          request match {
-          | Some(lambda) -> lambda(this, targs, tparamEnv)
-          | None _ -> void
-          }
-
         | obj @ GObject _ -> noteType(obj.getType(), true)
 
         // These do not cause any additional types or code to be needed.
@@ -3663,7 +3657,6 @@ mutable class FunSpecializer{
             this.emitGCallMethod(context, call, typ, pos)
           | c @ GCast _ ->
             this.emitGCastOrReinterpret(context, c, Cast, c.value, typ, pos)
-          | c @ GCustomInstr _ -> c.emit(c, this)
           | ev @ GEArray _ -> this.emitGEArray(context, ev, typ, pos)
           | frz @ GFreeze _ -> this.emitGFreeze(context, frz, pos)
           | r @ GGetCurrentAwaitable _ ->

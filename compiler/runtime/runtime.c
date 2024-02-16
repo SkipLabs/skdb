@@ -21,8 +21,14 @@ sk_string_t* get_sk_string(char* obj) {
   return (sk_string_t*)(obj - sk_string_header_size);
 }
 
+uint32_t sk_string_hash_tag = 0x80000000;
+
 uint32_t SKIP_is_string(char* obj) {
-  return get_sk_string(obj)->hash & 0x80000000;
+  return get_sk_string(obj)->hash & sk_string_hash_tag;
+}
+
+uint32_t sk_tag_string_hash(uint32_t untagged_hash) {
+  return untagged_hash | sk_string_hash_tag;
 }
 
 void** get_vtable_ptr(char* skip_object) {

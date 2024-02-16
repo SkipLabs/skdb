@@ -9,19 +9,20 @@
 /*****************************************************************************/
 
 /* A 64-bit "header" immediately precedes each skip object. The header of
-   string objects consists of 2 uint32 values: first the size, then the
-   hash, and then the string bytes themselves. Otherwise, the header is a
-   pointer to the object's vtable. The runtime system assumes that bit 31 of
-   every vtable pointer is clear, and sk_string_set_hash ensures that the
-   corresponding bit of string hash values is always set. SKIP_is_string
-   tests this bit to determine if an object is a string or an object of some
-   other type. */
+   string objects consists of 2 uint32 values: first the size, then the hash,
+   and then the string bytes themselves. Otherwise, the header is a pointer
+   to the object's vtable. The runtime system assumes that every vtable is
+   8-aligned (that is, the least significant 3 bits are clear). Bit 1 is used
+   by copy.c and intern.c to tag temporary forwarding pointers.  Bit 3 is
+   used by SKIP_is_string to determine if an object is a string or an object
+   of some other type, and sk_string_set_hash ensures that bit 3 of string
+   hash values is always set. */
 
 sk_string_t* get_sk_string(char* obj) {
   return (sk_string_t*)(obj - sk_string_header_size);
 }
 
-uint32_t sk_string_hash_tag = 0x80000000;
+uint32_t sk_string_hash_tag = 0x4;
 
 uint32_t SKIP_is_string(char* obj) {
   return get_sk_string(obj)->hash & sk_string_hash_tag;

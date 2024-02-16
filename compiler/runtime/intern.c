@@ -193,10 +193,6 @@ static char* SKIP_intern_string(char* obj) {
   return result;
 }
 
-uint32_t SKIP_is_string(char* obj) {
-  return *(((uint32_t*)obj) - 1) & 0x80000000;
-}
-
 static char* SKIP_intern_obj(sk_stack_t* st, char* obj) {
   char* result;
 

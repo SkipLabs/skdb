@@ -18,7 +18,7 @@ void sk_string_set_hash(char* obj) {
     acc = acc * 31 + str->data[i];
   }
 
-  // This tag is used by the interning to recognize strings.
+  // This tag is used by SKIP_is_string to recognize strings.
   acc |= 0x80000000;
   str->hash = (uint32_t)acc;
 }

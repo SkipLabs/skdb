@@ -8,6 +8,19 @@
 /* Operations on the runtime representation of skip values. */
 /*****************************************************************************/
 
+/* A 64-bit "header" immediately precedes each skip object. The header of
+   string objects consists of 2 uint32 values: first the size, then the
+   hash, and then the string bytes themselves. Otherwise, the header is a
+   pointer to the object's vtable. The runtime system assumes that bit 31 of
+   every vtable pointer is clear, and sk_string_set_hash ensures that the
+   corresponding bit of string hash values is always set. SKIP_is_string
+   tests this bit to determine if an object is a string or an object of some
+   other type. */
+
+uint32_t SKIP_is_string(char* obj) {
+  return *(((uint32_t*)obj) - 1) & 0x80000000;
+}
+
 SKIP_gc_type_t* get_gc_type(char* skip_object) {
   // a vtable pointer immediately precedes a pointer to each skip object
   SKIP_gc_type_t*** vtable = ((SKIP_gc_type_t***)skip_object) - 1;

@@ -162,6 +162,7 @@ typedef struct {
   size_t m_refMask[0];
 } SKIP_gc_type_t;
 
+void** get_vtable_ptr(char* skip_object);
 SKIP_gc_type_t* get_gc_type(char* skip_object);
 
 /*****************************************************************************/

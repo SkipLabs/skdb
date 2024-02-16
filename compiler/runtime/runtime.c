@@ -17,16 +17,24 @@
    tests this bit to determine if an object is a string or an object of some
    other type. */
 
+sk_string_t* get_sk_string(char* obj) {
+  return (sk_string_t*)(obj - sizeof(uint32_t) * 2);
+}
+
 uint32_t SKIP_is_string(char* obj) {
-  return *(((uint32_t*)obj) - 1) & 0x80000000;
+  return get_sk_string(obj)->hash & 0x80000000;
+}
+
+void** get_vtable_ptr(char* skip_object) {
+  // a vtable pointer immediately precedes a pointer to each skip object
+  return ((void**)skip_object) - 1;
 }
 
 SKIP_gc_type_t* get_gc_type(char* skip_object) {
-  // a vtable pointer immediately precedes a pointer to each skip object
-  SKIP_gc_type_t*** vtable = ((SKIP_gc_type_t***)skip_object) - 1;
+  SKIP_gc_type_t*** vtable_ptr = (SKIP_gc_type_t***)get_vtable_ptr(skip_object);
   // the gc_type of each object is stored in slot 1 of the vtable,
   // see createVTableBuilders in vtable.sk
-  SKIP_gc_type_t** slot1 = *(vtable) + 1;
+  SKIP_gc_type_t** slot1 = *vtable_ptr + 1;
   return *slot1;
 }
 

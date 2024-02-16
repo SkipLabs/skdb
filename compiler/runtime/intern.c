@@ -188,7 +188,7 @@ static char* SKIP_intern_array(sk_stack_t* st, char* obj) {
 }
 
 static char* SKIP_intern_string(char* obj) {
-  size_t len = *(uint32_t*)(obj - 2 * sizeof(uint32_t));
+  size_t len = get_sk_string(obj)->size;
   char* result = shallow_intern(obj, len, 2 * sizeof(uint32_t));
   return result;
 }
@@ -247,7 +247,7 @@ void* SKIP_intern_shared(void* obj) {
     void* interned_ptr;
 
     if (SKIP_is_string(toCopy)) {
-      sk_string_t* str = (sk_string_t*)((char*)toCopy - sizeof(uint32_t) * 2);
+      sk_string_t* str = get_sk_string(toCopy);
       if (str->size != (uint32_t)-1 && str->size < sizeof(void*)) {
         void* interned_ptr = SKIP_intern_string(toCopy);
         *delayed.slot = interned_ptr;
@@ -286,8 +286,7 @@ void* SKIP_intern_shared(void* obj) {
     void** toClean = cell.value1;
     *toClean = cell.value2;
     if (cell.value3 != NULL) {
-      sk_string_t* str =
-          (sk_string_t*)((char*)cell.value1 - sizeof(uint32_t) * 2);
+      sk_string_t* str = get_sk_string(cell.value1);
       str->size = (uint32_t)(uintptr_t)cell.value3;
     }
   }

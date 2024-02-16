@@ -210,7 +210,7 @@ static uint64_t sk_hash_array(sk_stack_t* st, char* obj) {
 
 static uint64_t sk_hash_string(char* obj) {
   uint64_t crc = CRC_INIT;
-  size_t memsize = *(uint32_t*)(obj - 2 * sizeof(uint32_t));
+  size_t memsize = get_sk_string(obj)->size;
   return sk_crc64(crc, obj, memsize);
 }
 

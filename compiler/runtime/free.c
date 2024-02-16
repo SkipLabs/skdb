@@ -123,7 +123,7 @@ void sk_free_obj(sk_stack_t* st, char* obj) {
 
   // Check if we are dealing with a string
   if (SKIP_is_string(obj)) {
-    size_t memsize = *(uint32_t*)(obj - 2 * sizeof(uint32_t));
+    size_t memsize = get_sk_string(obj)->size;
     size_t leftsize = 2 * sizeof(uint32_t);
     free_intern(obj, memsize, leftsize);
     return;

@@ -96,7 +96,7 @@ static char* SKIP_copy_array(sk_stack_t* st, char* obj,
 }
 
 static char* SKIP_copy_string(char* obj, sk_obstack_t* large_page) {
-  size_t len = *(uint32_t*)(obj - 2 * sizeof(uint32_t));
+  size_t len = get_sk_string(obj)->size;
   char* result = shallow_copy(obj, len, 2 * sizeof(uint32_t), large_page);
   return result;
 }
@@ -158,7 +158,7 @@ void* SKIP_copy_with_pages(void* obj, size_t nbr_pages, sk_cell_t* pages) {
     void* copied_ptr;
 
     if (SKIP_is_string(toCopy)) {
-      sk_string_t* str = (sk_string_t*)((char*)toCopy - sizeof(uint32_t) * 2);
+      sk_string_t* str = get_sk_string(toCopy);
       if (str->size != (uint32_t)-1 && str->size < sizeof(void*)) {
         void* copied_ptr = SKIP_copy_string(toCopy, large_page);
         *delayed.slot = copied_ptr;
@@ -195,8 +195,7 @@ void* SKIP_copy_with_pages(void* obj, size_t nbr_pages, sk_cell_t* pages) {
     void** toClean = cell.value1;
     *toClean = cell.value2;
     if (cell.value3 != NULL) {
-      sk_string_t* str =
-          (sk_string_t*)((char*)cell.value1 - sizeof(uint32_t) * 2);
+      sk_string_t* str = get_sk_string(cell.value1);
       str->size = (uint32_t)(uintptr_t)cell.value3;
     }
   }

@@ -31,7 +31,7 @@ uint32_t SKIP_String_byteSize(char* obj) {
 // Allocates a string (with no data nor hash).
 char* sk_string_alloc(uint32_t size) {
   uint32_t* iresult =
-      (uint32_t*)SKIP_Obstack_alloc(size + 2 * sizeof(uint32_t));
+      (uint32_t*)SKIP_Obstack_alloc(size + sk_string_header_size);
   *iresult = (uint32_t)size;
   iresult++;
   iresult++;

@@ -189,7 +189,7 @@ static char* SKIP_intern_array(sk_stack_t* st, char* obj) {
 
 static char* SKIP_intern_string(char* obj) {
   size_t len = get_sk_string(obj)->size;
-  char* result = shallow_intern(obj, len, 2 * sizeof(uint32_t));
+  char* result = shallow_intern(obj, len, sk_string_header_size);
   return result;
 }
 

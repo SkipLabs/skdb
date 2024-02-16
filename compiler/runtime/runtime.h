@@ -175,6 +175,7 @@ typedef struct {
   unsigned char data[0];
 } sk_string_t;
 
+#define sk_string_header_size (offsetof(sk_string_t, data))
 sk_string_t* get_sk_string(char* obj);
 
 /*****************************************************************************/

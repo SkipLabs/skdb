@@ -18,7 +18,7 @@
    other type. */
 
 sk_string_t* get_sk_string(char* obj) {
-  return (sk_string_t*)(obj - sizeof(uint32_t) * 2);
+  return (sk_string_t*)(obj - sk_string_header_size);
 }
 
 uint32_t SKIP_is_string(char* obj) {

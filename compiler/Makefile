@@ -1,4 +1,5 @@
 CXXFLAGS ?= -O3 -mllvm -inline-threshold=0 # -enable-new-pm=false
+SKARGO_PROFILE?=release
 STAGE    ?= 1
 
 prefix   ?= /usr/local
@@ -62,16 +63,16 @@ stage0/bin/skc: bootstrap/skc_out64.ll stage0/lib/libskip_runtime64.a stage0/lib
 	clang++ -no-pie $(CXXFLAGS) -o $@ $^ -lpthread -g3
 
 stage1/bin/skc stage1/bin/skfmt stage1/bin/skargo: stage0
-	PATH=stage0/bin/:$(PATH) skargo build -r --target-dir stage1/bin
-	(cd ../skargo && PATH=../compiler/stage0/bin:$(PATH) skargo build -r --target-dir ../compiler/stage1/bin)
+	PATH=stage0/bin/:$(PATH) skargo build --profile $(SKARGO_PROFILE) --target-dir stage1/bin
+	(cd ../skargo && PATH=../compiler/stage0/bin:$(PATH) skargo build --profile $(SKARGO_PROFILE) --target-dir ../compiler/stage1/bin)
 
 stage2/bin/skc stage2/bin/skfmt stage2/bin/skargo: stage1
-	PATH=stage1/bin/:$(PATH) skargo build -r --target-dir stage2/bin
-	(cd ../skargo && PATH=../compiler/stage1/bin:$(PATH) skargo build -r --target-dir ../compiler/stage2/bin)
+	PATH=stage1/bin/:$(PATH) skargo build --profile $(SKARGO_PROFILE) --target-dir stage2/bin
+	(cd ../skargo && PATH=../compiler/stage1/bin:$(PATH) skargo build --profile $(SKARGO_PROFILE) --target-dir ../compiler/stage2/bin)
 
 stage3/bin/skc stage3/bin/skfmt stage3/bin/skargo: stage2
-	PATH=stage2/bin/:$(PATH) skargo build -r --target-dir stage3/bin
-	(cd ../skargo && PATH=../compiler/stage2/bin:$(PATH) skargo build -r --target-dir ../compiler/stage3/bin)
+	PATH=stage2/bin/:$(PATH) skargo build --profile $(SKARGO_PROFILE) --target-dir stage3/bin
+	(cd ../skargo && PATH=../compiler/stage2/bin:$(PATH) skargo build --profile $(SKARGO_PROFILE) --target-dir ../compiler/stage3/bin)
 # 	TODO: Ensure stage2 == stage3.
 
 stageA/bin/skc:
@@ -87,12 +88,12 @@ stageA/bin/skfmt:
 	cp $(shell command -v skfmt) stageA/bin/skfmt
 
 stageB/bin/skc stageB/bin/skfmt stageB/bin/skargo: stageA
-	PATH=stageA/bin/:$(PATH) skargo build -r --target-dir stageB/bin
-	(cd ../skargo && PATH=../compiler/stageA/bin:$(PATH) skargo build -r --target-dir ../compiler/stageB/bin)
+	PATH=stageA/bin/:$(PATH) skargo build --profile $(SKARGO_PROFILE) --target-dir stageB/bin
+	(cd ../skargo && PATH=../compiler/stageA/bin:$(PATH) skargo build --profile $(SKARGO_PROFILE) --target-dir ../compiler/stageB/bin)
 
 stageC/bin/skc stageC/bin/skfmt stageC/bin/skargo: stageB
-	PATH=stageB/bin/:$(PATH) skargo build -r --target-dir stageC/bin
-	(cd ../skargo && PATH=../compiler/stageB/bin:$(PATH) skargo build -r --target-dir ../compiler/stageC/bin)
+	PATH=stageB/bin/:$(PATH) skargo build --profile $(SKARGO_PROFILE) --target-dir stageC/bin
+	(cd ../skargo && PATH=../compiler/stageB/bin:$(PATH) skargo build --profile $(SKARGO_PROFILE) --target-dir ../compiler/stageC/bin)
 
 .PHONY: install
 install: stage$(STAGE)

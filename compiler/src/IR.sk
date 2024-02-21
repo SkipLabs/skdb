@@ -178,9 +178,7 @@ class UTF8String{
   // sk_string_set_hash in the runtime when staging a compiler bootstrap
   // involving a change to the hash function
   fun hashToEmit(): Int {
-    UInt32::truncate(
-      (this.utf8.foldl((acc, ch) -> acc * 31 + ch.toInt(), 0)).or(0x4),
-    ).toInt()
+    this.string.hash()
   }
 }
 

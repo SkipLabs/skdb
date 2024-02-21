@@ -1738,7 +1738,7 @@ private fun peepholeStringBinOp(peep: StringBinOp, s: mutable Peephole): Instr {
 
 private fun peepholeStringHash(peep: StringHash, s: mutable Peephole): Instr {
   s.getInstr(peep.value) match {
-  | ConstantString{value} -> s.constantInt(computeStringHash(value.utf8))
+  | ConstantString{value} -> s.constantInt(value.hashToEmit())
   | _ -> peep
   }
 }

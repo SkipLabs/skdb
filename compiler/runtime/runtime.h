@@ -250,7 +250,7 @@ char* sk_get_external_pointer();
 char* sk_get_external_pointer_destructor(char* obj);
 uint32_t sk_get_external_pointer_value(char* obj);
 uint32_t sk_get_magic_number(char* obj);
-void sk_call_external_pointer_descructor(char*, uint32_t);
+void sk_call_external_pointer_destructor(char*, uint32_t);
 int sk_is_nofile_mode();
 void sk_lower_static(void*);
 void sk_check_has_lock();

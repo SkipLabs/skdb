@@ -2,6 +2,5 @@
 name = "std"
 version = "0.1.0"
 
-[dependencies]
-
+[dev-dependencies]
 sktest = { path = "../sktest" }

@@ -29,8 +29,12 @@ class Console(verbosity: ConsoleVerbosity) {
   }
 
   fun status_verbose(status: String, message: String): void {
-    if (this.verbosity <= VerbosityVerbose()) return void;
-    this.status(status, message)
+    this.verbose(() -> this.status(status, message))
+  }
+
+  fun verbose(cb: () -> void): void {
+    if (this.verbosity < VerbosityVerbose()) return void;
+    cb()
   }
 
   fun error(msg: String): void {
@@ -43,7 +47,7 @@ class Console(verbosity: ConsoleVerbosity) {
   }
 
   fun note(msg: String): void {
-    this.print("warning", msg, static::kWarningColor, false)
+    this.print("note", msg, static::kNoteColor, false)
   }
 
   private fun print(

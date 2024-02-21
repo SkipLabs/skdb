@@ -3,7 +3,7 @@ name = "skjson"
 version = "0.1.0"
 
 [dependencies]
-skargo = { "path" = "../skargo" }
+std = { path = "../prelude" }
 
 [[bin]]
 name = "skjson"

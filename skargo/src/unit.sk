@@ -1,0 +1,22 @@
+module Skargo;
+
+class Unit(
+  pkg: Package,
+  target: Target,
+  arch: TargetArch,
+  mode: CompileMode,
+) uses Equality, Hashable {
+  fun hash(): Int {
+    (this.pkg, this.target, this.arch, this.mode).hash()
+  }
+}
+
+private base class CompileMode uses Equality, Hashable {
+  children =
+  | CompileModeBuild()
+  | CompileModeRunBuildScript()
+}
+
+type UnitGraph = Map<Unit, Array<Unit>>;
+
+module end;

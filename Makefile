@@ -6,7 +6,7 @@ all: npm build/skdb build/init.sql
 
 PLAYWRIGHT_REPORTER?="line"
 SKARGO_PROFILE?=release
-SKDB_WASM=sql/target/wasm32/$(SKARGO_PROFILE)/skdb.wasm
+SKDB_WASM=sql/target/wasm32-unknown-unknown/$(SKARGO_PROFILE)/skdb.wasm
 SKDB_BIN=sql/target/host/$(SKARGO_PROFILE)/skdb
 SKNPM_BIN=sknpm/target/host/$(SKARGO_PROFILE)/sknpm
 SDKMAN_DIR?=$(HOME)/.sdkman
@@ -35,11 +35,11 @@ build/package/package.json:
 build/package/skdb: build/sknpm
 	cd sql && ../build/sknpm build --profile $(SKARGO_PROFILE) --npm-out ../build/package/skdb
 
-sql/target/wasm32/dev/skdb.wasm: sql/src/*
-	cd sql && skargo build --target wasm32
+sql/target/wasm32-unknown-unknown/dev/skdb.wasm: sql/src/*
+	cd sql && skargo build --target wasm32-unknown-unknown --bin skdb
 
-sql/target/wasm32/release/skdb.wasm: sql/src/*
-	cd sql && skargo build --release --target wasm32
+sql/target/wasm32-unknown-unknown/release/skdb.wasm: sql/src/*
+	cd sql && skargo build --release --target wasm32-unknown-unknown --bin skdb
 
 $(SDKMAN_DIR):
 	cd $(dirname $(SDKMAN_DIR)) && sh -c 'wget -q -O- "https://get.sdkman.io?rcupdate=false" | bash'
@@ -52,7 +52,7 @@ sknpm/target/host/dev/sknpm: sknpm/src/* skargo/src/* prelude/src/*
 	cd sknpm && skargo build
 
 sknpm/target/host/release/sknpm: sknpm/src/* skargo/src/* prelude/src/*
-	cd sknpm && skargo build --release
+	cd sknpm && skargo build --release --bin sknpm
 
 build/sknpm: $(SKNPM_BIN)
 	mkdir -p build
@@ -66,7 +66,7 @@ sql/target/host/dev/skdb: sql/src/*
 	cd sql && skargo build
 
 sql/target/host/release/skdb: sql/src/*
-	cd sql && skargo build --release
+	cd sql && skargo build --release --bin skdb
 
 # TODO: keeping this for now as nearly all test scripts refer to build/skdb
 build/skdb: $(SKDB_BIN)
@@ -100,7 +100,7 @@ fmt:
 
 .PHONY: test
 test:
-	$(MAKE) --keep-going SKARGO_PROFILE=dev SKDB_WASM=sql/target/wasm32/dev/skdb.wasm SKDB_BIN=sql/target/host/dev/skdb test-skfs test-native test-wasm
+	$(MAKE) --keep-going SKARGO_PROFILE=dev SKDB_WASM=sql/target/wasm32-unknown-unknown/dev/skdb.wasm SKDB_BIN=sql/target/host/dev/skdb test-skfs test-native test-wasm
 
 .PHONY: test-skfs
 test-skfs:

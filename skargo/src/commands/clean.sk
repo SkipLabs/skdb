@@ -1,0 +1,43 @@
+module Skargo;
+
+fun clean(): (Cli.Command, (GlobalContext, Cli.ParseResults) ~> void) {
+  (
+    Cli.Command("clean")
+      .about("Remove the target directory")
+      .arg(Cli.StringArg("manifest-path").about("Path to Skargo.toml"))
+      .arg(
+        Cli.StringArg("target")
+          .value_name("TRIPLE")
+          .about("Target triple to clean output for"),
+      )
+      .arg(
+        Cli.StringArg("target-dir")
+          .value_name("PATH")
+          .about("Directory for all generated artifacts"),
+      )
+      .arg(
+        Cli.StringArg("profile")
+          .value_name("PROFILE-NAME")
+          .about("Clean artifacts of the specified profile"),
+      )
+      .arg(
+        Cli.BoolArg("release")
+          .short("r")
+          .long("release")
+          .about("Build artifacts in release mode, with optimizations"),
+      ),
+    execClean,
+  )
+}
+
+fun execClean(gctx: GlobalContext, args: Cli.ParseResults): void {
+  ws = workspace(args, gctx);
+  // TODO: Clean only for a specific arch specified with `--target`?
+  p = System.subprocess(Array["rm", "-rf", ws.target_dir()]);
+  if (!p.success()) {
+    gctx.console.error(subprocess_error_message(p));
+    skipExit(2);
+  }
+}
+
+module end;

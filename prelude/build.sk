@@ -1,5 +1,3 @@
-module StdBuild;
-
 class RuntimeException(code: Int) extends Exception {
   fun getMessage(): String {
     `Runtime error with code ${this.code}`
@@ -12,7 +10,6 @@ class Env(
   name: String,
   profile: String,
   optTarget: ?String,
-  test: Bool,
   verbose: Bool,
 ) {
   static fun create(): Env {
@@ -22,7 +19,6 @@ class Env(
       Environ.var("NAME"),
       Environ.var("PROFILE"),
       Environ.varOpt("TARGET"),
-      Environ.var("TEST").lowercase() == "true",
       Environ.var("VERBOSE").lowercase() == "true",
     )
   }
@@ -67,7 +63,6 @@ class Env(
       `NAME=${this.name}`,
       `PROFILE=${this.profile}`,
       `VERBOSE=${this.verbose}`,
-      `TEST=${this.test}`,
     ];
     this.optTarget.each(t -> !vars = vars.concat(Array[`TARGET=${t}`]));
     vars
@@ -91,5 +86,3 @@ fun main(): void {
     )
   }
 }
-
-module end;

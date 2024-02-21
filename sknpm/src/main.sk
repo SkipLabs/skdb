@@ -1,5 +1,463 @@
 module Sknpm;
 
+class SystemCallException(code: Int, error: ?String = None()) extends Exception
+
+private class UserConfig{
+  formatOnCheck: Bool = false,
+  autoRemoveState: Bool = false,
+  repositories: Array<String> = Array[],
+} {
+  fun update(json: JSON.Object, dir: String): UserConfig {
+    json.maybeGetBool("auto-remove-state").each(v -> !this.autoRemoveState = v);
+    json.maybeGetBool("format-on-check").each(v -> !this.formatOnCheck = v);
+    json.maybeGetArray("repositories").each(v ->
+      !this.repositories = v.value
+        .map(jv -> Path.join(dir, jv.expectString()))
+        .toArray()
+    );
+    this;
+  }
+}
+
+private class Env{
+  rootDir: String,
+  manifest: Manifest,
+  console: Skargo.Console,
+  config: UserConfig,
+} {
+  static fun create(verbosity: Skargo.ConsoleVerbosity): Env {
+    rootDir = findRootDir();
+    config = findUserConfig();
+    Env{
+      rootDir,
+      manifest => Manifest::read(Path.join(rootDir, kManifestFile)),
+      console => Skargo.Console(verbosity),
+      config,
+    }
+  }
+
+  fun getDependencies(): Map<String, Manifest> {
+    // TODO When we start having remote repositories, this will also download the dependencies.
+    getDependencies(this.manifest, this.config.repositories) match {
+    | Success(v) -> v
+    | Failure(e) -> throw e
+    };
+  }
+
+  static fun fromFile(path: String, verbosity: Skargo.ConsoleVerbosity): Env {
+    rootDir = Path.dirname(path);
+    config = findUserConfig(Some(rootDir));
+    Env{
+      rootDir,
+      manifest => Manifest::read(path),
+      console => Skargo.Console(verbosity),
+      config,
+    }
+  }
+}
+
+fun envCmd(args: Cli.ParseResults, fn: (Cli.ParseResults, Env) ~> void): void {
+  env = Env::create(getVerbosity(args));
+  fn(args, env)
+}
+
+private fun run(args: Array<String>, console: Skargo.Console): String {
+  console.status_verbose("Running", args.join(" "));
+  (stdout_cb, stderr_cb) = if (console.verbosity >= Skargo.VerbosityProlix()) {
+    (print_raw, print_error_raw)
+  } else {
+    ((_) -> void, (_) -> void)
+  };
+
+  p = System.subprocess(args, stdout_cb, stderr_cb);
+  if (!p.success()) {
+    console.error(
+      "command exited with non-zero status\n\n" +
+        "Caused by:\n" +
+        "  process did not exit successfully: \`" +
+        args[0] +
+        `\` (exit status: ${p.exitcode()})\n` +
+        "  --- stdout\n" +
+        p.stdout.split("\n").map(l -> "  " + l).join("\n") +
+        "\n" +
+        "  --- stderr\n" +
+        p.stderr.split("\n").map(l -> "  " + l).join("\n") +
+        "\n",
+    );
+    skipExit(p.exitcode());
+  };
+
+  p.stdout
+}
+
+class ManifestDependency{
+  version: ?Semver.VersionReq = None(),
+  path: ?String = None(),
+} {
+  static fun fromTOML(basePath: String, toml: TOML.Value): ManifestDependency {
+    toml match {
+    | TOML.String(v) ->
+      ManifestDependency{version => Some(Semver.VersionReq::fromString(v))}
+    | t @ TOML.Table _ ->
+      t.maybeGetString("path") match {
+      | Some(path) ->
+        ManifestDependency{
+          // FIXME: This breaks on absolute paths.
+          path => Some(Path.join(basePath, path)),
+          version => t
+            .maybeGetString("version")
+            .map(Semver.VersionReq::fromString),
+        }
+      | _ -> invariant_violation("TODO")
+      }
+    | _ -> invariant_violation("Invalid dependency specification.")
+    }
+  }
+}
+
+class TargetTriple(
+  machine: String,
+  vendor: ?String,
+  operatingsystem: ?String,
+) uses Orderable, Show {
+  //
+  static fun fromString(str: String): TargetTriple {
+    components = str.split("-");
+    if (components.isEmpty() || components.size() > 3) {
+      invariant_violation("Invalid target triplet string " + str)
+    };
+    TargetTriple(
+      components[0],
+      components.maybeGet(1) match {
+      | Some(v) if (v != "unknown") -> Some(v)
+      | _ -> None()
+      },
+      components.maybeGet(2) match {
+      | Some(v) if (v != "unknown") -> Some(v)
+      | _ -> None()
+      },
+    )
+  }
+
+  fun isWasm32(): Bool {
+    this.machine == "wasm32"
+  }
+
+  fun allows(target: TargetTriple): Bool {
+    this.machine == target.machine &&
+      this.vendor.default("unknown") == target.vendor.default("unknown") &&
+      this.operatingsystem.default("unknown") ==
+        target.operatingsystem.default("unknown")
+  }
+
+  fun toString(): String {
+    `${this.machine}-${this.vendor.default(
+      "unknown",
+    )}-${this.operatingsystem.default("unknown")}`
+  }
+}
+
+class ManifestBinary(name: String, main: String) uses Equality {
+  static fun fromTOML(toml: TOML.Table): ManifestBinary {
+    name = toml.getString("name");
+    main = toml.getString("main");
+
+    ManifestBinary(name, main)
+  }
+}
+
+class Manifest{
+  name: String,
+  path: String,
+  version: Semver.Version,
+  srcs: Array<String>,
+  tests: Array<String>,
+  testHarness: String,
+  dependencies: Map<String, ManifestDependency>,
+  buildDependencies: Map<String, ManifestDependency>,
+  bin: Array<ManifestBinary>,
+} uses Equality {
+  //
+  fun ==(other: Manifest): Bool {
+    this.name == other.name &&
+      this.path == other.path &&
+      this.version == other.version
+  }
+
+  static fun read(path: String): Manifest {
+    basePath = Path.dirname(path);
+    toml = TOML.decode(FileSystem.readTextFile(path));
+    package = toml.getTable("package");
+    name = package.getString("name");
+    version = Semver.Version::fromString(package.getString("version"));
+
+    srcs = package.maybeGetArray("srcs") match {
+    | Some(arr) -> arr.map(x -> x.expectString())
+    | _ ->
+      FileSystem.readFilesRecursive(Path.join(basePath, "src"), f ->
+        f.endsWith(".sk")
+      ).toArray()
+    };
+
+    testHarness = package.maybeGetString("test-harness").default("SKTest.main");
+
+    tests = package.maybeGetArray("tests") match {
+    | Some(arr) -> arr.map(x -> x.expectString())
+    | _ ->
+      testsPath = Path.join(basePath, "tests");
+      if (FileSystem.exists(testsPath)) {
+        FileSystem.readFilesRecursive(testsPath, f ->
+          f.endsWith(".sk")
+        ).toArray()
+      } else {
+        Array[]
+      }
+    };
+
+    dependencies = toml.maybeGetTable("dependencies") match {
+    | Some(table) ->
+      table.map.map((_, v) -> ManifestDependency::fromTOML(basePath, v))
+    | _ -> Map[]
+    };
+
+    buildDependencies = toml.maybeGetTable("build-dependencies") match {
+    | Some(bDependencies) ->
+      bDependencies.map.map((_, v) -> ManifestDependency::fromTOML(basePath, v))
+    | _ -> Map[]
+    };
+
+    bin = toml.maybeGetArray("bin") match {
+    | Some(arr) -> arr.map(t -> ManifestBinary::fromTOML(t.expectTable()))
+    | None() -> Array[]
+    };
+
+    Manifest{
+      name,
+      path => basePath,
+      version,
+      srcs,
+      tests,
+      testHarness,
+      dependencies,
+      buildDependencies,
+      bin,
+    }
+  }
+}
+
+private fun fetchLatestManifest(
+  name: String,
+  constraint: ManifestDependency,
+  reps: Array<String>,
+): ?Manifest {
+  constraint.path match {
+  | Some(path) -> return Some(Manifest::read(Path.join(path, kManifestFile)))
+  | _ -> void
+  };
+
+  constraint.version match {
+  | None() -> invariant_violation("unreachable")
+  | Some(r) ->
+    // Fetch highest available version within range.
+    optLast: ?Manifest = None();
+    for (repo in reps) {
+      dir = Path.join(repo, name);
+      mFile = Path.join(dir, kManifestFile);
+      if (FileSystem.exists(mFile)) {
+        manifest = Manifest::read(mFile);
+        if (r.matches(manifest.version)) {
+          !optLast = optLast match {
+          | Some(
+            last,
+          ) if (r.matches(last.version) && last.version < manifest.version) ->
+            Some(manifest)
+          | None() -> Some(manifest)
+          | _ -> optLast
+          }
+        };
+      }
+    };
+    optLast
+  }
+}
+
+// TODO: Backtrack on conflict, and try previous versions.
+private fun solveDependencies(
+  manifest: Manifest,
+  solved: mutable Map<String, Manifest>,
+  reps: Array<String>,
+): ?UnsatisfiableDependency {
+  for ((name, constraint) in manifest.dependencies.items()) {
+    if (solved.containsKey(name)) {
+      fetchLatestManifest(name, constraint, reps) match {
+      | Some(depManifest) if (depManifest.version == solved[name].version) ->
+        void
+      | _ ->
+        return Some(UnsatisfiableDependency(manifest.path, name, constraint))
+      }
+    } else {
+      fetchLatestManifest(name, constraint, reps) match {
+      | Some(depManifest) ->
+        solved.set(name, depManifest);
+        res = solveDependencies(depManifest, solved, reps);
+        if (res.isSome()) {
+          return res
+        }
+      | _ ->
+        return Some(UnsatisfiableDependency(manifest.path, name, constraint))
+      }
+    };
+  };
+  None()
+}
+
+class UnsatisfiableDependency(
+  path: String,
+  name: String,
+  constraint: ManifestDependency,
+) extends Exception {}
+
+fun getDependencies(
+  manifest: Manifest,
+  reps: Array<String>,
+): Result<Map<String, Manifest>, Exception> {
+  result = mutable Map[manifest.name => manifest];
+  solveDependencies(manifest, result, reps)
+    .map(e -> Failure(e))
+    .default(Success(result.chill()));
+}
+
+const kManifestFile: String = "Skargo.toml";
+const kVersionFile: String = "version.sk";
+const kDevProfile: String = "dev";
+const kReleaseProfile: String = "release";
+const kDebugProfile: String = "debug";
+const kUserConfiguration: String = ".skargoconfig";
+const kDefaultTarget: String = "host";
+const kTargetDir: String = "target";
+
+private fun findUserConfig(optPath: ?String = None()): UserConfig {
+  configFiles = mutable Vector<String>[];
+  path = optPath.default(getcwd());
+  loop {
+    file = Path.join(path, kUserConfiguration);
+    if (FileSystem.exists(file)) {
+      configFiles.push(file)
+    };
+    if (Path.isRoot(path)) {
+      break void;
+    };
+    !path = Path.parentname(path)
+  };
+  config = UserConfig{};
+  configFiles.reversed().each(cFile ->
+    try {
+      json = JSON.decode(FileSystem.readTextFile(cFile)).expectObject();
+      !config = config.update(json, Path.parentname(cFile));
+    } catch {
+    | _exn -> void
+    }
+  );
+  config
+}
+
+private fun findRootDir(): String {
+  path = getcwd();
+
+  loop {
+    if (FileSystem.exists(Path.join(path, kManifestFile))) {
+      return path
+    };
+    if (Path.isRoot(path)) {
+      invariant_violation(
+        `Could not find \`${kManifestFile}\` in \`${getcwd()} or any parent directory.\``,
+      )
+    };
+
+    !path = Path.parentname(path)
+  }
+}
+
+fun getProfile(args: Cli.ParseResults): String {
+  args.maybeGetString("profile") match {
+  | Some(p) -> p
+  | None() if (args.getBool("release")) -> kReleaseProfile
+  | None() -> kDevProfile
+  }
+}
+
+fun getVerbosity(args: Cli.ParseResults): Skargo.ConsoleVerbosity {
+  // TODO: Properly support -q/--quiet for VerbosityQuiet, -v for VerbosityVerbose,
+  // and -vv for VerbosityProlix.
+  if (args.getBool("verbose")) {
+    Skargo.VerbosityProlix()
+  } else {
+    Skargo.VerbosityNormal()
+  }
+}
+
+private class BuildContext{
+  env: Env,
+  skc: String,
+  targetDir: String,
+  target: ?TargetTriple,
+  profile: String,
+  stateDb: String,
+  files: Array<String>,
+  deps: Map<String, Manifest>,
+} {
+  static fun create(
+    env: Env,
+    target: ?String,
+    targetDirOpt: ?String,
+    profile: String,
+  ): BuildContext {
+    targetDir = targetDirOpt match {
+    | Some(d) -> d
+    | None() -> Path.join(getTargetDir(env.rootDir, target), profile)
+    };
+    skc = Environ.varOpt("SKC").default("skc");
+    deps = env.getDependencies();
+    BuildContext{
+      env,
+      skc,
+      targetDir,
+      target => target.map(TargetTriple::fromString),
+      profile,
+      stateDb => Path.join(targetDir, "state.db"),
+      files => getFiles(env.manifest, deps).concat(
+        Array[Path.join(targetDir, kVersionFile)],
+      ),
+      deps,
+    }
+  }
+
+  static fun hostBinary(env: Env, profile: String, binary: String): String {
+    Path.join(Path.join(getTargetDir(env.rootDir, None()), profile), binary);
+  }
+
+  fun isWasm32(): Bool {
+    this.target.map(t -> t.isWasm32()).default(false);
+  }
+}
+
+private fun getTargetDir(rootDir: String, targetOpt: ?String): String {
+  // TODO: Build artifacts in subdirectory corresponding to build profile (dev/release).
+  dir = Path.join(rootDir, kTargetDir);
+  Path.join(dir, targetOpt.default(kDefaultTarget))
+}
+
+private fun getFiles(
+  manifest: Manifest,
+  deps: Map<String, Manifest>,
+): Array<String> {
+  files = manifest.tests;
+  for (dep in deps) {
+    !files = files.concat(dep.srcs)
+  };
+  files.collect(Array)
+}
+
 const kAuthor: String = "Skiplabs";
 
 class NpmVersionException(
@@ -131,14 +589,14 @@ class Package(
   optBinary: ?String = None(),
   sideEffects: Bool = false,
 ) {
-  static fun check(manifest: Skargo.Manifest): void {
+  static fun check(manifest: Manifest): void {
     file = Path.join(manifest.path, "npm.json");
     if (!FileSystem.exists(file)) {
       throw NpmDefinitionException()
     }
   }
 
-  static fun create(manifest: Skargo.Manifest, test: Bool = false): Package {
+  static fun create(manifest: Manifest, test: Bool = false): Package {
     file = Path.join(manifest.path, "npm.json");
     if (FileSystem.exists(file)) {
       contents = FileSystem.readTextFile(file);
@@ -156,7 +614,8 @@ class Package(
       Package(
         if (test) "sk_tests" else manifest.name,
         Some(kAuthor),
-        Version::fromString(SkargoVersion.kVersion),
+        // FIXME
+        Version::fromString("0.1.0-FIXME"),
       )
     }
   }
@@ -218,7 +677,7 @@ fun main(): void {
         .about("Use verbose output")
         .global(),
     );
-  suppliers = Array[checker, build, test, runner, publish, Skargo.help];
+  suppliers = Array[checker, build, test, runner, publish, help];
   commands = mutable Map[];
   for (supplier in suppliers) {
     (subcommand, cmdFn) = supplier();
@@ -229,7 +688,8 @@ fun main(): void {
   args = cmd.parseArgs();
   if (args.getBool("version")) {
     print_string(
-      Environ.args().next().default("sknpm") + " " + SkargoVersion.kVersion,
+      // FIXME
+      Environ.args().next().default("sknpm") + " " + "FIXME",
     );
     skipExit(0);
   } else {
@@ -242,7 +702,7 @@ fun main(): void {
             handler(args);
             0
           } catch {
-          | Skargo.SystemCallException(code, _) -> code
+          | SystemCallException(code, _) -> code
           | e @ NpmDefinitionException _
           | e @ GitDiffException _ ->
             print_error(e.getMessage());
@@ -272,17 +732,17 @@ fun checker(): (Cli.Command, Cli.ParseResults ~> void) {
           .long("test")
           .about("Run tsc on ts tests files, with build package"),
       ),
-    args ~> Skargo.envCmd(args, execCheck),
+    args ~> envCmd(args, execCheck),
   )
 }
 
-fun execCheck(args: Cli.ParseResults, env: Skargo.Env): void {
+fun execCheck(args: Cli.ParseResults, env: Env): void {
   (tsDir, info, n) = if (args.getBool("test")) {
     tsDir = Path.join(env.rootDir, "ts/tests");
     invariant(FileSystem.exists(tsDir), "No typescript test to check");
-    bc = Skargo.BuildContext::create(
+    bc = BuildContext::create(
       env,
-      Some("wasm32"),
+      Some("wasm32-unknown-unknown"),
       None(),
       Skargo.kDevProfile,
     );
@@ -330,16 +790,16 @@ fun build(): (Cli.Command, Cli.ParseResults ~> void) {
           "Build minimal html support for specified launcher",
         ),
       ),
-    args ~> Skargo.envCmd(args, execBuild),
+    args ~> envCmd(args, execBuild),
   )
 }
 
-fun execBuild(args: Cli.ParseResults, env: Skargo.Env): void {
-  bc = Skargo.BuildContext::create(
+fun execBuild(args: Cli.ParseResults, env: Env): void {
+  bc = BuildContext::create(
     env,
-    Some("wasm32"),
+    Some("wasm32-unknown-unknown"),
     args.maybeGetString("target-dir"),
-    Skargo.getProfile(args),
+    getProfile(args),
   );
   _ = buildIfNeeded(bc, false);
   _ = manage(bc, Package::create(env.manifest), args.maybeGetString("npm-out"));
@@ -390,24 +850,24 @@ fun test(): (Cli.Command, Cli.ParseResults ~> void) {
           .long("release")
           .about("Build artifacts in release mode, with optimizations"),
       ),
-    args ~> Skargo.envCmd(args, execTest),
+    args ~> envCmd(args, execTest),
   )
 }
 
-fun execTest(args: Cli.ParseResults, env: Skargo.Env): void {
+fun execTest(args: Cli.ParseResults, env: Env): void {
   package = Package::create(env.manifest, true);
-  bc = Skargo.BuildContext::create(
+  bc = BuildContext::create(
     env,
-    Some("wasm32"),
+    Some("wasm32-unknown-unknown"),
     args.maybeGetString("target-dir"),
-    Skargo.getProfile(args),
+    getProfile(args),
   );
   tests = Path.join(env.manifest.path, "ts/tests");
   targetDir = Path.join(bc.targetDir, "tests");
   customTests = FileSystem.exists(tests);
   if (!customTests) {
     !bc.env.manifest.bin = Array[
-      Skargo.ManifestBinary("test", env.manifest.testHarness),
+      ManifestBinary("test", env.manifest.testHarness),
     ];
   };
   _ = buildIfNeeded(bc, !customTests);
@@ -422,7 +882,7 @@ fun execTest(args: Cli.ParseResults, env: Skargo.Env): void {
   } else {
     saveArchive(bc.targetDir);
   };
-  Skargo.run(
+  _ = run(
     Array["npm", "i", "--prefix", targetDir, "--save-dev", "@types/node"],
     bc.env.console,
   );
@@ -491,19 +951,15 @@ fun execTest(args: Cli.ParseResults, env: Skargo.Env): void {
     `--reporter=${reporter.default("line")}`,
   ].concat(filters).concat(targets);
   try {
-    Skargo.run(Array["npx", "playwright", "install"], bc.env.console);
+    _ = run(Array["npx", "playwright", "install"], bc.env.console);
     p = System.subprocess(cmd, print_raw, print_error_raw);
     if (!p.success()) {
-      throw Skargo.SystemCallException(p.exitcode());
+      throw SystemCallException(p.exitcode());
     };
-    processes.each(p ->
-      Skargo.run(Array["kill", p.toString()], bc.env.console)
-    );
+    processes.each(p -> _ = run(Array["kill", p.toString()], bc.env.console));
   } catch {
   | exn ->
-    processes.each(p ->
-      Skargo.run(Array["kill", p.toString()], bc.env.console)
-    );
+    processes.each(p -> _ = run(Array["kill", p.toString()], bc.env.console));
     throw exn
   }
 }
@@ -526,7 +982,7 @@ fun runService(
       print_error_raw(p.stderr);
     };
     if (!p.success()) {
-      throw Skargo.SystemCallException(p.exitcode());
+      throw SystemCallException(p.exitcode());
     };
     p.stdout.split("\n").each(line -> {
       indexOf(line, "sknpm") match {
@@ -552,7 +1008,7 @@ fun runService(
   };
 }
 
-fun buildIfNeeded(bc: Skargo.BuildContext, test: Bool): Bool {
+fun buildIfNeeded(bc: BuildContext, test: Bool): Bool {
   checker = Skbuild.TimeChecker();
   bc.files.each(f -> !checker = checker.add(f));
   buildNeeded = for (bin in bc.env.manifest.bin) {
@@ -572,7 +1028,7 @@ fun buildIfNeeded(bc: Skargo.BuildContext, test: Bool): Bool {
 }
 
 fun manage(
-  bc: Skargo.BuildContext,
+  bc: BuildContext,
   package: Package,
   optTarget: ?String = None(),
   optBinName: ?String = None(),
@@ -580,7 +1036,7 @@ fun manage(
 ): String {
   npmDir = optTarget.default(Path.join(bc.targetDir, "npm"));
   if (clean && FileSystem.exists(npmDir)) {
-    Skargo.run(Array["rm", "-rf", Path.join(npmDir, "*")], bc.env.console);
+    _ = run(Array["rm", "-rf", Path.join(npmDir, "*")], bc.env.console);
   };
   tsDir = Path.join(bc.targetDir, "ts");
   checkDir(tsDir);
@@ -591,15 +1047,23 @@ fun manage(
     if (FileSystem.exists(depsDir)) {
       dependencies.push(v)
     };
-    depsResFile = Path.join(bc.targetDir, `deps/${v.name}/resources.json`);
-    if (FileSystem.exists(depsResFile)) {
-      contents = FileSystem.readTextFile(depsResFile);
-      json = JSON.decode(contents).expectObject();
-      json.value.each((f, v) -> {
-        copy(f, Path.join(tsDir, Path.basename(f)));
-        resources.add(f, v.expectString())
-      })
-    }
+
+    // TODO: This is dirty and britle.
+    for (file in FileSystem.readDirectory(Path.join(bc.targetDir, "build"))) {
+      if (file.startsWith(v.name)) {
+        depsResFile = Path.join(bc.targetDir, `build/${file}/resources.json`);
+        if (FileSystem.exists(depsResFile)) {
+          contents = FileSystem.readTextFile(depsResFile);
+          json = JSON.decode(contents).expectObject();
+          json.value.each((f, v) -> {
+            copy(f, Path.join(tsDir, Path.basename(f)));
+            resources.add(f, v.expectString())
+          })
+        };
+
+        break void
+      }
+    };
   });
   pckDependencies = mutable Map[];
   dependencies.each(dep -> {
@@ -818,7 +1282,7 @@ fun tsConfig(deps: Vector<String>): String {
 
 fun tsc(tsDir: String, link: ?(String, String), console: Skargo.Console): void {
   tsconfig = Path.join(tsDir, "tsconfig.json");
-  Skargo.run(
+  _ = run(
     Array["npm", "i", "--prefix", tsDir, "--save-dev", "@types/node"],
     console,
   );
@@ -828,12 +1292,12 @@ fun tsc(tsDir: String, link: ?(String, String), console: Skargo.Console): void {
       (name, path) = l;
       symlink = Path.join(node_modules, name);
       if (FileSystem.exists(symlink)) {
-        Skargo.run(Array["rm", symlink], console);
+        _ = run(Array["rm", symlink], console);
       };
-      Skargo.run(Array["ln", "-s", path, symlink], console)
+      _ = run(Array["ln", "-s", path, symlink], console)
     }
   });
-  Skargo.run(Array["tsc", "--project", tsconfig], console);
+  _ = run(Array["tsc", "--project", tsconfig], console);
 }
 
 fun copyToDir(tsFile: String, dir: String): void {
@@ -1102,7 +1566,7 @@ fun writeRun(target: String, console: Skargo.Console): void {
     runFile,
     "#!/bin/bash\npython3 -m http.server 8000\n",
   );
-  Skargo.run(Array["chmod", "+x", runFile], console);
+  _ = run(Array["chmod", "+x", runFile], console);
 }
 
 fun license(): String {
@@ -1189,24 +1653,24 @@ fun execRun(args: Cli.ParseResults): void {
       FileSystem.exists(manifestFile),
       `Invalid skargo directory ${path}`,
     );
-    Skargo.Env::fromFile(
+    Env::fromFile(
       manifestFile,
       if (args.getBool("verbose")) Skargo.VerbosityVerbose() else {
         Skargo.VerbosityNormal()
       },
     )
   | _ ->
-    Skargo.Env::create(
+    Env::create(
       if (args.getBool("verbose")) Skargo.VerbosityVerbose() else {
         Skargo.VerbosityNormal()
       },
     )
   };
-  bc = Skargo.BuildContext::create(
+  bc = BuildContext::create(
     env,
-    Some("wasm32"),
+    Some("wasm32-unknown-unknown"),
     args.maybeGetString("target-dir"),
-    Skargo.getProfile(args),
+    getProfile(args),
   );
   npmDir = args
     .maybeGetString("npm-out")
@@ -1217,7 +1681,7 @@ fun execRun(args: Cli.ParseResults): void {
     npmInstall = Array["npm", "--prefix", npmDir, "install"];
     exitCode = system(npmInstall.join(" "));
     if (exitCode != 0) {
-      throw Skargo.SystemCallException(exitCode);
+      throw SystemCallException(exitCode);
     }
   };
   cmdArgs = Array["npm", "--prefix", npmDir, "run"].concat(args.extra);
@@ -1227,7 +1691,7 @@ fun execRun(args: Cli.ParseResults): void {
   };
   p = system(cmdArgs.join(" "));
   if (p != 0) {
-    throw Skargo.SystemCallException(p);
+    throw SystemCallException(p);
   }
 }
 
@@ -1259,15 +1723,12 @@ fun publish(): (Cli.Command, Cli.ParseResults ~> void) {
         ),
       )
       .extra(),
-    args ~> Skargo.envCmd(args, execPublish),
+    args ~> envCmd(args, execPublish),
   )
 }
 
-fun execPublish(args: Cli.ParseResults, env: Skargo.Env): void {
-  gdiff = run(
-    Array["git", "diff"],
-    env.console.verbosity >= Skargo.VerbosityVerbose(),
-  );
+fun execPublish(args: Cli.ParseResults, env: Env): void {
+  gdiff = run(Array["git", "diff"], env.console);
   if (!gdiff.isEmpty()) {
     throw GitDiffException()
   };
@@ -1278,10 +1739,7 @@ fun execPublish(args: Cli.ParseResults, env: Skargo.Env): void {
     .map(Version::fromString)
     .default(package.version);
   if (!args.getBool("force")) {
-    view = run(
-      Array["npm", "view", package.name, "--json"],
-      env.console.verbosity >= Skargo.VerbosityVerbose(),
-    );
+    view = run(Array["npm", "view", package.name, "--json"], env.console);
     json = JSON.decode(view).expectObject();
     optVersion = json.maybeGetArray("versions").flatMap(versions -> {
       sorted = versions.value
@@ -1298,24 +1756,28 @@ fun execPublish(args: Cli.ParseResults, env: Skargo.Env): void {
   if (package.version != version) {
     package.update(env.manifest.path, version)
   };
-  bc = Skargo.BuildContext::create(
+  bc = BuildContext::create(
     env,
-    Some("wasm32"),
+    Some("wasm32-unknown-unknown"),
     args.maybeGetString("target-dir"),
-    Skargo.getProfile(args),
+    getProfile(args),
   );
-  Skargo.run(
-    Array["skargo", "build", "--target", "wasm32", "--profile", bc.profile],
+  _ = run(
+    Array[
+      "skargo",
+      "build",
+      "--target",
+      "wasm32-unknown-unknown",
+      "--profile",
+      bc.profile,
+    ],
     bc.env.console,
   );
   userNpmDir = args.maybeGetString("npm-out");
   npmDir = manage(bc, Package::create(env.manifest), userNpmDir, None(), true);
   Environ.set_current_dir(npmDir);
   if (userNpmDir.isSome()) {
-    udiff = run(
-      Array["git", "diff"],
-      env.console.verbosity >= Skargo.VerbosityVerbose(),
-    );
+    udiff = run(Array["git", "diff"], env.console);
     if (!udiff.isEmpty()) {
       throw GitDiffException()
     }
@@ -1324,15 +1786,37 @@ fun execPublish(args: Cli.ParseResults, env: Skargo.Env): void {
   | Some(tag) -> args.extra.concat(Array["--tag", tag.toString()])
   | _ -> args.extra
   };
-  Skargo.run(Array["npm", "publish"].concat(cmdArgs), bc.env.console);
+  _ = run(Array["npm", "publish"].concat(cmdArgs), bc.env.console);
 }
 
-fun run(args: Array<String>, verbose: Bool): String {
-  if (verbose) {
-    print_error(`>> ${args.join(" ")}`)
+fun help(): (Cli.Command, Cli.ParseResults ~> void) {
+  (
+    Cli.Command("help")
+      .arg(
+        Cli.StringArg("command")
+          .positional()
+          .about(
+            "If specified, the subcommand for which help is to be displayed",
+          ),
+      )
+      .about("Displays help for a skargo subcommand"),
+    args ~> envCmd(args, execHelp),
+  )
+}
+
+fun execHelp(args: Cli.ParseResults, _env: Env): void {
+  optSubcmd = args.maybeGetString("command");
+  optSubcmd.flatMap(subcmd ->
+    args.cmd._subcommands.filter(cmd -> cmd.name == subcmd).maybeGet(0)
+  ) match {
+  | Some(cmd) -> print_string(Cli.usage(cmd, true, Some(args.cmd)))
+  | _ ->
+    optSubcmd match {
+    | Some(subcmd) -> print_error(`error: Invalid subcommand ${subcmd}.`)
+    | _ -> print_error("error: No subcommand specified.")
+    };
+    print_string(Cli.usage(args.cmd, true))
   };
-  p = System.subprocess(args);
-  p.stdout
 }
 
 fun syncDirs(
@@ -1403,7 +1887,7 @@ private fun skargo(build: Bool, profile: String, verbose: Bool): void {
     "skargo",
     if (build) "build" else "test",
     "--target",
-    "wasm32",
+    "wasm32-unknown-unknown",
     "--profile",
     profile,
   ];
@@ -1417,7 +1901,7 @@ private fun skargo(build: Bool, profile: String, verbose: Bool): void {
     print_error_raw(p.stderr);
   };
   if (!success) {
-    throw Skargo.SystemCallException(p.exitcode());
+    throw SystemCallException(p.exitcode());
   }
 }
 

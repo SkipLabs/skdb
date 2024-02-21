@@ -4,5 +4,7 @@ version = "0.1.0"
 test-harness = "TOMLTests.main"
 
 [dependencies]
-sktest = { "path" = "../sktest" }  # TODO: Move this to dev-dependencies.
-std = { "path" = "../prelude" }
+std = { path = "../prelude" }
+
+[dev-dependencies]
+sktest = { path = "../sktest" }

@@ -8,7 +8,9 @@ module SKDB;
 
 @export("getVersion")
 fun getVersion(): String {
-  `${SkargoVersion.kVersion} (${SkargoVersion.kCommit})`
+  // FIXME
+  // #env("SKARGO_PKG_VERSION")
+  "FIXME (FIXME)"
 }
 
 fun getFieldNames(

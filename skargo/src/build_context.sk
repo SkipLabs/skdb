@@ -1,68 +1,307 @@
 module Skargo;
 
-private class BuildContext{
-  env: Env,
-  skc: String,
-  targetDir: String,
-  target: ?TargetTriple,
-  profile: String,
-  stateDb: String,
-  files: Array<String>,
-  deps: Map<String, Manifest>,
-} {
-  static fun create(
-    env: Env,
-    target: ?String,
-    targetDirOpt: ?String,
-    profile: String,
-  ): BuildContext {
-    targetDir = targetDirOpt match {
-    | Some(d) -> d
-    | None() -> Path.join(getTargetDir(env.rootDir, target), profile)
-    };
-    skc = Environ.varOpt("SKC").default("skc");
-    deps = env.getDependencies();
-    BuildContext{
-      env,
-      skc,
-      targetDir,
-      target => target.map(TargetTriple::fromString),
-      profile,
-      stateDb => Path.join(targetDir, "state.db"),
-      files => getFiles(env.manifest, deps).concat(
-        Array[Path.join(targetDir, kVersionFile)],
-      ),
-      deps,
-    }
+private class Package(
+  manifest: Manifest,
+  manifest_path: String,
+) uses Equality, Hashable, Show {
+  static fun read(manifest_path: String): Package {
+    Package(Manifest::read(manifest_path), manifest_path)
   }
 
-  static fun hostBinary(env: Env, profile: String, binary: String): String {
-    Path.join(Path.join(getTargetDir(env.rootDir, None()), profile), binary);
+  fun name(): String {
+    this.manifest.package_id.name
+  }
+
+  fun version(): Semver.Version {
+    this.manifest.package_id.version
+  }
+
+  fun ==(other: Package): Bool {
+    this.manifest.package_id == other.manifest.package_id
+  }
+
+  fun root(): String {
+    Path.dirname(this.manifest_path)
+  }
+
+  fun hash(): Int {
+    // TODO: Proper hash
+    this.manifest.package_id.hash()
+  }
+
+  fun toString(): String {
+    `${this.manifest.package_id.name} v${
+      this.manifest.package_id.version
+    } (${this.root()})`
+  }
+}
+
+class TargetTriple(
+  arch: String,
+  vendor: ?String,
+  sys: ?String,
+  abi: ?String,
+) uses Orderable, Hashable, Show {
+  static fun fromString(str: String): TargetTriple {
+    components = str.split("-");
+    if (components.isEmpty() || components.size() > 4) {
+      invariant_violation("Invalid target triplet string " + str)
+    };
+    TargetTriple(
+      components[0],
+      components.maybeGet(1) match {
+      | Some(v) if (v != "unknown") -> Some(v)
+      | _ -> None()
+      },
+      components.maybeGet(2) match {
+      | Some(v) if (v != "unknown") -> Some(v)
+      | _ -> None()
+      },
+      components.maybeGet(3) match {
+      | Some(v) if (v != "unknown") -> Some(v)
+      | _ -> None()
+      },
+    )
   }
 
   fun isWasm32(): Bool {
-    this.target.map(t -> t.isWasm32()).default(false);
+    this.arch == "wasm32"
+  }
+
+  fun toString(): String {
+    `${this.arch}-${this.vendor.default("unknown")}-${this.sys.default(
+      "unknown",
+    )}` +
+      this.abi match {
+      | Some(v) -> `-${v}`
+      | None() -> ""
+      }
   }
 }
 
-private fun getTargetDir(rootDir: String, targetOpt: ?String): String {
-  // TODO: Build artifacts in subdirectory corresponding to build profile (dev/release).
-  dir = Path.join(rootDir, kTargetDir);
-  Path.join(dir, targetOpt.default(kDefaultTarget))
+private base class TargetArch uses Equality, Hashable, Show {
+  children =
+  | TargetArchHost()
+  | TargetArchTriple(TargetTriple)
+
+  fun toString(): String
+  | TargetArchHost() -> "host"
+  | TargetArchTriple(triple) -> triple.toString()
 }
 
-private fun getFiles(
-  manifest: Manifest,
-  deps: Map<String, Manifest>,
-): Array<String> {
-  files = manifest.tests;
-  for (dep in deps) {
-    // NOTE: This is a temporary hack to avoid duplicate definitions between the
-    // automatically provided `libstd.sklib` and the local override.
-    if (dep.name == "std") continue;
-    !files = files.concat(dep.srcs)
+private class BuildContext{
+  ws: Workspace,
+  gctx: GlobalContext,
+  build_config: BuildConfig,
+  roots: Array<Unit>,
+  unit_graph: UnitGraph,
+  target_dir: String,
+  skc: Skc,
+}
+
+// TODO: Return Result<...>
+fun create_bctx(
+  gctx: GlobalContext,
+  ws: Workspace,
+  opts: CompileOptions,
+): BuildContext {
+  resolved_packages = resolve(ws.package);
+
+  roots = generate_root_units(gctx, ws.package, opts.filter, opts.build_config);
+  unit_graph = build_unit_dependencies(roots, resolved_packages);
+  skc = Skc(Environ.varOpt("SKC").default("skc"));
+  target_dir = ws.target_dir();
+  BuildContext{
+    ws,
+    gctx,
+    build_config => opts.build_config,
+    roots,
+    unit_graph,
+    target_dir,
+    skc,
+  }
+}
+
+private fun generate_root_units(
+  gctx: GlobalContext,
+  package: Package,
+  filter: CompileFilter,
+  build_config: BuildConfig,
+): Array<Unit> {
+  res = mutable Vector[];
+
+  targets = filter match {
+  | CompileFilterDefault() ->
+    package.manifest.targets
+      .filter(t -> t.is_lib() || t.is_bin() || t.is_test())
+      .collect(Array)
+  | CompileFilterOnly{lib, bins, tests} ->
+    if (lib is LibRuleTrue _) {
+      res.push(package.manifest.lib_target().fromSome());
+    };
+    res.extend(
+      list_rule_targets(
+        gctx,
+        package.manifest.targets.filter(t -> t.is_bin()),
+        bins,
+        "bin",
+      ),
+    );
+    res.extend(
+      list_rule_targets(
+        gctx,
+        package.manifest.targets.filter(t -> t.is_test()),
+        tests,
+        "test",
+      ),
+    );
+    res.collect(Array)
   };
-  files.collect(Array)
+  targets
+    .map(target ->
+      Unit(package, target, build_config.requested_arch, CompileModeBuild())
+    )
+    .collect(Array)
+}
+
+private fun list_rule_targets(
+  gctx: GlobalContext,
+  targets: Array<Target>,
+  rule: FilterRule,
+  desc: String,
+): Array<Target> {
+  rule match {
+  | FilterRuleAll() -> targets
+  | FilterRuleJust(names) ->
+    res = mutable Vector[];
+    for (name in names) {
+      res.push(find_named_target(gctx, targets, name, desc))
+    };
+    res.collect(Array)
+  }
+}
+
+private fun find_named_target(
+  gctx: GlobalContext,
+  targets: Array<Target>,
+  name: String,
+  desc: String,
+): Target {
+  targets.find(t -> t.name == name) match {
+  | Some(target) -> target
+  | None() ->
+    suggestions = targets.map(t -> `\t${t.name}`).join("\n");
+    gctx.console.error(
+      `no ${desc} target named \`${name}\`.\nAvailable ${desc} targets:\n${suggestions}`,
+    );
+    skipExit(3)
+  }
+}
+
+fun build_unit_dependencies(
+  roots: Array<Unit>,
+  resolved_packages: Map<String, Package>,
+): UnitGraph {
+  unit_graph = mutable UnitGraph[];
+  for (unit in roots) {
+    build_unit_dependencies_for_unit(unit, resolved_packages, unit_graph)
+  };
+
+  unit_graph.chill()
+}
+
+private fun build_unit_dependencies_for_unit(
+  unit: Unit,
+  resolved_packages: Map<String, Package>,
+  unit_graph: mutable UnitGraph,
+  parents: List<Unit> = List.Nil(),
+): void {
+  if (unit_graph.containsKey(unit)) {
+    if (parents.contains(unit)) {
+      invariant_violation(
+        `Dependency cycle found: ` +
+          parents.map(u -> u.pkg.name()).reversed().join(" -> "),
+      );
+      // TODO: Proper error message with exit code 2.
+    };
+    return void
+  };
+
+  unit_deps = compute_deps(unit, resolved_packages);
+  unit_graph![unit] = unit_deps;
+  for (dep in unit_deps) {
+    build_unit_dependencies_for_unit(
+      dep,
+      resolved_packages,
+      unit_graph,
+      List.Cons(unit, parents),
+    )
+  }
+}
+
+private fun compute_deps(
+  unit: Unit,
+  resolved_packages: Map<String, Package>,
+): Array<Unit> {
+  if (
+    unit.target.kind is CustomBuildTarget _ &&
+    unit.mode is CompileModeRunBuildScript _
+  ) {
+    return Array[
+      unit with {arch => TargetArchHost(), mode => CompileModeBuild()},
+    ]
+  };
+
+  assert(unit.mode is CompileModeBuild _);
+
+  unit_deps = mutable Vector[];
+
+  unit.target.kind match {
+  | BinTarget _
+  | TestTarget _ ->
+    // TODO: Allow bin without lib.
+    unit_deps.push(
+      Unit(
+        unit.pkg,
+        unit.pkg.manifest.lib_target().fromSome(),
+        unit.arch,
+        CompileModeBuild(),
+      ),
+    )
+  | LibTarget _ ->
+    unit.pkg.manifest.build_script_target() match {
+    | Some(target) ->
+      unit_deps.push(
+        Unit(unit.pkg, target, unit.arch, CompileModeRunBuildScript()),
+      )
+    | None() -> void
+    }
+  | _ -> void
+  };
+
+  deps = unit.pkg.manifest.dependencies.filter(dep ->
+    unit.target.kind match {
+    // Binary targets always depend on the lib target, which pulls in the
+    // dependencies transitively.
+    | BinTarget _ -> false
+    | LibTarget _ -> dep.kind is NormalDep _
+    | TestTarget _ -> dep.kind is DevelopmentDep _
+    | CustomBuildTarget _ -> dep.kind is BuildDep _
+    }
+  );
+  for (dep in deps) {
+    dep_package = resolved_packages[dep.name];
+    unit_deps.push(
+      Unit(
+        dep_package,
+        dep_package.manifest.lib_target().fromSome(),
+        unit.arch,
+        CompileModeBuild(),
+      ),
+    )
+  };
+
+  unit_deps.collect(Array)
 }
 
 module end;

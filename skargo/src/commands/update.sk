@@ -1,0 +1,15 @@
+module Skargo;
+
+fun update(): (Cli.Command, (GlobalContext, Cli.ParseResults) ~> void) {
+  (
+    Cli.Command("update").about("Update dependencies listed in Skargo.lock"),
+    execUpdate,
+  )
+}
+
+fun execUpdate(_gctx: GlobalContext, _args: Cli.ParseResults): void {
+  invariant_violation("TODO");
+  void
+}
+
+module end;

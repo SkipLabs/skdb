@@ -28,7 +28,8 @@ fun main(): void {
   args = cmd.parseArgs();
   if (args.getBool("version")) {
     print_string(
-      Environ.args().next().default("skmd") + " " + SkargoVersion.kVersion,
+      // FIXME
+      Environ.args().next().default("skmd") + " " + "FIXME",
     );
     SKStore.destroyObstack(saved);
     skipExit(0);

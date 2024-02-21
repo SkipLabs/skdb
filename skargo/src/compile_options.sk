@@ -1,0 +1,66 @@
+module Skargo;
+
+const kDefaultProfile: String = "dev";
+const kAvailableProfiles: Array<String> = Array["dev", "release"];
+
+// TODO: Rename CompileKind to TargetArch.
+class BuildConfig{
+  // TODO: Support multiple requested arches (array `--target` flag).
+  requested_arch: TargetArch,
+  requested_profile: String,
+  export_dir: ?String,
+} uses Equality, Hashable
+
+class CompileOptions{
+  build_config: BuildConfig,
+  /// Filter to apply to the root package to select which targets will be built.
+  filter: CompileFilter,
+}
+
+fun build_config(
+  target_opt: ?String,
+  profile_opt: ?String,
+  release: Bool,
+): BuildConfig {
+  BuildConfig{
+    requested_arch => target_opt match {
+    | Some(t) -> TargetArchTriple(TargetTriple::fromString(t))
+    | None() -> TargetArchHost()
+    },
+    requested_profile => (release, profile_opt) match {
+    | (false, None()) -> kDefaultProfile
+    | (true, None())
+    | (true, Some("release")) ->
+      "release"
+    | (true, Some(profile)) ->
+      invariant_violation(
+        `Cannot specify both \`--release\` and \`--profile=${profile}\``,
+      )
+    | (false, Some(profile)) if (kAvailableProfiles.contains(profile)) ->
+      profile
+    | (false, Some(profile)) ->
+      invariant_violation(`Unrecognized profile ${profile}`)
+    },
+    export_dir => None(),
+  };
+}
+
+// TODO: Return Result<...>.
+fun compile_options(args: Cli.ParseResults): CompileOptions {
+  build_config = build_config(
+    args.maybeGetString("target", false),
+    args.maybeGetString("profile"),
+    args.getBool("release"),
+  );
+  filter = CompileFilter::from_raw_arguments(
+    args.getBool("lib", false),
+    args.getArray("bin", false),
+    args.getBool("bins", false),
+    args.getBool("tests", false),
+    args.getBool("all-targets", false),
+  );
+
+  CompileOptions{build_config, filter}
+}
+
+module end;

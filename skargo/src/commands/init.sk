@@ -1,0 +1,99 @@
+module Skargo;
+
+fun init(): (Cli.Command, (GlobalContext, Cli.ParseResults) ~> void) {
+  (
+    Cli.Command("init")
+      .about("Create a new skargo package")
+      .arg(
+        Cli.StringArg("path")
+          .positional()
+          .default(".")
+          .about("Directory where to perform the initialization"),
+      )
+      .arg(
+        Cli.StringArg("test-harness")
+          .short("t")
+          .long("test-harness")
+          .value_name("FUNCTION-NAME")
+          .about("Specify the test harness"),
+      ),
+    execInit,
+  )
+}
+
+fun execInit(_gctx: GlobalContext, args: Cli.ParseResults): void {
+  path = args
+    .maybeGetString("path")
+    .map(p -> Path.resolve(p))
+    .default(getcwd());
+  _ = system("mkdir -p " + path);
+  rootDir = path;
+  optManifestFile = loop {
+    if (FileSystem.exists(Path.join(path, Skargo.kManifestFile))) {
+      break Some(path)
+    };
+    if (Path.isRoot(path)) {
+      break None()
+    };
+    !path = Path.parentname(path)
+  };
+  optManifestFile match {
+  | Some(manifestFile) ->
+    print_string(`\`${Path.parentname(manifestFile)}\` already initialized.`)
+  | _ ->
+    manifestFile = Path.join(rootDir, Skargo.kManifestFile);
+    name = Path.basename(rootDir);
+    FileSystem.writeTextFile(
+      manifestFile,
+      generateManifestTemplate(name, args.maybeGetString("test-harness")),
+    );
+    srcDir = Path.join(rootDir, "src");
+    _ = system("mkdir -p " + srcDir)
+  }
+}
+
+private fun pascalCase(name: String): String {
+  toupper = true;
+  String::fromChars(
+    name
+      .chars()
+      .map(c -> {
+        if (c == '_') {
+          !toupper = true;
+        } else {
+          !c = if (toupper) c.capitalize() else c;
+          !toupper = false;
+        };
+        c
+      })
+      .toArray(),
+  ).replace("_", "");
+}
+
+private fun generateManifestTemplate(
+  name: String,
+  optTestHarness: ?String = None(),
+  version: String = "0.1.0",
+): String {
+  Array["[package]", `name = "${name}"`, `version = "${version}"`].concat(
+    optTestHarness.map(th -> Array[`test-harness = "${th}"`]).default(Array[]),
+  )
+    .concat(
+      Array[
+        "",
+        "[dependencies]",
+        "prelude = *",
+        "#depname = { \"path\" = \"deppath\" }",
+        "#depname = { \"version\" = \"version\"  }",
+        "#depname = { \"path\" = \"deppath\", \"version\" = \"version\"  }",
+        "",
+        "#[[bin]]",
+        `#name = "${name.replace("_", "")}"`,
+        `#main = "${pascalCase(name)}.main"`,
+        "",
+      ],
+    )
+    .join("\n");
+}
+
+module end;

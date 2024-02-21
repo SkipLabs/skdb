@@ -1,0 +1,95 @@
+module Skargo;
+
+base class FilterRule {
+  children =
+  | FilterRuleAll()
+  | FilterRuleJust(Array<String>)
+
+  static fun create(targets: Array<String>, all: Bool): FilterRule {
+    if (all) {
+      FilterRuleAll()
+    } else {
+      FilterRuleJust(targets)
+    }
+  }
+
+  static fun none(): FilterRule {
+    FilterRuleJust(Array[])
+  }
+
+  fun matches(target: Target): Bool
+  | FilterRuleAll() -> true
+  | FilterRuleJust(targets) -> targets.any(name -> name == target.name)
+
+  fun is_specific(): Bool
+  | FilterRuleAll() -> true
+  | FilterRuleJust(targets) -> !targets.isEmpty()
+}
+
+base class LibRule {
+  children =
+  /// Include the library, fail if not present
+  | LibRuleTrue()
+  /// Exclude the library
+  | LibRuleFalse()
+  // NOTE: Enable this once explicit library targets are supported.
+  // /// Include the library if present
+  //  | LibRuleDefault()
+}
+
+base class CompileFilter {
+  children =
+  | CompileFilterDefault()
+  | CompileFilterOnly{lib: LibRule, bins: FilterRule, tests: FilterRule}
+
+  static fun create{
+    rule_lib: LibRule,
+    rule_bins: FilterRule,
+    rule_tests: FilterRule,
+  }: CompileFilter {
+    if (
+      rule_lib is LibRuleTrue _ ||
+      rule_bins.is_specific() ||
+      rule_tests.is_specific()
+    ) {
+      CompileFilterOnly{lib => rule_lib, bins => rule_bins, tests => rule_tests}
+    } else {
+      CompileFilterDefault()
+    }
+  }
+
+  static fun from_raw_arguments(
+    lib_only: Bool,
+    bins: Array<String>,
+    all_bins: Bool,
+    all_tests: Bool,
+    all_targets: Bool,
+  ): CompileFilter {
+    if (all_targets) {
+      return CompileFilterDefault()
+    };
+    rule_lib = if (lib_only) LibRuleTrue() else LibRuleFalse();
+    rule_bins = FilterRule::create(bins, all_bins);
+    rule_tests = FilterRule::create(Array[], all_tests);
+
+    static::create{rule_lib, rule_bins, rule_tests}
+  }
+
+  static fun single_bin(bin: String): CompileFilter {
+    static::create{
+      rule_lib => LibRuleFalse(),
+      rule_bins => FilterRuleJust(Array[bin]),
+      rule_tests => FilterRule::none(),
+    }
+  }
+
+  static fun all_tests(): CompileFilter {
+    static::create{
+      rule_lib => LibRuleFalse(),
+      rule_bins => FilterRule::none(),
+      rule_tests => FilterRuleAll(),
+    }
+  }
+}
+
+module end;

@@ -1,0 +1,120 @@
+module Skargo;
+
+fun nproc(): Int {
+  p = System.subprocess(Array["nproc"]);
+  p.exitstatus match {
+  | Posix.WExited(0) ->
+    p.stdout.trim().toIntOption() match {
+    | Some(n) -> n
+    | None() -> 8
+    }
+  | _ -> 8
+  };
+}
+
+fun test(): (Cli.Command, (GlobalContext, Cli.ParseResults) ~> void) {
+  (
+    Cli.Command("test")
+      .short("t")
+      .about("Run the tests")
+      .arg(
+        Cli.StringArg("manifest-path")
+          .value_name("PATH")
+          .about("Path to Skargo.toml"),
+      )
+      .arg(
+        Cli.StringArg("filter")
+          .positional()
+          .about("If specified, only run tests with names matching the filter"),
+      )
+      .arg(
+        Cli.IntArg("jobs")
+          .long("jobs")
+          .short("j")
+          .default(nproc())
+          .value_name("N")
+          .about("Number of parallel jobs, defaults to # of CPUs"),
+      )
+      .arg(
+        Cli.StringArg("target")
+          .value_name("TRIPLE")
+          .about("Check for the target triple"),
+      )
+      .arg(
+        Cli.StringArg("target-dir")
+          .value_name("PATH")
+          .about("Directory for all generated artifacts"),
+      )
+      .arg(
+        Cli.StringArg("profile")
+          .value_name("PROFILE-NAME")
+          .about("Build artifacts with the specified profile"),
+      )
+      .arg(
+        Cli.BoolArg("release")
+          .short("r")
+          .long("release")
+          .about("Build artifacts in release mode, with optimizations"),
+      )
+      .arg(Cli.BoolArg("list").about("Display the list of available tests"))
+      .arg(
+        Cli.StringArg("junitxml")
+          .value_name("PATH")
+          .about("Generate a JUnit XML report"),
+      ),
+    execTest,
+  )
+}
+
+fun execTest(gctx: GlobalContext, args: Cli.ParseResults): void {
+  ws = workspace(args, gctx);
+  opts = compile_options(args);
+  !opts.filter = CompileFilter::all_tests();
+  bctx = create_bctx(gctx, ws, opts);
+  withTimer(
+    () -> {
+      build_runner = BuildRunner::create(bctx);
+      build_runner.compile()
+    },
+    t ->
+      gctx.console.status(
+        "Finished",
+        `${opts.build_config.requested_profile} target(s) in ${t}s`,
+      )
+    ,
+  );
+
+  // TODO: Pass args directly after --.
+  filter = args.maybeGetString("filter");
+  junitxml = args.maybeGetString("junitxml").map(f -> `--junitxml=${f}`);
+  jobs = args.getInt("jobs");
+  list = if (args.getBool("list")) Some("--list") else None();
+
+  binary = if (
+    bctx.roots.size() != 1 ||
+    !(bctx.roots[0].target.kind is TestTarget _)
+  ) {
+    gctx.console.error("`skargo test` could not find test target.");
+    skipExit(1)
+  } else {
+    unit = bctx.roots[0];
+    // TODO: Expose common API with BuildRunner.
+    path = Path.join(
+      ws.target_dir(),
+      "host",
+      opts.build_config.requested_profile,
+    );
+    Path.join(path, unit.target.name)
+  };
+
+  if (!FileSystem.exists(binary)) {
+    gctx.console.error(`\`skargo test\` could not find test binary ${binary}.`);
+    skipExit(1)
+  };
+  cmd_args = Array[binary].concat(
+    Array[junitxml, filter, list, Some(`-j${jobs}`)].filterNone(),
+  );
+  Posix.execvp(cmd_args)
+}
+
+module end;

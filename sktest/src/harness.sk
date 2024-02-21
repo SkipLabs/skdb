@@ -265,11 +265,12 @@ fun main(): void {
     };
     tests[testSuite].push(Test{name => testName, func => #function})
   };
-  if (SkargoVersion.kWasm32) {
-    wtest_harness(tests)
-  } else {
-    test_harness(tests)
-  }
+  // FIXME
+  // if (SkargoVersion.kWasm32) {
+  //   wtest_harness(tests)
+  // } else {
+  test_harness(tests)
+  // }
 }
 
 module end;

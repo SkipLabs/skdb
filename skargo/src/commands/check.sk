@@ -1,0 +1,71 @@
+module Skargo;
+
+fun check(): (Cli.Command, (GlobalContext, Cli.ParseResults) ~> void) {
+  (
+    Cli.Command("check")
+      .short("c")
+      .about(
+        "Analyze the current package and report errors, but don't build object files",
+      )
+      .arg(
+        Cli.StringArg("manifest-path")
+          .value_name("PATH")
+          .about("Path to Skargo.toml"),
+      )
+      .arg(
+        Cli.StringArg("target")
+          .value_name("TRIPLE")
+          .about("Check for the target triple"),
+      )
+      .arg(
+        Cli.StringArg("target-dir")
+          .value_name("PATH")
+          .about("Directory for all generated artifacts"),
+      )
+      .arg(
+        Cli.StringArg("profile").about(
+          "Check artifacts with the specified profile",
+        ),
+      )
+      .arg(
+        Cli.BoolArg("release")
+          .short("r")
+          .long("release")
+          .about("Check artifacts in release mode, with optimizations"),
+      )
+      .arg(Cli.BoolArg("lib").about("Check only this package's library"))
+      .arg(
+        Cli.StringArg("bin")
+          .repeatable()
+          .value_name("NAME")
+          .about("Check only the specified binary"),
+      )
+      .arg(Cli.BoolArg("bins").about("Check all binaries"))
+      .arg(Cli.BoolArg("tests").about("Check all tests"))
+      .arg(Cli.BoolArg("all-targets").about("Check all targets")),
+    execCheck,
+  )
+}
+
+fun execCheck(gctx: GlobalContext, args: Cli.ParseResults): void {
+  // if (env.config.formatOnCheck) {
+  //   execFmt(args, gctx)
+  // };
+  ws = workspace(args, gctx);
+  opts = compile_options(args);
+  bctx = create_bctx(gctx, ws, opts);
+  withTimer(
+    () -> {
+      build_runner = BuildRunner::create(bctx);
+      build_runner.compile(/* check = */ true)
+    },
+    t ->
+      gctx.console.status(
+        "Finished",
+        `${opts.build_config.requested_profile} target(s) in ${t}s`,
+      )
+    ,
+  )
+}
+
+module end;

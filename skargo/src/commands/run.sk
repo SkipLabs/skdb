@@ -1,0 +1,87 @@
+module Skargo;
+
+fun runner(): (Cli.Command, (GlobalContext, Cli.ParseResults) ~> void) {
+  (
+    Cli.Command("run")
+      .short("r")
+      .about("Run the built host binary of the local package")
+      .arg(
+        Cli.StringArg("manifest-path")
+          .value_name("PATH")
+          .about("Path to Skargo.toml"),
+      )
+      .arg(
+        Cli.StringArg("target-dir")
+          .value_name("PATH")
+          .about("Directory for all generated artifacts"),
+      )
+      .arg(
+        Cli.StringArg("profile")
+          .value_name("PROFILE-NAME")
+          .about("Run the binary with the specified profile"),
+      )
+      .arg(
+        Cli.BoolArg("release")
+          .short("r")
+          .long("release")
+          .about("Run the binary in release mode"),
+      )
+      .arg(
+        Cli.StringArg("bin")
+          .repeatable()
+          .value_name("NAME")
+          .about("Build only the specified binary"),
+      )
+      .extra(),
+    execRun,
+  )
+}
+
+fun execRun(gctx: GlobalContext, args: Cli.ParseResults): void {
+  ws = workspace(args, gctx);
+  bin_name = args.getArray("bin") match {
+  | arr if (arr.size() == 1) -> arr[0]
+  | arr if (arr.size() == 0) ->
+    bins = ws.package.manifest.targets
+      .filter(target -> target.kind is BinTarget _)
+      .collect(Array);
+    if (bins.size() != 1) {
+      gctx.console.error(
+        "`skargo run` could not determine which binary to run. Use the `--bin` option to specify a binary.",
+      );
+      skipExit(1)
+    };
+    bins[0].name
+  | _ ->
+    gctx.console.error("`skargo run` expects a single `--bin` flag.");
+    skipExit(1)
+  };
+  opts = compile_options(args);
+  !opts.filter = CompileFilter::single_bin(bin_name);
+  bctx = create_bctx(gctx, ws, opts);
+  withTimer(
+    () -> {
+      build_runner = BuildRunner::create(bctx);
+      build_runner.compile()
+    },
+    t ->
+      gctx.console.status(
+        "Finished",
+        `${opts.build_config.requested_profile} target(s) in ${t}s`,
+      )
+    ,
+  );
+
+  // TODO: Expose common API with BuildRunner.
+  path = Path.join(
+    ws.target_dir(),
+    "host",
+    opts.build_config.requested_profile,
+  );
+  binary = Path.join(path, bin_name);
+  gctx.console.status("Running", `\`${binary}\``);
+  cmd_args = Array[binary].concat(args.extra);
+  Posix.execvp(cmd_args)
+}
+
+module end;

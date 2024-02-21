@@ -17,7 +17,7 @@ fun main(): void {
         .about("Use verbose output")
         .global(),
     );
-  suppliers = Array[infer, gen, check, Skargo.help];
+  suppliers = Array[infer, gen, check, help];
   commands = mutable Map[];
   for (supplier in suppliers) {
     (subcommand, cmdFn) = supplier();
@@ -28,7 +28,8 @@ fun main(): void {
   args = cmd.parseArgs();
   if (args.getBool("version")) {
     print_string(
-      Environ.args().next().default("skjson") + " " + SkargoVersion.kVersion,
+      // FIXME
+      Environ.args().next().default("skjson") + " " + "FIXME",
     );
     SKStore.destroyObstack(saved);
     skipExit(0);
@@ -159,6 +160,36 @@ fun execCheck(args: Cli.ParseResults): void {
       SKStore.destroyObstack(saved)
     }
   }
+}
+
+fun help(): (Cli.Command, Cli.ParseResults ~> void) {
+  (
+    Cli.Command("help")
+      .arg(
+        Cli.StringArg("command")
+          .positional()
+          .about(
+            "If specified, the subcommand for which help is to be displayed",
+          ),
+      )
+      .about("Displays help for a skargo subcommand"),
+    execHelp,
+  )
+}
+
+fun execHelp(args: Cli.ParseResults): void {
+  optSubcmd = args.maybeGetString("command");
+  optSubcmd.flatMap(subcmd ->
+    args.cmd._subcommands.filter(cmd -> cmd.name == subcmd).maybeGet(0)
+  ) match {
+  | Some(cmd) -> print_string(Cli.usage(cmd, true, Some(args.cmd)))
+  | _ ->
+    optSubcmd match {
+    | Some(subcmd) -> print_error(`error: Invalid subcommand ${subcmd}.`)
+    | _ -> print_error("error: No subcommand specified.")
+    };
+    print_string(Cli.usage(args.cmd, true))
+  };
 }
 
 module end;

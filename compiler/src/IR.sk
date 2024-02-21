@@ -179,7 +179,7 @@ class UTF8String{
   // involving a change to the hash function
   fun hashToEmit(): Int {
     UInt32::truncate(
-      (this.utf8.foldl((acc, ch) -> acc * 31 + ch.toInt(), 0)).or(0x80000000),
+      (this.utf8.foldl((acc, ch) -> acc * 31 + ch.toInt(), 0)).or(0x80000002),
     ).toInt()
   }
 }

@@ -265,10 +265,6 @@ double SKIP_String__toFloat_raw(char* str) {
   return atof(cstr);
 }
 
-char SKIP_Unsafe_string_utf8_get(char* str, SkipInt n) {
-  return str[n];
-}
-
 /*****************************************************************************/
 /* Multibyte utf8 string used for testing purposes. */
 /*****************************************************************************/

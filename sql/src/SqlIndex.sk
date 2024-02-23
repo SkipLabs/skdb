@@ -6,18 +6,37 @@ module alias P = SQLParser;
 
 module SKDB;
 
-class IndexProjKey(values: Array<(Int, ?CValue)>) extends SKStore.Key
-
-fun makeIndexProjKey(
-  v: RowValues,
+class IndexProjKey private (
+  row: RowValues,
   kinds: Array<(Int, P.IKind, P.Type)>,
-  size: Int,
-): IndexProjKey {
-  indexedValues = mutable Vector[];
-  for (i in Range(0, size)) {
-    indexedValues.push((kinds[i].i0, v.values[kinds[i].i0]));
-  };
-  IndexProjKey(indexedValues.toArray());
+) extends SKStore.Key {
+  static fun create(values: Array<(Int, P.Type, ?CValue)>): this {
+    row = RowValues::create(values.map(x -> x.i2));
+    kinds = values.map(x -> (x.i0, P.IASC(), x.i1));
+    static(row, kinds)
+  }
+
+  static fun createFromRowValues(
+    row: RowValues,
+    kinds: Array<(Int, P.IKind, P.Type)>,
+  ): IndexProjKey {
+    static(row, kinds)
+  }
+
+  fun toArray(): Array<(Int, ?CValue)> {
+    indexedValues = mutable Vector[];
+    for (i in Range(0, this.kinds.size())) {
+      indexedValues.push((this.kinds[i].i0, this.row.values[this.kinds[i].i0]));
+    };
+    indexedValues.toArray()
+  }
+
+  fun compare(other: SKStore.Key): Order {
+    other match {
+    | IndexProjKey(row2, _) -> compareRows(this.kinds, this.row, row2)
+    | _ -> this.getClassName().compare(other.getClassName())
+    }
+  }
 }
 
 fun createIndexName(
@@ -69,6 +88,7 @@ fun createIndex(
     )
   };
   if (unique) {
+    subKinds = kinds.slice(0, size);
     _ = index
       .map(
         x ~> x,
@@ -79,9 +99,14 @@ fun createIndex(
           result = SortedMap<IndexProjKey, mutable Vector<RowValues>>[];
           valuesArr = values.collect(Array);
           for (v in valuesArr) {
-            k = makeIndexProjKey(v, kinds, size);
+            k = IndexProjKey::createFromRowValues(v, subKinds);
             if (v.repeat != 1) {
-              throw Conflict(0, "UNIQUE constraint failed", k.values, valuesArr)
+              throw Conflict(
+                0,
+                "UNIQUE constraint failed",
+                k.toArray(),
+                valuesArr,
+              )
             };
             if (!result.containsKey(k)) {
               !result[k] = mutable Vector[];
@@ -109,7 +134,7 @@ fun createIndex(
               0,
               "UNIQUE constraint failed",
               key match {
-              | IndexProjKey(arr) -> arr
+              | projKey @ IndexProjKey _ -> projKey.toArray()
               | _ -> invariant_violation("Unexpected key type")
               },
               valuesArr,

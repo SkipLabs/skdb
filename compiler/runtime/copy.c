@@ -159,6 +159,7 @@ void* SKIP_copy_with_pages(void* obj, size_t nbr_pages, sk_cell_t* pages) {
 
     if (SKIP_is_string(toCopy)) {
       sk_string_t* str = get_sk_string(toCopy);
+      // mark already-copied strings by setting size to -1
       if (str->size != (uint32_t)-1 && str->size < sizeof(void*)) {
         void* copied_ptr = SKIP_copy_string(toCopy, large_page);
         *delayed.slot = copied_ptr;
@@ -179,12 +180,16 @@ void* SKIP_copy_with_pages(void* obj, size_t nbr_pages, sk_cell_t* pages) {
       continue;
     }
 
-    if (((uintptr_t) * ((void**)toCopy - 1) & 1) == 0) {
+    void** vtable_ptr = get_vtable_ptr(toCopy);
+    // mark already-copied objects by replacing their vtable pointer with a
+    // forwarding pointer to the copied object, with the lsb set to
+    // distinguish it from vtable pointers
+    if (((uintptr_t)*vtable_ptr & 1) == 0) {
       copied_ptr = SKIP_copy_obj(st, toCopy, large_page);
-      sk_stack3_push(st3, ((void**)toCopy - 1), *((void**)toCopy - 1), NULL);
-      *((void**)toCopy - 1) = (void*)((uintptr_t)copied_ptr | 1);
+      sk_stack3_push(st3, vtable_ptr, *vtable_ptr, NULL);
+      *vtable_ptr = (void*)((uintptr_t)copied_ptr | 1);
     } else {
-      copied_ptr = (void*)((uintptr_t) * ((void**)toCopy - 1) & ~1);
+      copied_ptr = (void*)((uintptr_t)*vtable_ptr & ~1);
     }
 
     *delayed.slot = copied_ptr;

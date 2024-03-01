@@ -35,10 +35,10 @@ build/package/package.json:
 build/package/skdb: build/sknpm
 	cd sql && ../build/sknpm build --profile $(SKARGO_PROFILE) --npm-out ../build/package/skdb
 
-sql/target/wasm32/dev/skdb.wasm: sql/src/* skfs/src/*
+sql/target/wasm32/dev/skdb.wasm: sql/src/*
 	cd sql && skargo build --target wasm32
 
-sql/target/wasm32/release/skdb.wasm: sql/src/* skfs/src/*
+sql/target/wasm32/release/skdb.wasm: sql/src/*
 	cd sql && skargo build --release --target wasm32
 
 $(SDKMAN_DIR):
@@ -62,10 +62,10 @@ build/sknpm: $(SKNPM_BIN)
 # skdb native binary
 ################################################################################
 
-sql/target/host/dev/skdb: sql/src/* skfs/src/*
+sql/target/host/dev/skdb: sql/src/*
 	cd sql && skargo build
 
-sql/target/host/release/skdb: sql/src/* skfs/src/*
+sql/target/host/release/skdb: sql/src/*
 	cd sql && skargo build --release
 
 # TODO: keeping this for now as nearly all test scripts refer to build/skdb

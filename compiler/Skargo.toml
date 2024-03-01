@@ -5,8 +5,9 @@ tests = ["tests/tests.sk"]
 test-harness = "SkcTests.main"
 
 [dependencies]
-skfs = { "path" = "../skfs" }
+std = { "path" = "../prelude" }
 cli = { "path" = "../cli" }
+sktest = { "path" = "../sktest" }
 
 [[bin]]
 name = "skc"

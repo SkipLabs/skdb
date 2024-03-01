@@ -59,9 +59,7 @@ private fun genInvalidTest(basename: String, stdlibSrcs: Array<String>): void {
 fun main(): void {
   tests = mutable Map[];
 
-  stdlibSrcs = FileSystem.readFilesRecursive("../prelude/src")
-    .concat(FileSystem.readFilesRecursive("../skfs/src"))
-    .collect(Array);
+  stdlibSrcs = FileSystem.readFilesRecursive("../prelude/src").collect(Array);
 
   validTests = FileSystem.readFilesRecursive("./tests", fn ->
     fn.endsWith(".exp") && !fn.contains("invalid/")

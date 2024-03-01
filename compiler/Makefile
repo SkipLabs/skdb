@@ -73,7 +73,7 @@ stage2/bin/skc stage2/bin/skfmt stage2/bin/skargo: stage1
 stage3/bin/skc stage3/bin/skfmt stage3/bin/skargo: stage2
 	PATH=stage2/bin/:$(PATH) skargo build --profile $(SKARGO_PROFILE) --target-dir stage3/bin
 	(cd ../skargo && PATH=../compiler/stage2/bin:$(PATH) skargo build --profile $(SKARGO_PROFILE) --target-dir ../compiler/stage3/bin)
-# 	TODO: Ensure stage2 == stage3.
+	-diff -q stage1/bin/skc.ll stage2/bin/skc.ll
 
 stageA/bin/skc:
 	mkdir -p stageA/bin
@@ -94,6 +94,7 @@ stageB/bin/skc stageB/bin/skfmt stageB/bin/skargo: stageA
 stageC/bin/skc stageC/bin/skfmt stageC/bin/skargo: stageB
 	PATH=stageB/bin/:$(PATH) skargo build --profile $(SKARGO_PROFILE) --target-dir stageC/bin
 	(cd ../skargo && PATH=../compiler/stageB/bin:$(PATH) skargo build --profile $(SKARGO_PROFILE) --target-dir ../compiler/stageC/bin)
+	-diff -q stageB/bin/skc.ll stageC/bin/skc.ll
 
 .PHONY: install
 install: stage$(STAGE)

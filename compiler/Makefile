@@ -96,6 +96,10 @@ stageC/bin/skc stageC/bin/skfmt stageC/bin/skargo: stageB
 	(cd ../skargo && PATH=../compiler/stageB/bin:$(PATH) skargo build --profile $(SKARGO_PROFILE) --target-dir ../compiler/stageC/bin)
 	-diff -q stageB/bin/skc.ll stageC/bin/skc.ll
 
+.PHONY: bootstrap
+bootstrap: stage$(STAGE)
+	(cd bootstrap && cp -f ../stage$(STAGE)/bin/skargo.ll skargo_out64.ll && cp -f ../stage$(STAGE)/bin/skc.ll skc_out64.ll && cp -f ../stage$(STAGE)/bin/skfmt.ll skfmt_out64.ll && gzip -f -9 *.ll)
+
 .PHONY: install
 install: stage$(STAGE)
 	install -d $(libdir)

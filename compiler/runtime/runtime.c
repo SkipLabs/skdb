@@ -1,6 +1,7 @@
 #include "runtime.h"
 
 #ifdef SKIP64
+#include <stdlib.h>
 #include <unistd.h>
 #endif
 
@@ -25,14 +26,27 @@ sk_string_t* get_sk_string(char* obj) {
 uint32_t sk_string_hash_tag = 0x80000002;
 
 uint32_t SKIP_is_string(char* obj) {
+#ifdef SKIP64
   uint32_t res = get_sk_string(obj)->hash & sk_string_hash_tag;
   if (!res && ((uintptr_t)get_vtable_ptr(obj) & 0x7) != 0) {
-#ifdef SKIP64
     fprintf(stderr, "misaligned vtable: %lX\n", ((uintptr_t)get_vtable_ptr(obj) & 0xF));
-#endif
     SKIP_exit(124);
   }
-  return res;
+  if (get_sk_string(obj)->hash & 0x80000000) {
+    if (get_sk_string(obj)->hash & 0x2) {
+      return 1;
+    } else {
+      fprintf(stderr, "bit 31 but not 1 set: %p\n", &get_sk_string(obj)->hash);
+      exit(66);
+    }
+  } else if (get_sk_string(obj)->hash & 0x2) {
+    fprintf(stderr, "bit 1 but not 31 set: %p\n", &get_sk_string(obj)->hash);
+    exit(67);
+  } else {
+    return 0;
+  }
+#endif
+  return get_sk_string(obj)->hash & sk_string_hash_tag;
 }
 
 uint32_t sk_tag_string_hash(uint32_t untagged_hash) {

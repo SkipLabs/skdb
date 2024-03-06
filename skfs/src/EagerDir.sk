@@ -734,6 +734,16 @@ class EagerDir{
     destinationTime: ?Tick,
     checkpointInterval: Int = Int::max,
   ): Bool {
+    if (isReset) {
+      theirTime = destinationTime match {
+      | None() -> ""
+      | Some(t) -> " " + t.value.toString()
+      };
+      writer.write(`^${entity}${theirTime}\n`);
+      writer.write(":rebuild\n");
+      return true
+    };
+
     filterFun = filter(context.clone(), isReset);
 
     changesWritten = 0;
@@ -760,21 +770,6 @@ class EagerDir{
         writer.flush();
         flushStdout();
       };
-    };
-
-    if (isReset) {
-      if (changesWritten % checkpointInterval == 0) {
-        // output a header for the dir
-        theirTime = destinationTime match {
-        | None() -> ""
-        | Some(t) -> " " + t.value.toString()
-        };
-        writer.write(`^${entity}${theirTime}\n`)
-      };
-      // Indicates a reset, meaning all the data that was not in
-      // this transaction should be removed.
-      writer.write("\t\t\n");
-      return true
     };
 
     changesWritten > 0

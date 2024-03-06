@@ -740,7 +740,7 @@ class EagerDir{
       | Some(t) -> " " + t.value.toString()
       };
       writer.write(`^${entity}${theirTime}\n`);
-      writer.write(":rebuild\n");
+      writer.write("!rebuild\n");
       return true
     };
 

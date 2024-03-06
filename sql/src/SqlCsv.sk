@@ -273,8 +273,7 @@ fun lwwEdits(
 fun applyDiffStrategy(
   table: SKDB.DirDescr,
   identity: Int,
-  userFileOpt: ?SKDB.UserFile,
-  reset: Bool,
+  rebuild: Bool,
   rows: Array<SKDB.RowValues>,
   checkpoint: ?Int,
   snapshot: ?Int,
@@ -302,8 +301,7 @@ fun applyDiffStrategy(
     // we do not checkpoint 0. this value communicates that you
     // haven't received a full snapshot yet. it's used for e.g.
     // chunking an initial mirror. once the value is > 0 we have
-    // received a consistent snapshot of the server and should
-    // checkpoint and ack.
+    // received a consistent snapshot and should checkpoint and ack.
     | Some(val) if (val > 0) ->
       checkpointTick = SKStore.Tick(val);
       SKDB.setWatermark(context, table.name.lower, identity, checkpointTick);
@@ -325,28 +323,6 @@ fun applyDiffStrategy(
     }
   } else {
     None()
-  };
-
-  isVisibleToUser = (context) ~> {
-    userFileOpt match {
-    | None() -> _ -> true
-    | Some(userFile) ->
-      (file: SKStore.Key) -> {
-        file match {
-        | k @ SKDB.RowKey _ ->
-          SKDB.checkUserCanReadRow(
-            context,
-            userFile,
-            table,
-            k.getRowValues(),
-          ) match {
-          | SKDB.AROK() -> true
-          | SKDB.ARError(_err) -> false
-          }
-        | _ -> false
-        }
-      }
-    }
   };
 
   // we have several update strategies:
@@ -401,83 +377,6 @@ fun applyDiffStrategy(
 
         newDir
       },
-    );
-
-    newRoot.setDir(dir.dirName, dir);
-    newRoot.update();
-    checkpointAndAck(newRoot, delta)
-  });
-
-  // resetRows - if the update is communicating the entire current
-  // state (a reset).
-  resetRows = Some((newRoot, delta, root) ~> {
-    if (shouldShortCircuitUpdate(root)) {
-      checkpointAndAck(newRoot, delta);
-      return void;
-    };
-
-    dir = newRoot.unsafeGetEagerDir(table.dirName);
-
-    // we may only affect rows that have been seen
-    isEligibleForTomb = (tick, source) ~>
-      tick.value < snapshot.default(0) || source == writer;
-
-    !dir = SKStore.withRegionFold(
-      Some(newRoot),
-      rows.iterator(),
-      dir,
-      (optContext, row, newDir) ~> {
-        key: SKStore.Key = SKDB.RowKey::create(row, table.kinds);
-        keyRepeat = row.repeat;
-        for ((tick, source, files) in newDir.unsafeGetDataIterWithoutTombs(
-          key,
-        )) {
-          if (!isEligibleForTomb(tick, source)) {
-            continue
-          };
-          srcRepeat = 0;
-          for (file in files) {
-            !srcRepeat = srcRepeat + SKDB.RowValues::type(file).repeat
-          };
-
-          if (keyRepeat - srcRepeat < 0) {
-            !newDir = newDir.writeEntry(
-              optContext.fromSome(),
-              source,
-              writer,
-              key,
-              Array[],
-              true,
-            );
-          } else {
-            !keyRepeat = keyRepeat - srcRepeat;
-          }
-        };
-
-        if (keyRepeat != 0) {
-          !newDir = newDir.writeEntry(
-            optContext.fromSome(),
-            writer,
-            writer,
-            key,
-            Array[row.setRepeat(keyRepeat)],
-            true,
-          );
-        };
-        newDir
-      },
-    );
-
-    !dir = dir.reset(
-      newRoot,
-      writer,
-      rows
-        .iterator()
-        .filter(row -> row.repeat != 0)
-        .map(x -> SKDB.RowKey::create(x.setRepeat(1), table.kinds))
-        .collect(SortedSet),
-      isVisibleToUser(newRoot),
-      isEligibleForTomb,
     );
 
     newRoot.setDir(dir.dirName, dir);
@@ -553,71 +452,35 @@ fun applyDiffStrategy(
     checkpointAndAck(newRoot, delta)
   });
 
-  // lwwReset - if the update is communicating the entire current
-  // state (a reset) on a table where we use LWW.
-  lwwReset = Some((newRoot, delta, root) ~> {
-    if (shouldShortCircuitUpdate(root)) {
-      checkpointAndAck(newRoot, delta);
-      return void;
-    };
-
+  // rebuild - this peer fell off the lead 'tail caravan' and got too
+  // far behind. we now need to cold start by rebuilding the table.
+  rebuildRows = Some((newRoot, _delta, _root) ~> {
     dir = newRoot.unsafeGetEagerDir(table.dirName);
 
-    !dir = SKStore.withRegionFold(
-      Some(newRoot),
-      rows.iterator(),
-      dir,
-      (optContext, row, newDir) ~> {
-        if (row.repeat > 0) {
-          for (edit in lwwEdits(
-            table,
-            snapshot.default(0),
-            writer,
-            primaryIdx,
-            optContext.fromSome(),
-            newDir,
-            row,
-          )) {
-            (editKey, (editSrc, editWriter, editFiles)) = edit;
-            !newDir = newDir.writeEntry(
-              optContext.fromSome(),
-              editSrc,
-              editWriter,
-              editKey,
-              editFiles,
-              true,
-            );
-          };
-        };
-        newDir
-      },
-    );
+    // so we don't wipe out unsynced rows
+    isEligibleForTomb = (tick, source) ~>
+      tick.value < snapshot.default(0) || source == writer;
 
     !dir = dir.reset(
       newRoot,
       writer,
-      rows
-        .iterator()
-        .filter(row -> row.repeat != 0)
-        .map(x -> SKDB.RowKey::create(x.setRepeat(1), table.kinds))
-        .collect(SortedSet),
-      isVisibleToUser(newRoot),
-      (tick, source) ~> tick.value < snapshot.default(0) || source == writer,
+      Array[].collect(SortedSet),
+      isEligibleForTomb,
     );
 
+    SKDB.resetWatermark(newRoot, table.name.lower, identity);
+
     newRoot.setDir(dir.dirName, dir);
-    newRoot.update();
-    checkpointAndAck(newRoot, delta)
+    newRoot.update(); // TODO: could we not do this so we don't get a blip?
   });
 
-  if (primaryIdx is Some _) {
-    if (reset) return lwwReset;
-    return lwwRows;
+  if (rebuild) {
+    rebuildRows;
+  } else if (primaryIdx is Some _) {
+    lwwRows;
+  } else {
+    assignRows
   };
-
-  if (reset) return resetRows;
-
-  assignRows
 }
 
 fun parseHeader(
@@ -707,7 +570,7 @@ fun parseTableChange(
 mutable class TableDiff(
   table: SKDB.DirDescr,
   snapshot: ?Int,
-  mutable reset: Bool,
+  mutable rebuild: Bool,
   rows: mutable Vector<SKDB.RowValues>,
   lines: mutable Vector<String>,
 ) {
@@ -719,7 +582,6 @@ mutable class TableDiff(
 fun buildDiffChain(
   tableDiffs: readonly Vector<mutable TableDiff>,
   identity: Int,
-  userFileOpt: ?SKDB.UserFile,
   checkpoint: Int,
 ): ?((
   mutable SKStore.Context,
@@ -730,8 +592,7 @@ fun buildDiffChain(
     applyDiffStrategy(
       td.table,
       identity,
-      userFileOpt,
-      td.reset,
+      td.rebuild,
       td.rows.toArray(),
       Some(checkpoint),
       td.snapshot,
@@ -856,12 +717,14 @@ fun replayDiff(
           break SKStore.CContinue(None())
         } else {
           break SKStore.CContinue(
-            buildDiffChain(tableDiffs, identity, userFileOpt, checkpoint),
+            buildDiffChain(tableDiffs, identity, checkpoint),
           )
         }
 
-      | current @ Some(DiffParsingState(_, currentDiff)) if (line == "\t\t") ->
-        currentDiff.!reset = true;
+      | current @ Some(DiffParsingState(_, currentDiff)) if (
+        line == "!rebuild"
+      ) ->
+        currentDiff.!rebuild = true;
         current
 
       | current @ Some(DiffParsingState(_, currentDiff)) ->
@@ -907,7 +770,7 @@ fun replayStdin(): Map<String, (Int, Int)> {
     iter = line.getIter();
     header = false;
     checkpoint = false;
-    reset = false;
+    rebuild = false;
     loop {
       c = iter.next() match {
       | None() ->
@@ -923,7 +786,7 @@ fun replayStdin(): Map<String, (Int, Int)> {
       };
       if (c == '\t') {
         if (chars.size() == 0 || chars[0] == '\t') {
-          !reset = true;
+          !rebuild = true;
           break void
         } else {
           break void
@@ -938,7 +801,7 @@ fun replayStdin(): Map<String, (Int, Int)> {
     if (header) {
       continue;
     };
-    if (reset) {
+    if (rebuild) {
       all.clear();
       commit();
       continue;

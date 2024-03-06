@@ -699,12 +699,11 @@ class EagerDir{
     context: mutable SKStore.Context,
     writer: Path,
     keep: SortedSet<Key>,
-    isVisible: Key -> Bool = _ -> true,
     wasSeen: (Tick, Path) ~> Bool = (_, _) ~> true,
   ): this {
     this.unsafeGetFileIter().each(kv -> {
       (key, valueIter) = kv;
-      if (!keep.contains(key) && isVisible(key)) {
+      if (!keep.contains(key)) {
         valueIter.next() match {
         | None() -> void
         | Some _ ->

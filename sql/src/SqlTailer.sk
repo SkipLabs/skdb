@@ -124,7 +124,7 @@ fun tailSub(
   sessionID: Int,
   userIDOpt: ?String,
   spec: (P.Name -> TailSpec),
-): void {
+): Bool {
   sub = SKStore.withContext(gContext -> {
     // rebuild the sub with extra filtering as supported by tail
     gContext.sessions.maybeGet(sessionID) match {
@@ -175,7 +175,8 @@ fun tailSub(
 
       writer = mutable Debug.BufferedWriter(print_raw, 4096);
 
-      producedAnyOutput = false;
+      producedAnyOutput = false; // assume we won't
+      couldFollowChanges = true; // assume we can
       for (dirSub in sub.dirSubs) {
         dirName = dirSub.dirName;
         edir = context.unsafeGetEagerDir(dirName);
@@ -223,7 +224,8 @@ fun tailSub(
           dirSub.getDestinationWatermark(context),
           checkpointInterval,
         );
-        !producedAnyOutput = producedAnyOutput || producedOutput
+        !producedAnyOutput = producedAnyOutput || producedOutput;
+        !couldFollowChanges = couldFollowChanges && !isReset;
       };
 
       // produce checkpoint for flushing and committing
@@ -237,11 +239,20 @@ fun tailSub(
         flushStdout();
       };
 
-      Some(context.tick.value)
+      if (couldFollowChanges) {
+        Some(context.tick.value)
+      } else {
+        None()
+      }
     });
 
     !tailWatermark = tick match {
-    | None() -> break void
+    // if we cannot follow changes from here - regardless of whether
+    // we want to - this is a failure to honour the request. i.e.
+    // the since value is too far in the past. the user should be
+    // made aware and take action, probably using the rebuild
+    // mechanism.
+    | None() -> break false
     | Some(_) -> tick
     };
     !init = false;
@@ -283,7 +294,7 @@ fun tailSub(
     SKStore.mutexUnlock(lock);
     SKStore.destroyObstack(localObstack);
     if (!follow) {
-      break void
+      break true
     }
   }
 }

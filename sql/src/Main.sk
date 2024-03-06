@@ -580,7 +580,9 @@ fun execTail(args: Cli.ParseResults, options: SKDB.Options): void {
     }
   };
 
-  tailSub(options, followMode, sessionID, user, spec)
+  if (!tailSub(options, followMode, sessionID, user, spec)) {
+    skipExit(1)
+  }
 }
 
 fun execWatermark(args: Cli.ParseResults, options: SKDB.Options): void {

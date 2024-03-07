@@ -188,13 +188,7 @@ fun tailSub(
         | SKDB.OFK_Table() -> SKStore.OTable(getFieldNames(context, dirName))
         };
         since = tailFrom(spec, dirSub, tailWatermark);
-        receivedSomething = dirSub.getDestinationWatermark(context) is Some _;
-        (isReset, changes) = if (since.value > 0 || receivedSomething) {
-          // we ignore a zero since value if we have received
-          // something. this prevents a race: we could receive
-          // something, send it out where it is then modified and sent
-          // back, and then tail from zero which doesn't propagate the
-          // modification.
+        (isReset, changes) = if (since.value > 0) {
           (isReset, changes) = edir.getChangesAfter(since, forceReset);
           (isReset, changes.iterator())
         } else {

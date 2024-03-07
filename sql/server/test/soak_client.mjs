@@ -160,8 +160,9 @@ const check_expectation = async function (
       `${table} failed expectation check`,
     );
   } catch (ex) {
+    const results = await skdb.exec(`select * from ${table}`);
     console.log(`${table} failed expectation check, select *:`);
-    console.table(await skdb.exec(`select * from ${table}`));
+    console.table(results);
     throw ex;
   }
 };

@@ -71,8 +71,8 @@ fun getDestructor(p: ExternalPointer): UInt32 ~> void {
   p.destructor
 }
 
-@wasm_export("sk_call_external_pointer_descructor")
-@cpp_export("sk_call_external_pointer_descructor")
+@wasm_export("sk_call_external_pointer_destructor")
+@cpp_export("sk_call_external_pointer_destructor")
 fun callDestructor(destructor: UInt32 ~> void, value: UInt32): void {
   destructor(value)
 }

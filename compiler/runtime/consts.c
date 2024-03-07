@@ -2,7 +2,7 @@
 /* File dealing with constants initialization.
  *
  * During the initialization phase, an array keeping track of all constants
- * is allocated with malloc. Until we know how many constants they are.
+ * is allocated with malloc. Until we know how many constants there are.
  * We then transfer the array into a persistent array.
  *
  * For all the subsequent process initializations (the ones that start from an
@@ -23,7 +23,7 @@
 extern void*** pconsts;
 size_t pconsts_count = 0;
 
-// pconsts = malloced consts (the array is allocated with malloc).
+// mconsts = malloced consts (the array is allocated with malloc).
 void** mconsts = NULL;
 size_t mconsts_count = 0;
 size_t mconsts_size = 0;
@@ -50,7 +50,7 @@ char* sk_new_const(char* cst) {
       if (unsafe_new_const_mode) {
         return cst;
       }
-      fprintf(stderr, "Cannot have a changing constant in persitent mode\n");
+      fprintf(stderr, "Cannot have a changing constant in persistent mode\n");
       SKIP_throw_cruntime(ERROR_CHANGING_CONST);
     }
 #endif

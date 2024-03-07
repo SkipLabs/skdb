@@ -14,9 +14,6 @@ native fun getcwd(): String;
 
 module FileSystem;
 
-@cpp_extern("SKIP_open_file")
-native fun open_file(fileName: String): String;
-
 // This is really broken - you can't read a file into a String without an
 // encoding!
 fun readTextFile(filename: String): String {
@@ -29,7 +26,7 @@ fun writeTextFile(filename: String, contents: String): void {
 
 @synonym("appendFile")
 @synonym("appendFileSync")
-@cpp_runtime
+@cpp_extern
 native fun appendTextFile(filename: String, contents: String): void;
 
 @cpp_extern("SKIP_check_if_file_exists")
@@ -37,10 +34,6 @@ native fun exists(filename: String): Bool;
 
 fun isDirectory(filename: String): Bool {
   is_directory(filename);
-}
-
-fun ensureDirectory(dirname: String): void {
-  ensure_directory(dirname);
 }
 
 // Returns the contents of dirname without the 'dirname' prefix.
@@ -106,19 +99,15 @@ fun readFilesRecursive(
 
 // TODO: Rename the C++ entrypoints and merge these into the
 // public API above.
-@cpp_runtime
+@cpp_extern
 private native fun .open_file(String): String;
 
 @debug
-@cpp_extern("SKIP_string_to_file")
+@cpp_extern
 private native fun .string_to_file(s: String, file: String): void;
 
 @cpp_extern("SKIP_is_directory")
 private native fun is_directory(filename: String): Bool;
-
-@debug
-@cpp_runtime
-private native fun ensure_directory(dirname: String): void;
 
 @cpp_extern("SKIP_opendir")
 private native fun opendir(dirname: String): Int;

@@ -85,6 +85,15 @@ build/init.sql: sql/privacy/init.sql
 # dev workflow orchestration
 ################################################################################
 
+CHECK_TARGETS=$(patsubst %/Skargo.toml,check-%,$(shell ls -1 */Skargo.toml))
+
+check-%:
+	cd $* && skargo check
+
+# note that make -j check does not work reliably
+.PHONY: check
+check: $(CHECK_TARGETS)
+
 .PHONY: clean
 clean:
 	rm -Rf build

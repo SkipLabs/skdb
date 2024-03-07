@@ -8,12 +8,40 @@
 /* Operations on the runtime representation of skip values. */
 /*****************************************************************************/
 
-SKIP_gc_type_t* get_gc_type(char* skip_object) {
+/* A 64-bit "header" immediately precedes each skip object. The header of
+   string objects consists of 2 uint32 values: first the size, then the hash,
+   and then the string bytes themselves. Otherwise, the header is a pointer
+   to the object's vtable. The runtime system assumes that every vtable is
+   8-aligned (that is, the least significant 3 bits are clear). Bit 1 is used
+   by copy.c and intern.c to tag temporary forwarding pointers.  Bit 3 is
+   used by SKIP_is_string to determine if an object is a string or an object
+   of some other type, and sk_string_set_hash ensures that bit 3 of string
+   hash values is always set. */
+
+sk_string_t* get_sk_string(char* obj) {
+  return (sk_string_t*)(obj - sk_string_header_size);
+}
+
+uint32_t sk_string_hash_tag = 0x4;
+
+uint32_t SKIP_is_string(char* obj) {
+  return get_sk_string(obj)->hash & sk_string_hash_tag;
+}
+
+uint32_t sk_tag_string_hash(uint32_t untagged_hash) {
+  return untagged_hash | sk_string_hash_tag;
+}
+
+void** get_vtable_ptr(char* skip_object) {
   // a vtable pointer immediately precedes a pointer to each skip object
-  SKIP_gc_type_t*** vtable = ((SKIP_gc_type_t***)skip_object) - 1;
+  return ((void**)skip_object) - 1;
+}
+
+SKIP_gc_type_t* get_gc_type(char* skip_object) {
+  SKIP_gc_type_t*** vtable_ptr = (SKIP_gc_type_t***)get_vtable_ptr(skip_object);
   // the gc_type of each object is stored in slot 1 of the vtable,
   // see createVTableBuilders in vtable.sk
-  SKIP_gc_type_t** slot1 = *(vtable) + 1;
+  SKIP_gc_type_t** slot1 = *vtable_ptr + 1;
   return *slot1;
 }
 
@@ -23,6 +51,9 @@ SKIP_gc_type_t* get_gc_type(char* skip_object) {
 
 void SKIP_Regex_initialize() {}
 
+void SKIP_print_stack_trace() {
+  todo();
+}
 void SKIP_print_last_exception_stack_trace_and_exit() {
   todo();
 }

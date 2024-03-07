@@ -38,7 +38,7 @@
 
 module alias T = SKTest;
 
-module SKTest;
+module SKStoreTest;
 
 /*****************************************************************************/
 /* Configuration class. */

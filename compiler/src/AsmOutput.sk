@@ -1954,7 +1954,7 @@ mutable class .AsmOutput{
                   ConstantInt{
                     id => InstrID::none,
                     typ => tInt32,
-                    value => computeWasmStringHash(str.utf8),
+                    value => str.hashToEmit(),
                   },
                   32,
                 )
@@ -2227,19 +2227,19 @@ mutable class .AsmOutput{
       forceExternal => true,
       symbol => "SKIP_initializeSkip",
       common => this,
-      typeString => Some("%struct._FunctionSignature* ()"),
+      typeString => Some("void ()"),
       typeRef => None(),
     };
 
     // Dump initializer call
     asm.print("define ");
     asm.writeLinkage();
-    asm.print("%%struct._FunctionSignature* %n() {\n" % asm);
+    asm.print("void %n() {\n" % asm);
     asm.print(
       "  call void %n()\n" %
         this.env.getFunction(this.env.initializeAllConstsID, FileRange.builtin),
     );
-    asm.print("  ret %struct._FunctionSignature* zeroinitializer\n");
+    asm.print("  ret void\n");
     asm.print("}\n\n");
 
     _ = asm.finish()
@@ -2520,7 +2520,6 @@ private fun llvmWriteName(instr: Instr, asm: mutable AsmDefBuilder): void {
   | IntSub _
   | IntSwitch _
   | IntToFloat _
-  | IntToString _
   | IntXor _
   | Intern _
   | InvokeFunction _
@@ -3324,8 +3323,6 @@ private fun llvmWrite(instr: Stmt, asm: mutable FunAsmDefBuilder): void {
     llvmWriteIntrinsicCall(asm, instr, "llvm.ctpop.i64", Array[value])
   | IntToFloat{value} ->
     asm.print("  %n = sitofp i64 %n to double, %D\n" % instr % value % instr)
-  | IntToString{value} ->
-    llvmWriteIntrinsicCall(asm, instr, "SKIP_Int_toString", Array[value])
   | IntSwitch{value, cases, successors} ->
     asm.print("  switch ");
 
@@ -3408,8 +3405,8 @@ private fun llvmWrite(instr: Stmt, asm: mutable FunAsmDefBuilder): void {
   | StringCmpEq{lhs, rhs} ->
     llvmWriteIntrinsicCall(asm, instr, "SKIP_String_eq", Array[lhs, rhs])
   | v @ StringConcat{args} ->
-    // The runtime provides special versions for 2, 3 or 4 arguments.
-    varargs = v.args.size() < 2 || v.args.size() > 4;
+    // The runtime provides a special version for 2 arguments.
+    varargs = v.args.size() != 2;
 
     suffix = if (!varargs) {
       v.args.size().toString()
@@ -3491,8 +3488,6 @@ private fun llvmWrite(instr: Stmt, asm: mutable FunAsmDefBuilder): void {
       // End the stack array lifetime.
       asm.print("  call void @llvm.lifetime.end%s, %D\n" % lifetimeArgs % instr)
     }
-  | x @ StringHash{value} ->
-    llvmWriteIntrinsicCall(asm, x, "SKIP_String_hash_inl", Array[value])
   | v @ StringSwitch{value, successors} ->
     // Switching on strings is fast but fairly complicated.
     //
@@ -3526,7 +3521,7 @@ private fun llvmWrite(instr: Stmt, asm: mutable FunAsmDefBuilder): void {
       buckets: SortedMap<Int, Array<(Int, UTF8String)>> = cases.foldl(
         (acc, case) -> {
           (_, str) = case;
-          hash = computeWasmStringHash(str.utf8);
+          hash = str.hashToEmit();
           header = hash.shl(32).or(str.utf8.size());
           acc.setWith(header, Array[case], (old, v) -> {
             old.concat(v)
@@ -3727,6 +3722,7 @@ private fun llvmWrite(instr: Stmt, asm: mutable FunAsmDefBuilder): void {
   | ObstackUsage _
   | Object _
   | SetField _
+  | StringHash _
   | Suspend _
   | TypeSwitch _
   | ArrayAlloc _

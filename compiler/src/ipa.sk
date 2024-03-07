@@ -242,7 +242,6 @@ fun instrCanThrow(
   | IntSrl _
   | IntSub _
   | IntToFloat _
-  | IntToString _
   | IntXor _
   | Intern _
   | Jump _

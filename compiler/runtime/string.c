@@ -10,7 +10,7 @@
 /*****************************************************************************/
 
 void sk_string_set_hash(char* obj) {
-  sk_string_t* str = (sk_string_t*)(obj - sizeof(uint32_t) * 2);
+  sk_string_t* str = get_sk_string(obj);
   SkipInt acc = 0;
   uint32_t i;
 
@@ -18,20 +18,18 @@ void sk_string_set_hash(char* obj) {
     acc = acc * 31 + str->data[i];
   }
 
-  // This tag is used by the interning to recognize strings.
-  acc |= 0x80000000;
-  str->hash = (uint32_t)acc;
+  str->hash = sk_tag_string_hash(acc);
 }
 
 uint32_t SKIP_String_byteSize(char* obj) {
-  sk_string_t* str = (sk_string_t*)(obj - sizeof(uint32_t) * 2);
+  sk_string_t* str = get_sk_string(obj);
   return str->size;
 }
 
 // Allocates a string (with no data nor hash).
 char* sk_string_alloc(uint32_t size) {
   uint32_t* iresult =
-      (uint32_t*)SKIP_Obstack_alloc(size + 2 * sizeof(uint32_t));
+      (uint32_t*)SKIP_Obstack_alloc(size + sk_string_header_size);
   *iresult = (uint32_t)size;
   iresult++;
   iresult++;
@@ -54,8 +52,8 @@ char* SKIP_String__fromUtf8(char* /* class */, char* array) {
   return sk_string_create(array, size);
 }
 
-uint32_t SKIP_String_getByte(unsigned char* bytes, SkipInt idx) {
-  return (uint32_t)bytes[idx];
+uint8_t SKIP_String_getByte(unsigned char* bytes, SkipInt idx) {
+  return (uint8_t)bytes[idx];
 }
 
 char* SKIP_String_StringIterator__substring(char* argStart, char* argEnd) {
@@ -89,12 +87,7 @@ unsigned char* SKIP_String__fromChars(const unsigned char* /* dumb */,
       SKIP_invalid_utf8();
     }
   }
-  uint32_t* iresult =
-      (uint32_t*)SKIP_Obstack_alloc(result_size + 2 * sizeof(uint32_t));
-  uint32_t* bsize = iresult;
-  iresult++;
-  iresult++;
-  unsigned char* result = (unsigned char*)iresult;
+  unsigned char* result = (unsigned char*)sk_string_alloc(result_size);
   int j = 0;
   for (i = 0; i < size; i++) {
     uint32_t code = src[i];
@@ -128,7 +121,6 @@ unsigned char* SKIP_String__fromChars(const unsigned char* /* dumb */,
       SKIP_invalid_utf8();
     }
   }
-  *bsize = (uint32_t)j;
   sk_string_set_hash((char*)result);
   return result;
 }
@@ -189,45 +181,18 @@ SkipInt SKIP_String_cmp(unsigned char* str1, unsigned char* str2) {
   }
 }
 
+/* 8 bytes with all bits set, which is not valid utf8, but is larger than
+   any valid utf8 when compared bytewise */
+char* SKIP_largest_string() {
+  static unsigned char buffer[] = {255, 255, 255, 255, 255, 255, 255, 255};
+  return sk_string_create((char*)buffer, 8);
+}
+
 /*****************************************************************************/
 /* Unsafe char access */
 /*****************************************************************************/
 
-uint32_t SKIP_String_unsafe_get(unsigned char* str, SkipInt n) {
-  return (uint32_t)str[n];
-}
-
-void SKIP_String_unsafe_set(unsigned char* str, SkipInt n, SkipInt v) {
-  str[n] = v;
-}
-
-void SKIP_String_unsafe_write_int(unsigned char* str, SkipInt n, SkipInt v) {
-  memcpy(&str[n], &v, sizeof(SkipInt));
-}
-
-void SKIP_String_unsafe_write_string(unsigned char* str, SkipInt n, char* v) {
-  memcpy(&str[n], v, SKIP_String_byteSize(v));
-}
-
-SkipInt SKIP_String_unsafe_read_int(unsigned char* str, SkipInt n) {
-  SkipInt v;
-  memcpy(&v, &str[n], sizeof(SkipInt));
-  return v;
-}
-
-char* SKIP_String_unsafe_read_string(unsigned char* str, SkipInt n,
-                                     SkipInt size) {
-  char* v = sk_string_alloc((uint32_t)size);
-  memcpy(v, &str[n], size);
-  sk_string_set_hash(v);
-  return v;
-}
-
-SkipInt SKIP_String_unsafe_size(unsigned char* str) {
-  return SKIP_String_byteSize((char*)str);
-}
-
-void* SKIP_String_unsafe_slice(unsigned char* str, SkipInt n1, SkipInt n2) {
+void* SKIP_String_unsafeSlice(unsigned char* str, SkipInt n1, SkipInt n2) {
   size_t size = n2 - n1;
   char* result = sk_string_alloc(size);
   memcpy(result, str + n1, size);
@@ -235,52 +200,10 @@ void* SKIP_String_unsafe_slice(unsigned char* str, SkipInt n1, SkipInt n2) {
   return result;
 }
 
-void* SKIP_String_unsafe_create(SkipInt size) {
-  char* result = SKIP_Obstack_alloc(size + 2 * sizeof(uint32_t));
-  *(uint32_t*)result = (uint32_t)size;
-  result += sizeof(uint32_t);
-  result += sizeof(uint32_t);
-  sk_string_set_hash(result);
-  return result;
-}
-
-char* SKIP_unsafe_int_to_string(SkipInt n) {
-  return (char*)n;
-}
-
-SkipInt SKIP_unsafe_string_to_int(char* n) {
-  return (SkipInt)n;
-}
-
-SkipInt SKIP_unsafe_float_to_int(double f) {
-  SkipInt* x = (SkipInt*)&f;
-  return *x;
-}
-
-double SKIP_unsafe_int_to_float(SkipInt f) {
-  double* x = (double*)&f;
-  return *x;
-}
-
-int ipow(int x, int y) {
-  if (y == 0) {
-    return 1;
-  }
-  int tmp = ipow(x, y / 2);
-  if (y % 2 == 0) {
-    return tmp * tmp;
-  } else {
-    return tmp * tmp * x;
-  }
-}
 extern char* SKIP_floatToString(double origf);
 
 char* SKIP_Float_toString(double origf) {
   return SKIP_floatToString(origf);
-}
-
-SkipInt SKIP_unsafe_get_svalue(SkipInt* buffer, SkipInt n) {
-  return buffer[n];
 }
 
 #ifdef SKIP32
@@ -340,10 +263,6 @@ double SKIP_String__toFloat_raw(char* str) {
   return atof(cstr);
 }
 
-char SKIP_Unsafe_string_utf8_get(char* str, SkipInt n) {
-  return str[n];
-}
-
 /*****************************************************************************/
 /* Multibyte utf8 string used for testing purposes. */
 /*****************************************************************************/
@@ -373,9 +292,4 @@ char* SKIP_invalid_utf8_test_string() {
     string_utf8_buffer[i] = (unsigned char)test_utf8_data[i];
   }
   return sk_string_create((char*)string_utf8_buffer, 2);
-}
-
-char* SKIP_largest_string() {
-  static unsigned char buffer[] = {255, 255, 255, 255, 255, 255, 255, 255};
-  return sk_string_create((char*)buffer, 8);
 }

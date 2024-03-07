@@ -137,7 +137,6 @@ class GlobalEnv{
 }
 
 class UTF8String{
-  // Although this says Int, they are guaranteed to be bytes [0, 255].
   utf8: Array<UInt8>,
   string: String,
 } uses Hashable, Orderable, Show {
@@ -173,6 +172,13 @@ class UTF8String{
 
   fun hash(): Int {
     this.utf8.hash()
+  }
+
+  // hash code to be used in generated code, can temporarily differ from
+  // sk_string_set_hash in the runtime when staging a compiler bootstrap
+  // involving a change to the hash function
+  fun hashToEmit(): Int {
+    this.string.hash()
   }
 }
 
@@ -1072,7 +1078,6 @@ base class SimpleUnaryStmt final {value: InstrID} extends Stmt {
   | IntClz
   | IntCtz
   | IntToFloat
-  | IntToString
   | Intern
   | IntPopcount
   | Reinterpret

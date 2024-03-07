@@ -71,7 +71,7 @@ fun testRuntime(): void {
   );
   arr = Array[Array[1], Array[2], Array[3]];
   SKTest.expectEq(3, getArraySize(arr).toInt(), "getArraySize");
-  SKTest.expectEq(2147580002, str.hash(), "hash");
+  SKTest.expectEq(96358, str.hash(), "hash");
   SKTest.expectEq('b'.code(), String.getByte(str, 1).toInt(), "String.getByte");
   SKTest.expectEq(
     "c",

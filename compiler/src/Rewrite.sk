@@ -349,16 +349,6 @@ mutable base class .RewriteBase{
     this.emitStmt(IntToFloat{value, typ, pos, id, prettyName})
   }
 
-  mutable fun emitIntToString{
-    value: InstrID,
-    typ: Type,
-    pos: Pos,
-    id: InstrID = this.iid(),
-    prettyName: String = "",
-  }: IntToString {
-    this.emitStmt(IntToString{value, typ, pos, id, prettyName})
-  }
-
   mutable fun emitIntern{
     value: InstrID,
     typ: Type,

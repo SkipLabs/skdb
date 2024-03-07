@@ -83,7 +83,7 @@ fun call0(f: () -> void): void {
   f()
 }
 
-@cpp_runtime("SKIP_saveExn")
+@cpp_runtime
 native fun saveExn(exn: Exception): void;
 
 class ExternalException(

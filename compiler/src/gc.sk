@@ -484,7 +484,6 @@ private fun instrAllocAmount(
       | ArrayNew _
       | FloatToString _
       | Freeze _
-      | IntToString _
       | Object _
       | ObstackAlloc _
       | ObstackShallowClone _

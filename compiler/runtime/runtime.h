@@ -159,10 +159,10 @@ typedef struct {
   void* unused1;
   void* unused2;
 #endif
-  void* unused;
   size_t m_refMask[0];
 } SKIP_gc_type_t;
 
+void** get_vtable_ptr(char* skip_object);
 SKIP_gc_type_t* get_gc_type(char* skip_object);
 
 /*****************************************************************************/
@@ -174,6 +174,10 @@ typedef struct {
   uint32_t hash;
   unsigned char data[0];
 } sk_string_t;
+
+#define sk_string_header_size (offsetof(sk_string_t, data))
+sk_string_t* get_sk_string(char* obj);
+uint32_t sk_tag_string_hash(uint32_t untagged_hash);
 
 /*****************************************************************************/
 /* SKIP linked list. */
@@ -251,7 +255,7 @@ char* sk_get_external_pointer();
 char* sk_get_external_pointer_destructor(char* obj);
 uint32_t sk_get_external_pointer_value(char* obj);
 uint32_t sk_get_magic_number(char* obj);
-void sk_call_external_pointer_descructor(char*, uint32_t);
+void sk_call_external_pointer_destructor(char*, uint32_t);
 int sk_is_nofile_mode();
 void sk_lower_static(void*);
 void sk_check_has_lock();

@@ -661,6 +661,19 @@ fun getTable(
   }
 }
 
+fun getSqlTableName(dirName: SKStore.DirName): String {
+  dirNameStr = dirName.toString();
+  dirNameStr.stripPrefix("/").stripSuffix("/");
+}
+
+fun getSqlTableFromDirName(
+  context: readonly SKStore.Context,
+  dirName: SKStore.DirName,
+): SKDB.DirDescr {
+  dirNameStr = getSqlTableName(dirName);
+  SKDB.getTable(context.mclone(), 0, P.Name::create(dirNameStr))
+}
+
 fun feedbackTable(table: String): String {
   // WARNING: this must be kept in sync with the clients and how
   // they create a table. the format of this table name forms part

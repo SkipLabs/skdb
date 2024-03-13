@@ -1683,11 +1683,27 @@ fun evalWithContext(
   evaluator.stmt(context, params, stmt, inTransaction);
 }
 
+fun sqlPurgeFrom(ctx: mutable SKStore.Context, dir: SKStore.Dir): SKStore.Tick {
+  table = getSqlTableName(dir.getDirName());
+  ackTable = feedbackTable(table);
+  replicationId = ctx.getGlobal("REPLICATION-ID") match {
+  | Some(SKStore.IntFile(x)) -> Some(x)
+  | _ -> None()
+  };
+  watermark = getWatermark(ctx, ackTable, replicationId);
+  default = SKStore.Tick(ctx.tick.value - 1000);
+  watermark match {
+  | Some(SKStore.Tick(x)) if (x < default.value) -> SKStore.Tick(x - 1)
+  | _ -> default
+  }
+}
+
 fun makeSqlContext(): SKStore.Context {
   SKStore.Context{
     canReuse => SKStore.CRAlways(),
     failOnExn => true,
     removeSubDirs => true,
+    purgeFrom => sqlPurgeFrom,
   }
 }
 

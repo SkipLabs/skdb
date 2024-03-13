@@ -119,9 +119,10 @@ untracked fun main(): void {
         .arg(Cli.StringArg("table-suffix").about("Optional suffix")),
     )
     .subcommand(
-      Cli.Command("set-user")
-        .about("Sets the user of the database")
-        .arg(Cli.StringArg("userID").positional().required().about("userID")),
+      Cli.Command("connected-as")
+        .about("Informs the database that it is a replicating peer")
+        .arg(Cli.StringArg("userId").required().about("user ID"))
+        .arg(Cli.StringArg("replicationId").required().about("replication id")),
     )
     .subcommand(
       Cli.Command("dump-tables")
@@ -317,7 +318,7 @@ untracked fun main(): void {
       | "can-mirror" -> execCanMirror
       | "replay" -> execReplay
       | "toggle-view" -> execToggleView
-      | "set-user" -> execSetUser
+      | "connected-as" -> execSetClientContext
       | _ -> invariant_violation(`Unknown subcommand ${subcmd}`)
       }
     )
@@ -423,13 +424,17 @@ fun execDumpTable(args: Cli.ParseResults, options: SKDB.Options): void {
   })
 }
 
-fun execSetUser(args: Cli.ParseResults, options: SKDB.Options): void {
+fun execSetClientContext(args: Cli.ParseResults, options: SKDB.Options): void {
   ensureContext(args);
-  userID = args.getString("userID");
-  SKDB.runSql(options, _ ~> {
+  userId = args.getString("userId");
+  replicationId = args.getString("replicationId").toInt();
+  SKDB.runSql(options, ctx ~> {
     SKStore.CStop(
       Some((context, _, _) ~> {
-        context.!writeChecker = Some(SKDB.AccessSolver::create(context, userID))
+        context.setGlobal("REPLICATION-ID", SKStore.IntFile(replicationId));
+        context.!writeChecker = Some(
+          SKDB.AccessSolver::create(context, userId),
+        );
       }),
     )
   })
@@ -547,15 +552,6 @@ fun execDisconnect(args: Cli.ParseResults, options: SKDB.Options): void {
     | Some(_) -> context.!sessions = context.sessions.remove(sessionID)
     };
   })
-}
-
-fun getSqlTableFromDirName(
-  context: readonly SKStore.Context,
-  dirName: SKStore.DirName,
-): SKDB.DirDescr {
-  dirNameStr = dirName.toString();
-  !dirNameStr = dirNameStr.stripPrefix("/").stripSuffix("/");
-  SKDB.getTable(context.mclone(), 0, P.Name::create(dirNameStr))
 }
 
 fun execTail(args: Cli.ParseResults, options: SKDB.Options): void {

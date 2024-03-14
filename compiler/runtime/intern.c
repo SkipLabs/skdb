@@ -1,4 +1,7 @@
 #include "runtime.h"
+#ifdef SKIP64
+#include <stdlib.h>
+#endif
 
 /*****************************************************************************/
 /* Pointer to the type of external pointers. */
@@ -89,6 +92,13 @@ static uintptr_t* sk_get_ref_count_addr(void* obj) {
         SKIP_exit(-1);
     }
   }
+#ifdef SKIP64
+  if ((*count & 0x80000000) != 0) {
+    fprintf(stderr, "bit 31 of ref count set: *%p = %lu\n", count, *count);
+    abort();
+    SKIP_exit(65);
+  }
+#endif
   return count;
 }
 

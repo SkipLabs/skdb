@@ -287,7 +287,17 @@ fun subprocess(
   stdout: (String) -> void = _ -> void,
   stderr: (String) -> void = _ -> void,
 ): CompletedProcess {
-  p = Posix.Popen::create{args, stdout => true, stderr => true};
+  popen{args, stdout, stderr}
+}
+
+fun popen{
+  args: Array<String>,
+  env: Map<String, String> = Map[],
+  clear_env: Bool = false,
+  stdout: (String) -> void = _ -> void,
+  stderr: (String) -> void = _ -> void,
+}: CompletedProcess {
+  p = Posix.Popen::create{args, env, clear_env, stdout => true, stderr => true};
   streams = Array[p.stdout.fromSome(), p.stderr.fromSome()];
   captured = Array[mutable Vector[], mutable Vector[]];
   handlers = Array[stdout, stderr];

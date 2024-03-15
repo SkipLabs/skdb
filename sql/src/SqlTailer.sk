@@ -112,7 +112,7 @@ fun tailFrom(
   | None() ->
     // we haven't caught up yet so honour the requested since value per table
     tableName = P.Name::create(
-      dirSub.dirName.toString().stripPrefix("/").stripSuffix("/"),
+      getSqlTableName(dirSub.dirName),
     );
     SKStore.Tick(spec(tableName).since)
   }
@@ -177,6 +177,7 @@ fun tailSub(
 
       producedAnyOutput = false; // assume we won't
       couldFollowChanges = true; // assume we can
+      chunkingDisabled = false;
       for (dirSub in sub.dirSubs) {
         dirName = dirSub.dirName;
         edir = context.unsafeGetEagerDir(dirName);
@@ -189,6 +190,12 @@ fun tailSub(
         };
         since = tailFrom(spec, dirSub, tailWatermark);
         (isReset, changes) = if (since.value > 0) {
+          // we can only chunk while tables are since 0 as we'll emit
+          // zero checkpoints. once a nonzero request is handled, we must
+          // make sure that it doesn't ultimately get sent back as part of a
+          // zero-checkpoint chunk - otherwise it won't be applied
+          // TODO: optimisation, request all 0 tables first
+          !chunkingDisabled = true;
           (isReset, changes) = edir.getChangesAfter(since, forceReset);
           (isReset, changes.iterator())
         } else {
@@ -203,7 +210,7 @@ fun tailSub(
         // initialization, so that the client can start processing without waiting
         // for the full changeset.
         // this value is chosen based on some unscientific local testing
-        checkpointInterval = if (since.value == 0 && !isReset) 512 else {
+        checkpointInterval = if (since.value == 0 && !chunkingDisabled) 512 else {
           Int::max
         };
 

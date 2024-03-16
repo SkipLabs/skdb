@@ -36,6 +36,8 @@ jobs:
       - run:
           name: Run skfs tests
           command: |
+            update-alternatives --install /usr/bin/llvm-ar llvm-ar /usr/bin/llvm-ar-15 100
+            (cd compiler && make STAGE=0 install)
             mkdir -p ~/test-results
             cd prelude && skargo test --jobs 8 --junitxml ~/test-results/skfs.xml
       - store_test_results:
@@ -50,6 +52,8 @@ jobs:
       - run:
           name: Run native skdb tests
           command: |
+            update-alternatives --install /usr/bin/llvm-ar llvm-ar /usr/bin/llvm-ar-15 100
+            (cd compiler && make STAGE=0 install)
             make test-native
   skdb-wasm:
     docker:
@@ -64,6 +68,8 @@ jobs:
             PLAYWRIGHT_REPORTER: junit
             PLAYWRIGHT_JUNIT_OUTPUT_NAME: ~/test-results/skdb-wasm.xml
           command: |
+            update-alternatives --install /usr/bin/llvm-ar llvm-ar /usr/bin/llvm-ar-15 100
+            (cd compiler && make STAGE=0 install)
             mkdir -p ~/test-results
             make test-wasm
       - store_test_results:
@@ -78,6 +84,8 @@ jobs:
       - run:
           name: Run skjson tests
           command: |
+            update-alternatives --install /usr/bin/llvm-ar llvm-ar /usr/bin/llvm-ar-15 100
+            (cd compiler && make STAGE=0 install)
             mkdir -p ~/test-results
             cd skjson && skargo test --junitxml ~/test-results/skjson.xml
       - store_test_results:

@@ -23,7 +23,8 @@ RUN update-alternatives --install /usr/bin/llvm-config llvm-config /usr/bin/llvm
     update-alternatives --install /usr/bin/clang clang /usr/bin/clang-15 100 && \
     update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-15 100 && \
     update-alternatives --install /usr/bin/llvm-link llvm-link /usr/bin/llvm-link-15 100 && \
-    update-alternatives --install /usr/bin/llc llc /usr/bin/llc-15 100
+    update-alternatives --install /usr/bin/llc llc /usr/bin/llc-15 100 && \
+    update-alternatives --install /usr/bin/llvm-ar llvm-ar /usr/bin/llvm-ar-15 100
 
 ENV CC=clang
 ENV CXX=clang++

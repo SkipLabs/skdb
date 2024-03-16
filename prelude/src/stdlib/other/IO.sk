@@ -197,6 +197,7 @@ mutable class File(
 trait BufRead extends Read {
   mutable fun fill_buf(): Result<readonly Bytes, Error>;
   mutable fun consume(nbytes: Int): void;
+  readonly fun has_buffered_data(): Bool;
 
   mutable fun has_data_left(): Result<Bool, Error> {
     this.fill_buf().map(buf -> buf.size() > 0)
@@ -274,6 +275,10 @@ mutable class BufferedReader<T: mutable Read>(
 
   mutable fun consume(nbytes: Int): void {
     this.!available = Range(this.available.start + nbytes, this.available.end)
+  }
+
+  readonly fun has_buffered_data(): Bool {
+    !this.available.isEmpty()
   }
 }
 

@@ -104,7 +104,7 @@ test:
 
 .PHONY: test-skfs
 test-skfs:
-	cd skfs && SKARGO_PROFILE=$(SKARGO_PROFILE) skargo test
+	cd prelude && SKARGO_PROFILE=$(SKARGO_PROFILE) skargo test
 
 .PHONY: test-native
 test-native: build/skdb

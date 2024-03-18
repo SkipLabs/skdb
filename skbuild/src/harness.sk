@@ -190,7 +190,8 @@ fun build_harness(
     includeDirs,
     includeChecker,
   );
-  library.each(print_library);
+  library.each(_ -> print_library(env.name));
+  print_link(FileSystem.realpath(env.outDir));
   preambles
     .map(p -> {
       if (!Path.isAbsolute(p)) {
@@ -241,7 +242,7 @@ fun buildLibrary(
     cmd = if (isWasm) {
       Array["llvm-link", "-o", target].concat(objects).concat(resources)
     } else {
-      Array["ar", "rcs", target].concat(objects).concat(resources)
+      Array["llvm-ar", "rcs", target].concat(objects).concat(resources)
     };
     run(cmd, env.verbose);
   };

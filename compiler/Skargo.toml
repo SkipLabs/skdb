@@ -7,6 +7,7 @@ test-harness = "SkcTests.main"
 [dependencies]
 std = { "path" = "../prelude" }
 cli = { "path" = "../cli" }
+arparser = { "path" = "../arparser" }
 sktest = { "path" = "../sktest" }
 
 [[bin]]

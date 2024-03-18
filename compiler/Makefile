@@ -10,54 +10,32 @@ libdir   ?= $(exec_prefix)/lib
 .PHONY: default
 default: stage$(STAGE)
 
-.PHONY: runtime/libskip_runtime64.a
-runtime/libskip_runtime64.a:
-	$(MAKE) -C runtime $(@F)
-
-.PHONY: runtime/libbacktrace/.libs/libbacktrace.a
-runtime/libbacktrace/.libs/libbacktrace.a:
-	$(MAKE) -C runtime libbacktrace
-
-.PHONY: runtime/libskip_runtime32.bc
-runtime/libskip_runtime32.bc:
-	$(MAKE) -C runtime $(@F)
-
 bootstrap/%.ll: bootstrap/%.ll.gz
 	gunzip -c $< > $@
 
 stage%:
 	mkdir -p $@
-	$(MAKE) $@/bin/skc $@/bin/skfmt $@/bin/skargo $@/lib/libskip_runtime64.a $@/lib/libbacktrace.a $@/lib/libskip_runtime32.bc $@/lib/skip_preamble64.ll $@/lib/skip_preamble32.ll
+	$(MAKE) $@/bin/skc $@/bin/skfmt $@/bin/skargo $@/lib/libstd-x86_64-pc-linux-gnu.sklib $@/lib/libstd-wasm32-unknown-unknown.sklib
 
-stage%/lib/libskip_runtime64.a: runtime/libskip_runtime64.a
+# TODO: Build fresh stdlib for stage >=1?
+stage%/lib/libstd-x86_64-pc-linux-gnu.sklib: bootstrap/libstd-x86_64-pc-linux-gnu.sklib
 	mkdir -p $(@D)
 	cp $< $@
 
-stage%/lib/libbacktrace.a: runtime/libbacktrace/.libs/libbacktrace.a
+# TODO: Get rid of this once skargo handles building sklibs.
+stage%/lib/libstd-wasm32-unknown-unknown.sklib: bootstrap/libstd-wasm32-unknown-unknown.sklib
 	mkdir -p $(@D)
 	cp $< $@
 
-stage%/lib/libskip_runtime32.bc: runtime/libskip_runtime32.bc
-	mkdir -p $(@D)
-	cp $< $@
-
-stage%/lib/skip_preamble64.ll: preamble/preamble64.ll
-	mkdir -p $(@D)
-	cp $< $@
-
-stage%/lib/skip_preamble32.ll: preamble/preamble32.ll
-	mkdir -p $(@D)
-	cp $< $@
-
-stage0/bin/skargo: bootstrap/skargo_out64.ll stage0/lib/libskip_runtime64.a stage0/lib/libbacktrace.a
+stage0/bin/skargo: bootstrap/skargo_out64.ll stage0/lib/libstd-x86_64-pc-linux-gnu.sklib
 	mkdir -p $(@D)
 	clang++ -no-pie $(CXXFLAGS) -o $@ $^ -lpthread -g3
 
-stage0/bin/skfmt: bootstrap/skfmt_out64.ll stage0/lib/libskip_runtime64.a stage0/lib/libbacktrace.a
+stage0/bin/skfmt: bootstrap/skfmt_out64.ll stage0/lib/libstd-x86_64-pc-linux-gnu.sklib
 	mkdir -p $(@D)
 	clang++ -no-pie $(CXXFLAGS) -o $@ $^ -lpthread -g3
 
-stage0/bin/skc: bootstrap/skc_out64.ll stage0/lib/libskip_runtime64.a stage0/lib/libbacktrace.a
+stage0/bin/skc: bootstrap/skc_out64.ll stage0/lib/libstd-x86_64-pc-linux-gnu.sklib
 	mkdir -p $(@D)
 	clang++ -no-pie $(CXXFLAGS) -o $@ $^ -lpthread -g3
 
@@ -97,11 +75,8 @@ stageC/bin/skc stageC/bin/skfmt stageC/bin/skargo: stageB
 .PHONY: install
 install: stage$(STAGE)
 	install -d $(libdir)
-	install -m 644 stage$(STAGE)/lib/libskip_runtime64.a $(libdir)
-	install -m 644 stage$(STAGE)/lib/libbacktrace.a $(libdir)
-	install -m 644 stage$(STAGE)/lib/libskip_runtime32.bc $(libdir)
-	install -m 644 preamble/preamble64.ll $(libdir)/skip_preamble64.ll
-	install -m 644 preamble/preamble32.ll $(libdir)/skip_preamble32.ll
+	install -m 644 stage$(STAGE)/lib/libstd-x86_64-pc-linux-gnu.sklib $(libdir)
+	install -m 644 stage$(STAGE)/lib/libstd-wasm32-unknown-unknown.sklib $(libdir)
 	install -d $(bindir)
 	install -m 755 stage$(STAGE)/bin/skc stage$(STAGE)/bin/skfmt stage$(STAGE)/bin/skargo $(bindir)
 

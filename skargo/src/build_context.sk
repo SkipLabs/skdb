@@ -57,6 +57,9 @@ private fun getFiles(
 ): Array<String> {
   files = manifest.tests;
   for (dep in deps) {
+    // NOTE: This is a temporary hack to avoid duplicate definitions between the
+    // automatically provided `libstd.sklib` and the local override.
+    if (dep.name == "std") continue;
     !files = files.concat(dep.srcs)
   };
   files.collect(Array)

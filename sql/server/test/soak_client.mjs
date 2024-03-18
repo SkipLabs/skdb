@@ -173,8 +173,16 @@ const check_expectation = async function (
   }
 };
 
+const expectation_check_watermarks = new Map();
+
 const check_expectations = async function (skdb, client, latest_id, this_client) {
   pause_modifying = true;
+  const prevCheckPointWatermark = expectation_check_watermarks.get(client) ?? 0;
+  expectation_check_watermarks.set(
+    client,
+    Math.max(latest_id, prevCheckPointWatermark)
+  );
+
   const params = { client, latest_id };
 
   await skdb.exec(`
@@ -268,31 +276,39 @@ INSERT INTO no_pk_single_row_hist SELECT datetime(), client, value FROM no_pk_si
     "pk_filtered",
   );
 
-  check_expectation(
-    skdb,
-    `select count(*) as n
+  // this check will not necessarily hold true if this checkpoint is a
+  // replay. it can replay independently of the pk_privacy_ro table.
+  if (prevCheckPointWatermark < latest_id) {
+    check_expectation(
+      skdb,
+      `select count(*) as n
      from pk_privacy_ro
      where client = @client`,
-    params,
-    new SKDBTable({
-      n: latest_id % 60 < 30 ? 1 : 0,
-    }),
-    "pk_privacy_ro",
-  );
+      params,
+      new SKDBTable({
+        n: latest_id % 60 < 30 ? 1 : 0,
+      }),
+      "pk_privacy_ro",
+    );
+  }
 
-  // cannot just look at count here as we may have updated the row and
-  // so it will not be removed.
-  check_expectation(
-    skdb,
-    `select NOT (@latest_id % 60 < 30 AND count(*) <> 1) as test
+  // this check will not necessarily hold true if this checkpoint is a
+  // replay. it can replay independently of the pk_privacy_rw table.
+  if (prevCheckPointWatermark < latest_id) {
+    // cannot just look at count here as we may have updated the row and
+    // so it will not be removed.
+    check_expectation(
+      skdb,
+      `select NOT (@latest_id % 60 < 30 AND count(*) <> 1) as test
      from pk_privacy_rw
      where client = @client`,
-    params,
-    new SKDBTable({
-      test: 1,
-    }),
-    "pk_privacy_rw",
-  );
+      params,
+      new SKDBTable({
+        test: 1,
+      }),
+      "pk_privacy_rw",
+    );
+  }
 
   pause_modifying = false;
 };

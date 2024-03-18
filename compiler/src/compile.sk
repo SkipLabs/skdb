@@ -229,6 +229,7 @@ fun compile(
         | None() -> void
         | Some(errors) ->
           SkipError.printErrorsAndExit(
+            context,
             SkipError.ErrorsFile::type(errors).value.reversed().toArray(),
           )
         };

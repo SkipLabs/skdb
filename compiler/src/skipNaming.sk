@@ -1259,7 +1259,11 @@ fun maybeGetClass(
 fun getClass(context: mutable SKStore.Context, className: A.Name): N.Class_def {
   maybeGetClass(context, className.i1) match {
   | None() ->
-    SkipError.fatalError(className.i0, `Unbound class: '${className.i1}'`)
+    SkipError.fatalError(
+      context,
+      className.i0,
+      `Unbound class: '${className.i1}'`,
+    )
   | Some(x) -> x
   }
 }

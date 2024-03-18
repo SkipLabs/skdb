@@ -428,10 +428,10 @@ fun execSetClientContext(args: Cli.ParseResults, options: SKDB.Options): void {
   ensureContext(args);
   userId = args.getString("userId");
   replicationId = args.getString("replicationId").toInt();
-  SKDB.runSql(options, ctx ~> {
+  SKDB.runSql(options, _ctx ~> {
     SKStore.CStop(
       Some((context, _, _) ~> {
-        context.setGlobal("REPLICATION-ID", SKStore.IntFile(replicationId));
+        context.!purgeFrom = SKDB.sqlPurgeFrom(replicationId);
         context.!writeChecker = Some(
           SKDB.AccessSolver::create(context, userId),
         );

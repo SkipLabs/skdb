@@ -89,11 +89,15 @@ const modify_rows = async function (client, skdb, i) {
     // conflict:
     // fight over single row
     await skdb.exec(
-      `UPDATE pk_single_row SET client = ${client}, value = ${i} WHERE id = 0;`,
+      `BEGIN TRANSACTION;
+       INSERT INTO pk_single_row_hist SELECT datetime(), client, value FROM pk_single_row;
+       UPDATE pk_single_row SET client = ${client}, value = ${i} WHERE id = 0;
+       COMMIT;`,
     );
     // for no pk we have a very trivial conflict resolution - I win.
     await skdb.exec(
       `BEGIN TRANSACTION;
+       INSERT INTO no_pk_single_row_hist SELECT datetime(), client, value FROM no_pk_single_row;
        DELETE FROM no_pk_single_row WHERE id = 0;
        INSERT INTO no_pk_single_row VALUES (0,${client},${i}, 'read-write');
        COMMIT;`,
@@ -124,7 +128,9 @@ const modify_rows = async function (client, skdb, i) {
        INSERT INTO pk_filtered VALUES(${
          i * 2 + (client - 1)
        }, ${client}, ${i}, 'read-write');
+       INSERT INTO pk_single_row_hist SELECT datetime(), client, value FROM pk_single_row;
        UPDATE pk_single_row SET client = ${client}, value = ${i} WHERE id = 0;
+       INSERT INTO no_pk_single_row_hist SELECT datetime(), client, value FROM no_pk_single_row;
        DELETE FROM no_pk_single_row WHERE id = 0;
        INSERT INTO no_pk_single_row VALUES (0,${client},${i}, 'read-write');
        UPDATE pk_privacy_ro SET skdb_access = '${privacy}' WHERE client = ${client};
@@ -167,9 +173,14 @@ const check_expectation = async function (
   }
 };
 
-const check_expectations = async function (skdb, client, latest_id) {
+const check_expectations = async function (skdb, client, latest_id, this_client) {
   pause_modifying = true;
   const params = { client, latest_id };
+
+  await skdb.exec(`
+INSERT INTO pk_single_row_hist SELECT datetime(), client, value FROM pk_single_row;
+INSERT INTO no_pk_single_row_hist SELECT datetime(), client, value FROM no_pk_single_row;`,
+  );
 
   console.log("Running expectation checks for checkpoint", params);
 
@@ -205,9 +216,9 @@ const check_expectations = async function (skdb, client, latest_id) {
   // arrive as part of catching up.
   check_expectation(
     skdb,
-    `select client, value >= @latest_id as test
-     from no_pk_single_row
-     where id = 0 and client = @client`,
+    `select client, max(value) >= @latest_id as test
+     from no_pk_single_row_hist
+     where client = @client`,
     params,
     new SKDBTable({
       client: client,
@@ -219,19 +230,19 @@ const check_expectations = async function (skdb, client, latest_id) {
   // we should see either a result as large as the client just wrote
   // or a larger client value (which due to how concurrency is
   // resolved is allowed to win)
-  check_expectation(
-    skdb,
-    `select client >= @client as client_bound,
-            not (client = @client and value < @latest_id) as test
-     from pk_single_row
-     where id = 0`,
-    params,
-    new SKDBTable({
-      client_bound: 1,
-      test: 1,
-    }),
-    "pk_single_row",
-  );
+  if (this_client < client) {
+    check_expectation(
+      skdb,
+      `select max(value) >= @latest_id as test
+      from pk_single_row_hist
+      where client = @client`,
+      params,
+      new SKDBTable({
+        test: 1,
+      }),
+      "pk_single_row",
+    );
+  }
 
   check_expectation(
     skdb,
@@ -290,7 +301,7 @@ const client = process.argv[2];
 const port = process.argv[3];
 
 setup(client, port)
-  .then((skdb) => {
+  .then(async (skdb) => {
     process.on("SIGUSR1", async () => {
       console.log(`Dumping state in response to SIGUSR1.`);
 
@@ -342,8 +353,22 @@ setup(client, port)
       console.log(await skdb.exec("select * from pk_privacy_rw;"));
     });
 
+    await skdb.exec(`
+CREATE TABLE no_pk_single_row_hist (
+  t TEXT DEFAULT CURRENT_TIMESTAMP,
+  client INTEGER,
+  value INTEGER
+);`);
+
+    await skdb.exec(`
+CREATE TABLE pk_single_row_hist (
+  t TEXT DEFAULT CURRENT_TIMESTAMP,
+  client INTEGER,
+  value INTEGER
+);` );
+
     // check expectations on receiving a checkpoint
-    skdb.watch(
+    await skdb.watch(
       `SELECT client, max(latest_id) as latest_id
      FROM checkpoints
      WHERE client != @client
@@ -353,9 +378,10 @@ setup(client, port)
         if (rows.length < 1) {
           return;
         }
-        const client = rows[0].client;
+        const checkpoint_client = rows[0].client;
         const latest_id = rows[0].latest_id;
-        check_expectations(skdb, client, latest_id);
+        const this_client = client;
+        check_expectations(skdb, checkpoint_client, latest_id, this_client);
       },
     );
 

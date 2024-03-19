@@ -37,58 +37,68 @@ class ParseResults{
   subcommand: ?String = None(),
   error: ?ArgumentError = None(),
 } {
-  fun getBool(name: String): Bool {
-    this.values[name] match {
+  fun getBool(name: String, fail_on_invalid_arg: Bool = true): Bool {
+    this.getValue(name, fail_on_invalid_arg) match {
     | BoolValue(v) -> v
+    | MissingValue() -> false
     | _ -> invariant_violation(`Argument ${name} is not boolean`)
     }
   }
 
-  fun maybeGetString(name: String): ?String {
-    this.values.maybeGet(name) match {
-    | Some(StringValue(v)) -> Some(v)
-    | Some(MissingValue()) -> None()
-    | Some(_) -> invariant_violation(`Argument ${name} is not a string`)
-    | None() -> invariant_violation(`Argument ${name} is undefined`)
+  fun maybeGetString(name: String, fail_on_invalid_arg: Bool = true): ?String {
+    this.getValue(name, fail_on_invalid_arg) match {
+    | StringValue(v) -> Some(v)
+    | MissingValue() -> None()
+    | _ -> invariant_violation(`Argument ${name} is not a string`)
     }
   }
 
-  fun getString(name: String): String {
-    this.maybeGetString(name) match {
+  fun getString(name: String, fail_on_invalid_arg: Bool = true): String {
+    this.maybeGetString(name, fail_on_invalid_arg) match {
     | Some(s) -> s
     | None() -> invariant_violation(`Argument ${name} is missing`)
     }
   }
 
-  fun maybeGetInt(name: String): ?Int {
-    this.values.maybeGet(name) match {
-    | Some(IntValue(v)) -> Some(v)
-    | Some(MissingValue()) -> None()
-    | Some(_) -> invariant_violation(`Argument ${name} is not an int`)
-    | None() -> invariant_violation(`Argument ${name} is undefined`)
+  fun maybeGetInt(name: String, fail_on_invalid_arg: Bool = true): ?Int {
+    this.getValue(name, fail_on_invalid_arg) match {
+    | IntValue(v) -> Some(v)
+    | MissingValue() -> None()
+    | _ -> invariant_violation(`Argument ${name} is not an int`)
     }
   }
 
-  fun getInt(name: String): Int {
-    this.maybeGetInt(name) match {
+  fun getInt(name: String, fail_on_invalid_arg: Bool = true): Int {
+    this.maybeGetInt(name, fail_on_invalid_arg) match {
     | Some(s) -> s
     | None() -> invariant_violation(`Argument ${name} is missing`)
     }
   }
 
-  fun maybeGetArray(name: String): ?Array<String> {
-    this.values.maybeGet(name) match {
-    | Some(ArrayValue(v)) -> Some(v)
-    | Some(MissingValue()) -> None()
-    | Some(_) -> invariant_violation(`Argument ${name} is not an array`)
-    | None() -> invariant_violation(`Argument ${name} is undefined`)
+  fun maybeGetArray(
+    name: String,
+    fail_on_invalid_arg: Bool = true,
+  ): ?Array<String> {
+    this.getValue(name, fail_on_invalid_arg) match {
+    | ArrayValue(v) -> Some(v)
+    | MissingValue() -> None()
+    | _ -> invariant_violation(`Argument ${name} is not an array`)
     }
   }
 
-  fun getArray(name: String): Array<String> {
-    this.maybeGetArray(name) match {
+  fun getArray(name: String, fail_on_invalid_arg: Bool = true): Array<String> {
+    this.maybeGetArray(name, fail_on_invalid_arg) match {
     | Some(a) -> a
     | None() -> invariant_violation(`Argument ${name} is missing`)
+    }
+  }
+
+  private fun getValue(name: String, fail_on_invalid_arg: Bool = true): Value {
+    this.values.maybeGet(name) match {
+    | Some(v) -> v
+    | None() if (fail_on_invalid_arg) ->
+      invariant_violation(`Argument ${name} is undefined`)
+    | None() -> MissingValue()
     }
   }
 

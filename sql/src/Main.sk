@@ -204,7 +204,12 @@ untracked fun main(): void {
             "Globally unique identity of this write stream",
           ),
         )
-        .arg(Cli.StringArg("user").about("Name of the user")),
+        .arg(Cli.StringArg("user").about("Name of the user"))
+        .arg(
+          Cli.BoolArg("enable-rebuilds").about(
+            "Allow write-csv to apply rebuilds. Used wrongly, can lead to data loss.",
+          ),
+        ),
     )
     .subcommand(
       Cli.Command("tail")
@@ -631,9 +636,11 @@ fun execWriteCsv(args: Cli.ParseResults, options: SKDB.Options): void {
   | None() -> SKStore.genSym(0)
   };
 
+  rebuildsEnabled = args.getBool("enable-rebuilds");
+
   SKDB.runSql(options, context ~> {
     user = args.maybeGetString("user");
-    SKCSV.replayDiff(context, read_line, user, source)
+    SKCSV.replayDiff(context, read_line, user, source, rebuildsEnabled)
   })
 }
 

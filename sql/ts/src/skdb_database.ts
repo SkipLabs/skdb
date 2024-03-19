@@ -48,7 +48,10 @@ class SKDBMechanismImpl implements SKDBMechanism {
       );
     };
     this.writeCsv = (payload: string, source: string) => {
-      return client.runLocal(["write-csv", "--source", source], payload + "\n");
+      return client.runLocal(
+        ["write-csv", "--enable-rebuilds", "--source", source],
+        payload + "\n",
+      );
     };
     this.watchFile = (fileName: string, fn: (change: ArrayBuffer) => void) => {
       fs.watchFile(fileName, (change) => {

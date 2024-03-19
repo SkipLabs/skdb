@@ -625,6 +625,7 @@ fun replayDiff(
   getLine: () -> ?String,
   user: ?String,
   identity: Int,
+  rebuildsEnabled: Bool,
 ): SKStore.ContextOp {
   SKDB.getFinalState(context, Some(identity)) match {
   | Some(SKDB.RSError()) ->
@@ -724,6 +725,10 @@ fun replayDiff(
       | current @ Some(DiffParsingState(_, currentDiff)) if (
         line == "!rebuild"
       ) ->
+        if (!rebuildsEnabled) {
+          SKDB.setFinalState(context, identity, SKDB.RSError());
+          invariant_violation("Received rebuild when processing disabled.")
+        };
         currentDiff.!rebuild = true;
         current
 

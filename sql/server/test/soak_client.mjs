@@ -151,6 +151,14 @@ const modify_rows = async function (client, skdb, i) {
   }
 };
 
+const table_is_rebuilding = function(skdb, table) {
+  // we're about to do some serious encapsulation violation
+  const replicationId = skdb.skdbSync.connectedRemote.replicationUid;
+  const watermark = skdb.skdbSync.watermark(replicationId, table);
+  return watermark === BigInt(0);
+};
+
+const table_rebuilding_state = new Map();
 const check_expectation = async function (
   skdb,
   check_query,
@@ -159,6 +167,21 @@ const check_expectation = async function (
   table,
 ) {
   const results = await skdb.exec(check_query, params);
+
+  const rebuilding = table_is_rebuilding(skdb, table);
+  const wasRebuliding = table_rebuilding_state.get(table) ?? false;
+  table_rebuilding_state.set(table, rebuilding);
+  if (rebuilding && wasRebuliding) {
+    // we've been rebuilding for two checkpoints in a row. that is
+    // (almost?) certainly a bad state that isn't healing
+    throw new Error(`${table} is still rebuilding`);
+  }
+  if (rebuilding) {
+    // it doesn't make sense to check expectation on a table that is
+    // being rebuilt and we know is in a partial state.
+    return;
+  }
+
   try {
     assert.deepStrictEqual(
       results,

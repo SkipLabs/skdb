@@ -188,7 +188,7 @@ class RequestHandler(
       }
       is ProtoRequestTail -> {
         if (!skdb.canMirror(request.table, request.expectedSchema)) {
-          stream.error(2003u, "Schema mismatch")
+          stream.error(2003u, "Invalid schema for ${request.table}")
           return this
         }
         val proc =
@@ -197,7 +197,11 @@ class RequestHandler(
                 replicationId,
                 mapOf(
                     request.table to
-                        TailSpec(request.since.toInt(), request.filterExpr, request.filterParams)),
+                        TailSpec(
+                            request.since.toInt(),
+                            request.filterExpr,
+                            request.filterParams,
+                            request.expectedSchema)),
                 { data, shouldFlush -> stream.send(encodeProtoMsg(ProtoData(data, shouldFlush))) },
                 { stream.error(2000u, "Unexpected EOF") },
             )
@@ -208,7 +212,11 @@ class RequestHandler(
         for (tailreq in request.requests) {
           spec.put(
               tailreq.table,
-              TailSpec(tailreq.since.toInt(), tailreq.filterExpr, tailreq.filterParams))
+              TailSpec(
+                  tailreq.since.toInt(),
+                  tailreq.filterExpr,
+                  tailreq.filterParams,
+                  tailreq.expectedSchema))
         }
         val proc =
             skdb.tail(

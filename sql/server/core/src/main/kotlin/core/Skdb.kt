@@ -46,7 +46,12 @@ data class ProcessOutput(val output: ByteArray, val exitCode: Int) {
   }
 }
 
-data class TailSpec(val since: Int, val filterExpr: String, val filterParams: Map<String, Any?>)
+data class TailSpec(
+    val since: Int,
+    val filterExpr: String,
+    val filterParams: Map<String, Any?>,
+    val expectedSchema: String
+)
 
 // super dumb, mostly synchronous, process facade
 class Skdb(val name: String, private val dbPath: String) {

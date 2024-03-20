@@ -739,6 +739,7 @@ class EagerDir{
     filter: (SKStore.Context, Bool) ~> (SKStore.Key -> Bool),
     destinationTime: ?Tick,
     checkpointInterval: Int = Int::max,
+    sendEverything: Bool = false,
   ): Bool {
     if (isReset) {
       theirTime = destinationTime match {
@@ -750,7 +751,7 @@ class EagerDir{
       return true
     };
 
-    filterFun = filter(context.clone(), isReset);
+    filterFun = filter(context.clone(), sendEverything);
 
     changesWritten = 0;
 

@@ -189,15 +189,15 @@ fun tailSub(
         | SKDB.OFK_Table() -> SKStore.OTable(getFieldNames(context, dirName))
         };
         since = tailFrom(spec, dirSub, tailWatermark);
-        (isReset, changes) = if (since.value > 0) {
+        (shouldRebuild, changes) = if (since.value > 0) {
           // we can only chunk while tables are since 0 as we'll emit
           // zero checkpoints. once a nonzero request is handled, we must
           // make sure that it doesn't ultimately get sent back as part of a
           // zero-checkpoint chunk - otherwise it won't be applied
           // TODO: optimisation, request all 0 tables first
           !chunkingDisabled = true;
-          (isReset, changes) = edir.getChangesAfter(since, forceReset);
-          (isReset, changes.iterator())
+          (shouldRebuild, changes) = edir.getChangesAfter(since, forceReset);
+          (shouldRebuild, changes.iterator())
         } else {
           // if since is zero, the receiver is specifying that they
           // have no data to tail since. to avoid a likely reset and
@@ -216,7 +216,7 @@ fun tailSub(
 
         producedOutput = edir.writeDiff(
           context,
-          isReset,
+          shouldRebuild,
           changes.iterator(),
           writer,
           dirSub.entity,
@@ -224,9 +224,10 @@ fun tailSub(
           dirSub.filter,
           dirSub.getDestinationWatermark(context),
           checkpointInterval,
+          since.value < 1,      // the client has nothing, so send everything
         );
         !producedAnyOutput = producedAnyOutput || producedOutput;
-        !couldFollowChanges = couldFollowChanges && !isReset;
+        !couldFollowChanges = couldFollowChanges && !shouldRebuild;
       };
 
       // produce checkpoint for flushing and committing

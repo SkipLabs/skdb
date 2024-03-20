@@ -869,11 +869,11 @@ mutable class Context{
         dirName = dirSub.dirName;
         this.unsafeMaybeGetDir(dirName) match {
         | Some(dir @ EagerDir _) ->
-          (isReset, changes) = dir.getChangesAfter(start);
+          (shouldRebuild, changes) = dir.getChangesAfter(start);
           ctx = this.clone();
           producedOutput = dir.writeDiff(
             ctx,
-            isReset,
+            shouldRebuild,
             changes.iterator(),
             writer,
             dirSub.entity,

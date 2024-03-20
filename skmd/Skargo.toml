@@ -3,7 +3,8 @@ name = "skmd"
 version = "0.1.0"
 
 [dependencies]
-skargo = { "path" = "../skargo" }
+std = { path = "../prelude" }
+skargo = { path = "../skargo" }
 
 [[bin]]
 name = "skmd"

@@ -10,68 +10,41 @@ libdir   ?= $(exec_prefix)/lib
 .PHONY: default
 default: stage$(STAGE)
 
-.PHONY: runtime/libskip_runtime64.a
-runtime/libskip_runtime64.a:
-	$(MAKE) -C runtime $(@F)
-
-.PHONY: runtime/libbacktrace/.libs/libbacktrace.a
-runtime/libbacktrace/.libs/libbacktrace.a:
-	$(MAKE) -C runtime libbacktrace
-
-.PHONY: runtime/libskip_runtime32.bc
-runtime/libskip_runtime32.bc:
-	$(MAKE) -C runtime $(@F)
-
 bootstrap/%.ll: bootstrap/%.ll.gz
 	gunzip -c $< > $@
 
 stage%:
 	mkdir -p $@
-	$(MAKE) $@/bin/skc $@/bin/skfmt $@/bin/skargo $@/lib/libskip_runtime64.a $@/lib/libbacktrace.a $@/lib/libskip_runtime32.bc $@/lib/skip_preamble64.ll $@/lib/skip_preamble32.ll
+	$(MAKE) $@/bin/skc $@/bin/skfmt $@/bin/skargo $@/lib/libstd-x86_64-pc-linux-gnu.sklib
 
-stage%/lib/libskip_runtime64.a: runtime/libskip_runtime64.a
+# TODO: Build fresh stdlib for stage >=1?
+stage%/lib/libstd-x86_64-pc-linux-gnu.sklib: bootstrap/libstd-x86_64-pc-linux-gnu.sklib
 	mkdir -p $(@D)
 	cp $< $@
 
-stage%/lib/libbacktrace.a: runtime/libbacktrace/.libs/libbacktrace.a
-	mkdir -p $(@D)
-	cp $< $@
-
-stage%/lib/libskip_runtime32.bc: runtime/libskip_runtime32.bc
-	mkdir -p $(@D)
-	cp $< $@
-
-stage%/lib/skip_preamble64.ll: preamble/preamble64.ll
-	mkdir -p $(@D)
-	cp $< $@
-
-stage%/lib/skip_preamble32.ll: preamble/preamble32.ll
-	mkdir -p $(@D)
-	cp $< $@
-
-stage0/bin/skargo: bootstrap/skargo_out64.ll stage0/lib/libskip_runtime64.a stage0/lib/libbacktrace.a
+stage0/bin/skargo: bootstrap/skargo_out64.ll stage0/lib/libstd-x86_64-pc-linux-gnu.sklib
 	mkdir -p $(@D)
 	clang++ -no-pie $(CXXFLAGS) -o $@ $^ -lpthread -g3
 
-stage0/bin/skfmt: bootstrap/skfmt_out64.ll stage0/lib/libskip_runtime64.a stage0/lib/libbacktrace.a
+stage0/bin/skfmt: bootstrap/skfmt_out64.ll stage0/lib/libstd-x86_64-pc-linux-gnu.sklib
 	mkdir -p $(@D)
 	clang++ -no-pie $(CXXFLAGS) -o $@ $^ -lpthread -g3
 
-stage0/bin/skc: bootstrap/skc_out64.ll stage0/lib/libskip_runtime64.a stage0/lib/libbacktrace.a
+stage0/bin/skc: bootstrap/skc_out64.ll stage0/lib/libstd-x86_64-pc-linux-gnu.sklib
 	mkdir -p $(@D)
 	clang++ -no-pie $(CXXFLAGS) -o $@ $^ -lpthread -g3
 
 stage1/bin/skc stage1/bin/skfmt stage1/bin/skargo: stage0
-	PATH=stage0/bin/:$(PATH) skargo build -r --target-dir stage1/bin
-	(cd ../skargo && PATH=../compiler/stage0/bin:$(PATH) skargo build -r --target-dir ../compiler/stage1/bin)
+	PATH=stage0/bin/:$(PATH) skargo build -r --bins --out-dir stage1/bin --target-dir stage1/target
+	PATH=stage0/bin/:$(PATH) skargo build -r --bins --out-dir stage1/bin --target-dir stage1/target --manifest-path ../skargo/Skargo.toml
 
 stage2/bin/skc stage2/bin/skfmt stage2/bin/skargo: stage1
-	PATH=stage1/bin/:$(PATH) skargo build -r --target-dir stage2/bin
-	(cd ../skargo && PATH=../compiler/stage1/bin:$(PATH) skargo build -r --target-dir ../compiler/stage2/bin)
+	PATH=stage1/bin/:$(PATH) skargo build -r --bins --out-dir stage2/bin --target-dir stage2/target
+	PATH=stage1/bin/:$(PATH) skargo build -r --bins --out-dir stage2/bin --target-dir stage2/target --manifest-path ../skargo/Skargo.toml
 
 stage3/bin/skc stage3/bin/skfmt stage3/bin/skargo: stage2
-	PATH=stage2/bin/:$(PATH) skargo build -r --target-dir stage3/bin
-	(cd ../skargo && PATH=../compiler/stage2/bin:$(PATH) skargo build -r --target-dir ../compiler/stage3/bin)
+	PATH=stage2/bin/:$(PATH) skargo build -r --bins --out-dir stage3/bin --target-dir stage3/target
+	PATH=stage2/bin/:$(PATH) skargo build -r --bins --out-dir stage3/bin --target-dir stage3/target --manifest-path ../skargo/Skargo.toml
 # 	TODO: Ensure stage2 == stage3.
 
 stageA/bin/skc:
@@ -87,21 +60,24 @@ stageA/bin/skfmt:
 	cp $(shell command -v skfmt) stageA/bin/skfmt
 
 stageB/bin/skc stageB/bin/skfmt stageB/bin/skargo: stageA
-	PATH=stageA/bin/:$(PATH) skargo build -r --target-dir stageB/bin
-	(cd ../skargo && PATH=../compiler/stageA/bin:$(PATH) skargo build -r --target-dir ../compiler/stageB/bin)
+	PATH=stageA/bin/:$(PATH) skargo build -r --bins --out-dir stageB/bin --target-dir stageB/target
+	PATH=stageA/bin/:$(PATH) skargo build -r --bins --out-dir stageB/bin --target-dir stageB/target --manifest-path ../skargo/Skargo.toml
 
 stageC/bin/skc stageC/bin/skfmt stageC/bin/skargo: stageB
-	PATH=stageB/bin/:$(PATH) skargo build -r --target-dir stageC/bin
-	(cd ../skargo && PATH=../compiler/stageB/bin:$(PATH) skargo build -r --target-dir ../compiler/stageC/bin)
+	PATH=stageB/bin/:$(PATH) skargo build -r --bins --out-dir stageC/bin --target-dir stageC/bin
+	PATH=stageB/bin/:$(PATH) skargo build -r --bins --out-dir stageC/bin --target-dir stageC/target --manifest-path ../skargo/Skargo.toml
+
+.PHONY: promote
+promote: stage$(STAGE)
+	cp stage1/target/host/release/deps/skc-*.ll bootstrap/skc_out64.ll && gzip -f bootstrap/skc_out64.ll
+	cp stage1/target/host/release/deps/skargo-*.ll bootstrap/skargo_out64.ll && gzip -f bootstrap/skargo_out64.ll
+	cp stage1/target/host/release/deps/skfmt-*.ll bootstrap/skfmt_out64.ll && gzip -f bootstrap/skfmt_out64.ll
+	cp stage1/target/host/release/deps/libstd-*.sklib bootstrap/libstd-x86_64-pc-linux-gnu.sklib
 
 .PHONY: install
 install: stage$(STAGE)
 	install -d $(libdir)
-	install -m 644 stage$(STAGE)/lib/libskip_runtime64.a $(libdir)
-	install -m 644 stage$(STAGE)/lib/libbacktrace.a $(libdir)
-	install -m 644 stage$(STAGE)/lib/libskip_runtime32.bc $(libdir)
-	install -m 644 preamble/preamble64.ll $(libdir)/skip_preamble64.ll
-	install -m 644 preamble/preamble32.ll $(libdir)/skip_preamble32.ll
+	install -m 644 stage$(STAGE)/lib/libstd-x86_64-pc-linux-gnu.sklib $(libdir)
 	install -d $(bindir)
 	install -m 755 stage$(STAGE)/bin/skc stage$(STAGE)/bin/skfmt stage$(STAGE)/bin/skargo $(bindir)
 

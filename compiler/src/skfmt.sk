@@ -24,9 +24,10 @@ untracked fun main(): void {
   args = Cli.Command("skfmt")
     .about("Format skip code")
     .arg(
-      Cli.ArrayArg("files")
+      Cli.StringArg("files")
         .positional()
-        .default(Array["-"])
+        .repeatable()
+        .default_values(Array["-"])
         .about("Skip file(s) to format"),
     )
     .arg(
@@ -54,7 +55,11 @@ untracked fun main(): void {
     };
     prettyPrint(contents, file) match {
     | Failure(error) ->
-      print_error_ln(SkipError.errorsToString(Vector[error]));
+      print_error_ln(
+        SkipError.errorsToString(Vector[error], filename ->
+          FileSystem.readTextFile(filename)
+        ),
+      );
       skipExit(1)
     | Success(formattedContents) ->
       if (inplace) {

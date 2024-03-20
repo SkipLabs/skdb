@@ -9,7 +9,7 @@ if [ -z "$SKARGO_PROFILE" ]; then
     SKARGO_PROFILE=dev
 fi
 
-SKDB="skargo run --profile $SKARGO_PROFILE -- "
+SKDB="skargo run -q --profile $SKARGO_PROFILE -- "
 
 $SKDB --init /tmp/test.db
 

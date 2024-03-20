@@ -46,13 +46,29 @@ fun link(
   config: Config.Config,
   exports: Array<String> = Array[],
 ): void {
+  linker_args = config.native_lib_search_paths
+    .map(p -> `-L${p}`)
+    .concat(
+      config.dependencies
+        .values()
+        .collect(Array)
+        .flatMap(x -> x.i1.links)
+        .collect(Array),
+    );
+  static_libs = config.libraries
+    .map(lib -> `-l${lib}`)
+    .concat(
+      config.dependencies
+        .values()
+        .filter(d -> d.i1.has_object_code)
+        .map(x -> x.i0)
+        .collect(Array),
+    );
   if (config.isWasm()) {
     output = config.output;
     bcFile = output + ".bc";
     runShell(
-      Array["llvm-link", llFile].concat(config.links).concat(
-        Array["-o", bcFile],
-      ),
+      Array["llvm-link", llFile].concat(Array["-o", bcFile]),
       config.verbose,
     );
     oFile = output + ".o";
@@ -110,7 +126,9 @@ fun link(
         output,
         "--no-entry",
         "-allow-undefined",
-      ].concat(exportJs),
+      ].concat(exportJs)
+        .concat(linker_args)
+        .concat(static_libs),
       config.verbose,
     );
   } else {
@@ -121,10 +139,10 @@ fun link(
         `-O${config.optLevel}`,
         "-mllvm",
         "-inline-threshold=0",
-        llFile,
         "-o",
         config.output,
-      ].concat(config.links),
+        llFile,
+      ].concat(linker_args).concat(static_libs),
       config.verbose,
     );
   }
@@ -172,14 +190,35 @@ fun ensureCompatibleLLVMVersion(): void {
 
 class TickConfigFile(value: (Int, Config.Config)) extends SKStore.File
 
+fun resolveStaticLibrary(
+  name: String,
+  library_paths: Sequence<String>,
+): String {
+  if (name.contains("/")) {
+    if (FileSystem.exists(name)) {
+      return name
+    } else {
+      print_error(`File not found ${name}`);
+      skipExit(3)
+    }
+  };
+  for (path in library_paths) {
+    candidate = Path.join(path, `lib${name}.a`);
+    if (FileSystem.exists(candidate)) {
+      break candidate
+    }
+  } else {
+    print_error(`Could not find lib${name}.a`);
+    skipExit(3)
+  }
+}
+
 fun compile(
   config: Config.Config,
   context: mutable SKStore.Context,
   fileNames: Array<String>,
 ): void {
-  // Convert project:program-unit targets to a list of source files.
-
-  if (fileNames.isEmpty()) {
+  if (fileNames.isEmpty() && config.dependencies.isEmpty()) {
     print_error("fatal error: no input files\n");
     skipExit(4); // Exit code used by g++ for no input files
   };
@@ -192,7 +231,12 @@ fun compile(
     _ = context.mkdir(x ~> x, x ~> x, FileCache.allFilesDirName, Array[]);
   };
 
-  FileCache.writeFiles(context, fileNames);
+  FileCache.writeFiles(
+    context,
+    fileNames,
+    config.dependencies,
+    config.lib_name,
+  );
 
   backendDirName = SKStore.DirName::create("/backend/");
   backendSinkDirName = SKStore.DirName::create("/backendSink/");
@@ -229,12 +273,18 @@ fun compile(
         | None() -> void
         | Some(errors) ->
           SkipError.printErrorsAndExit(
+            context,
             SkipError.ErrorsFile::type(errors).value.reversed().toArray(),
           )
         };
 
         if (conf.check) {
           return void;
+        };
+
+        if (conf.emit == "sklib") {
+          compile_sklib(conf);
+          return void
         };
 
         // Create a filter for what functions to compile.
@@ -299,17 +349,8 @@ fun compile(
         });
 
         conf.emit match {
-        | "llvm-ir" ->
-          runCompilerPhase("native/write_asm_files", () -> {
-            AsmOutput.writeOutputFiles(defs, fileNames, conf.output, conf)
-          })
+        | "llvm-ir" -> compile_llvm_ir(defs, conf)
         | "link" ->
-          // TODO: Use `mkstemp()` instead.
-          llFile = conf.output + ".ll";
-          runCompilerPhase("native/write_asm_files", () -> {
-            AsmOutput.writeOutputFiles(defs, fileNames, llFile, conf)
-          });
-
           wasm_exports = outerIst
             .getFuns(context, defsProj)
             .filter(f ->
@@ -325,10 +366,9 @@ fun compile(
                 ).isSome()
             )
             .map(exportName);
-
-          runCompilerPhase("native/link", () -> {
-            link(llFile, conf, wasm_exports)
-          })
+          compile_binary(defs, conf, wasm_exports)
+        | "sklib" ->
+          invariant_violation("--emit=sklib should have been handled earlier")
         | _ ->
           invariant_violation("Unsupported value for `--emit`: " + conf.emit)
         }
@@ -344,6 +384,81 @@ fun compile(
       );
   };
   context.update()
+}
+
+fun compile_llvm_ir(
+  defs: readonly AsmOutput.AsmDefIDToAsmDef,
+  conf: Config.Config,
+): void {
+  runCompilerPhase("native/write_asm_files", () -> {
+    AsmOutput.writeOutputFiles(defs, conf.input_files, conf.output, conf)
+  })
+}
+
+fun compile_binary(
+  defs: readonly AsmOutput.AsmDefIDToAsmDef,
+  conf: Config.Config,
+  exports: Array<String>,
+): void {
+  // TODO: Use `mkstemp()` instead.
+  llFile = conf.output + ".ll";
+  runCompilerPhase("native/write_asm_files", () -> {
+    AsmOutput.writeOutputFiles(defs, conf.input_files, llFile, conf)
+  });
+
+  runCompilerPhase("native/link", () -> {
+    link(llFile, conf, exports)
+  })
+}
+
+fun compile_sklib(conf: Config.Config): void {
+  runCompilerPhase("native/write_sklib", () -> {
+    // NOTE: The "static=" directive tells `skc` to bundle the corresponding
+    // archive into the `sklib`, while other libraries (including static system
+    // libraries) are left for the llvm linker to resolve and link.
+    static_libs = mutable Vector[];
+    other_libs = mutable Vector[];
+    for (lib in conf.libraries) {
+      if (lib.startsWith("static=")) {
+        static_libs.push(
+          resolveStaticLibrary(
+            lib.stripPrefix("static="),
+            conf.native_lib_search_paths,
+          ),
+        )
+      } else {
+        other_libs.push(lib);
+      }
+    };
+
+    sklib = mutable SklibBuilder(conf.lib_name.fromSome(), conf.target);
+
+    conf.direct_dependencies.each(dep_name ->
+      sklib.add_dependency(dep_name, conf.dependencies[dep_name].i1)
+    );
+    static_libs.each(sklib.add_static_library);
+    other_libs.each(sklib.add_library);
+    conf.preambles.each(sklib.add_preamble);
+    conf.input_files.each(sklib.add_source);
+
+    ar_file = IO.File::open(
+      conf.output,
+      IO.OpenOptions{write => true, create => true, truncate => true},
+    );
+    sklib.write(ar_file) match {
+    | Success _ -> void
+    | Failure(err) ->
+      print_error(`Could not write ${conf.output}: ${err}`);
+      skipExit(3)
+    };
+    ar_file.close();
+
+    p = System.subprocess(Array["llvm-ar", "s", conf.output]);
+    if (!p.success()) {
+      print_error(`ranlib failed: ${p.stdout} ${p.stderr}`);
+      skipExit(3)
+    }
+  })
 }
 
 fun exportName(f: OuterIst.FunDef): String {

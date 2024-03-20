@@ -6,7 +6,7 @@ class Env(
   name: String,
   profile: String,
   optTarget: ?String,
-  test: Bool,
+  // test: Bool,
   verbose: Bool,
 ) {
   static fun create(): Env {
@@ -16,7 +16,7 @@ class Env(
       Environ.var("NAME"),
       Environ.var("PROFILE"),
       Environ.varOpt("TARGET"),
-      Environ.var("TEST").lowercase() == "true",
+      // Environ.var("TEST").lowercase() == "true",
       Environ.var("VERBOSE").lowercase() == "true",
     )
   }
@@ -179,9 +179,10 @@ fun build_harness(
     };
     id
   });
-  libname = `lib${env.name}.${if (isWasm) "bc" else "a"}`;
+  // FIXME: Generate .a for wasm as well.
+  libname = `lib${env.name}.a`;
   target = env.outpath(libname);
-  library = buildLibrary(
+  buildLibrary(
     env,
     isWasm,
     sourceDirs,
@@ -189,8 +190,8 @@ fun build_harness(
     resourceObjs,
     includeDirs,
     includeChecker,
-  );
-  library.each(print_library);
+  ).each(_ -> print_library(env.name));
+  print_link(FileSystem.realpath(env.outDir));
   preambles
     .map(p -> {
       if (!Path.isAbsolute(p)) {
@@ -241,7 +242,7 @@ fun buildLibrary(
     cmd = if (isWasm) {
       Array["llvm-link", "-o", target].concat(objects).concat(resources)
     } else {
-      Array["ar", "rcs", target].concat(objects).concat(resources)
+      Array["llvm-ar", "rcs", target].concat(objects).concat(resources)
     };
     run(cmd, env.verbose);
   };
@@ -343,7 +344,7 @@ fun compileFile(
   includesChecker: TimeChecker,
   includes: Array<String>,
 ): String {
-  ext = if (isWasm) ".bc" else ".o";
+  ext = ".o";
   object = env.targetPath(source, ext);
   if (includesChecker.add(source).isYoungerThan(object)) {
     ensureDirectory(Path.dirname(object), env.verbose);
@@ -361,7 +362,7 @@ fun compileFile(
       )
       .concat(
         if (isWasm) {
-          Array["-DSKIP32", "--target=wasm32", "-emit-llvm"]
+          Array["-DSKIP32", "--target=wasm32-unknown-unknown"]
         } else {
           Array["-DSKIP64"]
         },
@@ -374,15 +375,15 @@ fun compileFile(
 }
 
 fun print_library(library: String): void {
-  print_string(`skargo:library=${library}`);
+  print_string(`skargo:skc-link-lib=${library}`);
 }
 
 fun print_preamble(preamble: String): void {
-  print_string(`skargo:preamble=${preamble}`);
+  print_string(`skargo:skc-preamble=${preamble}`);
 }
 
 fun print_link(link: String): void {
-  print_string(`skargo:link=${link}`);
+  print_string(`skargo:skc-link-search=${link}`);
 }
 
 module end;

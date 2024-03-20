@@ -9,4 +9,18 @@ fun withTimer<T>(f: () -> T, g: Float -> void): T {
   res
 }
 
+fun subprocess_error_message(p: System.CompletedProcess): String {
+  "command exited with non-zero status\n\n" +
+    "Caused by:\n" +
+    "  process did not exit successfully: \`" +
+    p.args[0] +
+    `\` (exit status: ${p.exitcode()})\n` +
+    "  --- stdout\n" +
+    p.stdout.split("\n").map(l -> "  " + l).join("\n") +
+    "\n" +
+    "  --- stderr\n" +
+    p.stderr.split("\n").map(l -> "  " + l).join("\n") +
+    "\n"
+}
+
 module end;

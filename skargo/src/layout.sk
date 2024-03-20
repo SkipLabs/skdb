@@ -1,0 +1,18 @@
+module Skargo;
+
+class Layout{root: String, dest: String, deps: String, build: String} {
+  static fun create(
+    bctx: BuildContext,
+    target_arch_dirname: String,
+    dest_dir_name: String,
+  ): Layout {
+    root = Path.join(bctx.target_dir, target_arch_dirname);
+    dest = Path.join(root, dest_dir_name);
+    deps = Path.join(dest, "deps");
+    build = Path.join(dest, "build");
+
+    Layout{root, dest, deps, build}
+  }
+}
+
+module end;

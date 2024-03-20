@@ -7,7 +7,7 @@ fi
 pass() { printf "%-44s OK\n" "$1:"; }
 fail() { printf "%-44s FAILED\n" "$1:"; }
 
-SKDB="skargo run --profile $SKARGO_PROFILE -- "
+SKDB="skargo run -q --profile $SKARGO_PROFILE -- "
 LC_TIME=C
 
 export SKDB LC_TIME

@@ -1,0 +1,586 @@
+module Skargo;
+
+// FIXME: Move into stdlib.
+@cpp_extern("SKIP_get_mtime")
+native fun getLastModificationTime(fileName: String): Int;
+
+class OutputFile(
+  /// Absolute path to the produced file.
+  path: String,
+  /// Absolute path of the required copy within the target directory.
+  hardlink: ?String,
+  // Final location if `--out-dir` was provided.
+  export_path: ?String,
+)
+
+class BuildScriptOutput{
+  /// Paths to pass to `skc` with the `-L` flag.
+  library_paths: Array<String>,
+  /// Libraries to pass to `skc` with the `-l` flag.
+  libraries: Array<String>,
+  /// Preamble(s) to pass to `skc` with the `--preamble` flag.
+  preambles: Array<String>,
+  /// Extra generated (skip) source files.
+  extra_sources: Array<String>,
+  // /// Paths to trigger a rerun of this build script.
+  rerun_if_changed: Array<String>,
+  // /// Environment variables which, when changed, will cause a rebuild.
+  // rerun_if_env_changed: Array<String>,
+} {
+  static fun create(stdout: String): BuildScriptOutput {
+    libraries = mutable Vector[];
+    library_paths = mutable Vector[];
+    preambles = mutable Vector[];
+    extra_sources = mutable Vector[];
+    rerun_if_changed = mutable Vector[];
+    for (line in stdout.split("\n")) {
+      if (!line.startsWith("skargo:")) continue;
+      (cmd, arg) = line.stripPrefix("skargo:").splitFirst("=");
+      cmd match {
+      | "skc-link-lib" -> libraries.push(arg)
+      | "skc-link-search" -> library_paths.push(arg)
+      | "skc-preamble" -> preambles.push(arg)
+      | "skc-extra-source" -> extra_sources.push(arg)
+      | "rerun-if-changed" -> rerun_if_changed.push(arg)
+      | s -> // TODO: Proper error propagation.
+        invariant_violation(`Unrecognized build script directive: ${s}`)
+      }
+    };
+
+    BuildScriptOutput{
+      libraries => libraries.collect(Array),
+      library_paths => library_paths.collect(Array),
+      preambles => preambles.collect(Array),
+      extra_sources => extra_sources.collect(Array),
+      rerun_if_changed => rerun_if_changed.collect(Array),
+    }
+  }
+}
+
+mutable class BuildRunner(
+  bctx: BuildContext,
+  host_layout: Layout,
+  target_layout: Layout,
+  fingerprint_dir: String,
+  hashes: Map<Unit, Int>,
+  fingerprints: mutable Map<Unit, Int> = mutable Map[],
+  build_script_outputs: mutable Map<Unit, BuildScriptOutput> = mutable Map[],
+  transitive_link_deps: mutable Map<Unit, Array<Unit>> = mutable Map[],
+) {
+  static fun create(bctx: BuildContext): mutable BuildRunner {
+    host_layout = Layout::create(
+      bctx,
+      "host",
+      bctx.build_config.requested_profile,
+    );
+    target_layout = bctx.build_config.requested_arch match {
+    | TargetArchHost() -> host_layout
+    | TargetArchTriple(t) ->
+      Layout::create(bctx, t.toString(), bctx.build_config.requested_profile)
+    };
+    fingerprint_dir = Path.join(bctx.target_dir, ".fingerprints");
+
+    hashes = mutable Map[];
+    for (unit in bctx.roots) {
+      _ = hash_of(unit, bctx, hashes)
+    };
+
+    mutable BuildRunner(
+      bctx,
+      host_layout,
+      target_layout,
+      fingerprint_dir,
+      hashes.chill(),
+    )
+  }
+
+  private mutable fun dfs(unit: Unit, res: mutable Vector<Unit>): void {
+    if (res.contains(unit)) return void;
+
+    for (dep in this.bctx.unit_graph[unit]) {
+      this.dfs(dep, res)
+    };
+
+    res.push(unit)
+  }
+
+  mutable fun build_plan(): Array<Unit> {
+    res = mutable Vector[];
+
+    for (root in this.bctx.roots) {
+      this.dfs(root, res)
+    };
+
+    res.collect(Array)
+  }
+
+  private mutable fun unit_is_dirty(unit: Unit): Bool {
+    fingerprint_file = this.fingerprint_file_for(unit);
+    if (!FileSystem.exists(fingerprint_file)) {
+      return true
+    };
+    old_fingerprint = Chars.hexDigitsToInt(
+      FileSystem.readTextFile(fingerprint_file),
+    );
+
+    (this.fingerprint_for(unit) != old_fingerprint)
+  }
+
+  private mutable fun fingerprint_for(unit: Unit): Int {
+    if (!this.fingerprints.containsKey(unit)) {
+      this.fingerprints![unit] = (
+        unit.target.srcs
+          .map(f -> (f, getLastModificationTime(f)))
+          .collect(Array),
+        this.bctx.unit_graph[unit].map(dep -> this.fingerprint_for(dep)),
+        this.bctx.build_config,
+        if (
+          unit.target.is_build_script() &&
+          unit.mode is CompileModeRunBuildScript _
+        ) {
+          dep_file = this.fingerprint_dep_file_for(unit);
+          if (FileSystem.exists(dep_file)) {
+            // FIXME: If dep_file is empty, default to checking mtime of all
+            // files in the corresponding package.
+            FileSystem.readTextFile(dep_file)
+              .split("\n")
+              .map(f -> (f, getLastModificationTime(f)))
+              .collect(Array)
+          } else {
+            Array[]
+          }
+        } else {
+          Array[]
+        },
+      ).hash()
+    };
+
+    this.fingerprints[unit]
+  }
+
+  mutable fun compile(check: Bool = false): void {
+    started = mutable Set[];
+    for (unit in this.build_plan()) {
+      if (this.unit_is_dirty(unit)) {
+        if (!started.contains(unit.pkg)) {
+          started.add(unit.pkg);
+          this.bctx.gctx.console.status("Compiling", `${unit.pkg.toString()}`)
+        };
+        if (check && this.bctx.roots.contains(unit)) {
+          this.skc(unit, /* check = */ true)
+        } else {
+          this.prepare_unit(unit);
+          if (
+            unit.target.is_build_script() &&
+            unit.mode is CompileModeRunBuildScript _
+          ) {
+            bs_out = this.run_build_script(unit);
+            this.build_script_outputs![unit] = bs_out;
+
+            FileSystem.writeTextFile(
+              this.fingerprint_dep_file_for(unit),
+              bs_out.rerun_if_changed.join("\n"),
+            )
+          } else {
+            this.skc(unit)
+          }
+        };
+        this.link_targets(unit);
+        FileSystem.writeTextFile(
+          this.fingerprint_file_for(unit),
+          this.fingerprint_for(unit).toStringHex(),
+        )
+      } else if (
+        unit.target.is_build_script() &&
+        unit.mode is CompileModeRunBuildScript _
+      ) {
+        // TODO: Properly serialize BuildScriptOutput instead of re-parsing.
+        this.build_script_outputs![unit] = BuildScriptOutput::create(
+          FileSystem.readTextFile(
+            Path.join(this.build_dir_for(unit), "stdout"),
+          ),
+        );
+      };
+    }
+  }
+
+  private mutable fun link_targets(unit: Unit): void {
+    for (output in this.outputs_for(unit)) {
+      for (dst_opt in Array[output.hardlink, output.export_path]) {
+        dst_opt match {
+        | Some(dst) -> this.link_or_copy(output.path, dst)
+        | None() -> void
+        }
+      }
+    }
+  }
+
+  private mutable fun link_or_copy(src: String, dst: String): void {
+    // TODO: Actually link when relevant.
+    _ = system(`cp ${src} ${dst}`)
+  }
+
+  private mutable fun run_build_script(unit: Unit): BuildScriptOutput {
+    cmd = mutable ProcessBuilder{
+      process_cmd => Path.join(
+        this.build_dir_for(
+          unit with {arch => TargetArchHost(), mode => CompileModeBuild()},
+        ),
+        unit.target.name,
+      ),
+    };
+
+    cmd.env("PCK_DIR", unit.pkg.root());
+    cmd.env("OUT_DIR", Path.join(this.build_dir_for(unit), "out"));
+    cmd.env("NAME", unit.pkg.name());
+    cmd.env("PROFILE", this.bctx.build_config.requested_profile);
+    cmd.env(
+      "VERBOSE",
+      (this.bctx.gctx.console.verbosity >= VerbosityVerbose()).toString(),
+    );
+    unit.arch match {
+    | TargetArchTriple(t) -> cmd.env("TARGET", t.toString())
+    | TargetArchHost() ->
+      void // TODO: Explicit host arch triple.
+    };
+
+    p = this.run_cmd(cmd);
+
+    FileSystem.writeTextFile(
+      Path.join(this.build_dir_for(unit), "stdout"),
+      p.stdout,
+    );
+    FileSystem.writeTextFile(
+      Path.join(this.build_dir_for(unit), "stderr"),
+      p.stderr,
+    );
+
+    BuildScriptOutput::create(p.stdout);
+  }
+
+  private readonly fun layout_for(unit: Unit): Layout {
+    unit.arch match {
+    | TargetArchHost() -> this.host_layout
+    | _ -> this.target_layout
+    }
+  }
+
+  private mutable fun prepare_unit(unit: Unit): void {
+    fingerprint_path = dirname(this.fingerprint_file_for(unit));
+    this.create_dir(fingerprint_path);
+
+    for (output in this.outputs_for(unit)) {
+      Array[
+        Some(output.path),
+        output.hardlink,
+        output.export_path,
+      ].filterNone().each(path -> this.create_dir(dirname(path)))
+    }
+  }
+
+  private readonly fun create_dir(path: String): void {
+    _ = system(`mkdir -p ${path}`)
+  }
+
+  private mutable fun skc(unit: Unit, check: Bool = false): void {
+    skc = this.bctx.skc.process();
+
+    unit.arch match {
+    | TargetArchHost() -> void
+    | TargetArchTriple(t) -> skc.arg(`--target=${t}`)
+    };
+
+    // TODO: Support this in a more generic way.
+    if (unit.pkg.name() == "std" && unit.target.is_lib()) {
+      skc.arg("--no-std")
+    };
+
+    this.build_script_unit_for(unit) match {
+    | Some(bs_unit) ->
+      // TODO: This is dirty.
+      skc.env(
+        "SKC_PREAMBLE",
+        this.build_script_outputs[bs_unit].preambles.join(Path.listSeparator),
+      )
+    | None() -> void
+    };
+
+    for (dep in this.bctx.unit_graph[unit]) {
+      if (!dep.target.is_lib()) continue;
+      sklib_file = this.sklib_file_for(dep);
+      skc.args(Array["--dep", `${dep.pkg.name()}=${sklib_file}`])
+    };
+
+    skc.args(Array["-L", this.layout_for(unit).deps]);
+
+    for (bs_unit in this.transitive_link_deps_for(unit)) {
+      bs_out = this.build_script_outputs[bs_unit];
+      for (path in bs_out.library_paths) {
+        skc.args(Array["-L", path])
+      };
+      if (
+        bs_unit.pkg == unit.pkg &&
+        (unit.target.is_lib() || unit.pkg.manifest.lib_target() is None _)
+      ) {
+        for (lib in bs_out.libraries) {
+          skc.args(Array["-l", lib])
+        }
+      }
+    };
+
+    skc.args(unit.target.srcs);
+    this.build_script_unit_for(unit) match {
+    | Some(bs_unit) ->
+      skc.args(this.build_script_outputs[bs_unit].extra_sources)
+    | None() -> void
+    };
+
+    if (!unit.target.is_build_script()) {
+      // TODO: Once we have namespaced packages, we can share the state.db
+      // across architectures.
+      state_db_path = Path.join(this.layout_for(unit).build, "state.db");
+      skc.args(
+        Array[
+          if (FileSystem.exists(state_db_path)) {
+            "--data"
+          } else {
+            "--init"
+          },
+          state_db_path,
+        ],
+      )
+    };
+
+    unit.target.kind match {
+    | LibTarget() -> skc.arg(`--sklib-name=${unit.pkg.name()}`)
+    | BinTarget(e)
+    | TestTarget(e) ->
+      skc.args(Array["--export-function-as", `${e}=skip_main`])
+    | CustomBuildTarget() ->
+      // TODO: Get rid of this once it is the default in skc.
+      skc.args(Array["--export-function-as", "main=skip_main"])
+    };
+
+    this.bctx.build_config.requested_profile match {
+    | "release" -> skc.arg("-O2")
+    | "debug" | "dev" -> skc.arg("-O0")
+    | _ -> invariant_violation("unreachable")
+    };
+
+    if (check) {
+      skc.arg("--check")
+    } else {
+      outputs = this.outputs_for(unit);
+      assert(outputs.size() == 1);
+      output_file = outputs[0].path;
+      skc.args(Array["-o", output_file]);
+    };
+
+    _ = this.run_cmd(skc)
+  }
+
+  private readonly fun run_cmd(
+    cmd: readonly ProcessBuilder,
+  ): System.CompletedProcess {
+    this.bctx.gctx.console.verbose(() -> {
+      env = if (this.bctx.gctx.console.verbosity >= VerbosityProlix()) {
+        cmd.get_env().items().map(kv -> `${kv.i0}=${kv.i1}`).collect(Array)
+      } else {
+        Array[]
+      };
+      args = cmd.get_argv();
+      this.bctx.gctx.console.status(
+        "Running",
+        "`" + env.concat(args).join(" ") + "`",
+      )
+    });
+
+    p = if (this.bctx.gctx.console.verbosity >= VerbosityProlix()) {
+      cmd.run(print_raw, print_error_raw)
+    } else {
+      cmd.run()
+    };
+
+    if (!p.success()) {
+      this.bctx.gctx.console.error(subprocess_error_message(p));
+      skipExit(3);
+    };
+
+    p
+  }
+
+  // Compute a list of all transitive dependencies that are units corresponding
+  // to build scripts runs.
+  private mutable fun transitive_link_deps_for(unit: Unit): Array<Unit> {
+    if (!this.transitive_link_deps.containsKey(unit)) {
+      seen = mutable Set[];
+      res = mutable Vector[];
+      for (dep in this.bctx.unit_graph[unit]) {
+        if (
+          dep.target.is_build_script() &&
+          dep.mode is CompileModeRunBuildScript _
+        ) {
+          if (!seen.contains(dep)) {
+            seen.add(dep);
+            res.push(dep)
+          }
+        } else {
+          for (dep_dep in this.transitive_link_deps_for(dep)) {
+            if (seen.contains(dep_dep)) continue;
+            seen.add(dep_dep);
+            res.push(dep_dep)
+          }
+        }
+      };
+
+      this.transitive_link_deps![unit] = res.collect(Array);
+    };
+
+    this.transitive_link_deps[unit]
+  }
+
+  private readonly fun build_script_unit_for(unit: Unit): ?Unit {
+    for (dep in this.bctx.unit_graph[unit]) {
+      if (
+        dep.target.is_build_script() &&
+        dep.mode is CompileModeRunBuildScript _
+      ) {
+        return Some(dep)
+      }
+    };
+
+    None()
+  }
+
+  private readonly fun outputs_for(unit: Unit): Array<OutputFile> {
+    res = mutable Vector[];
+    layout = this.layout_for(unit);
+    is_root = this.bctx.roots.contains(unit);
+    export_dir = this.bctx.build_config.export_dir;
+    unit.target.kind match {
+    | LibTarget _ ->
+      short_name = `lib${unit.pkg.name()}.sklib`;
+      file = OutputFile(this.sklib_file_for(unit), None(), None());
+      if (is_root) {
+        !file = file with {
+          hardlink => Some(Path.join(layout.dest, short_name)),
+          export_path => export_dir.map(d -> Path.join(d, short_name)),
+        };
+      };
+      res.push(file)
+    | BinTarget _
+    | TestTarget _ ->
+      file = OutputFile(this.binary_file_for(unit), None(), None());
+      suffix = this.suffix_for_binary(unit);
+      if (is_root) {
+        !file = file with {
+          hardlink => Some(Path.join(layout.dest, unit.target.name + suffix)),
+          export_path => export_dir.map(d ->
+            Path.join(d, unit.target.name + suffix)
+          ),
+        }
+      };
+      res.push(file)
+    | CustomBuildTarget _ ->
+      base_path = this.build_dir_for(unit);
+      if (unit.mode is CompileModeRunBuildScript _) {
+        // NOTE: `Path.join()` discards trailing slashes.
+        res.push(OutputFile(Path.join(base_path, "out") + "/", None(), None()));
+        res.push(OutputFile(Path.join(base_path, "stdout"), None(), None()));
+        res.push(OutputFile(Path.join(base_path, "stderr"), None(), None()));
+      } else {
+        res.push(
+          OutputFile(Path.join(base_path, unit.target.name), None(), None()),
+        );
+      }
+    };
+
+    res.collect(Array)
+  }
+
+  private readonly fun sklib_file_for(unit: Unit): String {
+    assert(unit.target.is_lib());
+    name = unit.pkg.name();
+    hash = this.hashes[unit].toStringHex();
+    Path.join(this.layout_for(unit).deps, `lib${name}-${hash}.sklib`)
+  }
+
+  private readonly fun binary_file_for(unit: Unit): String {
+    assert(unit.target.is_bin() || unit.target.is_test());
+    name = unit.target.name;
+    hash = this.hashes[unit].toStringHex();
+    suffix = this.suffix_for_binary(unit);
+    Path.join(this.layout_for(unit).deps, `${name}-${hash}${suffix}`)
+  }
+
+  private readonly fun suffix_for_binary(unit: Unit): String {
+    unit.arch match {
+    | TargetArchTriple(t) if (t.isWasm32()) -> ".wasm"
+    | _ -> ""
+    };
+  }
+
+  private readonly fun build_dir_for(unit: Unit): String {
+    assert(unit.target.is_build_script());
+
+    name = unit.pkg.name();
+    hash = this.hashes[unit].toStringHex();
+
+    Path.join(this.layout_for(unit).build, `${name}-${hash}`)
+  }
+
+  private mutable fun fingerprint_file_for(unit: Unit): String {
+    Path.join(this.fingerprint_dir_for(unit), "fingerprint")
+  }
+
+  private mutable fun fingerprint_dep_file_for(unit: Unit): String {
+    Path.join(this.fingerprint_dir_for(unit), "deps")
+  }
+
+  private mutable fun fingerprint_dir_for(unit: Unit): String {
+    name = unit.pkg.name();
+    hash = this.hashes[unit].toStringHex();
+
+    Path.join(this.fingerprint_dir, `${name}-${hash}`)
+  }
+}
+
+private fun hash_of(
+  unit: Unit,
+  bctx: BuildContext,
+  out: mutable Map<Unit, Int>,
+): Int {
+  if (!out.containsKey(unit)) {
+    out.set(unit, -1);
+    dep_hashes = mutable Vector[];
+    for (dep in bctx.unit_graph[unit]) {
+      dep_hashes.push(hash_of(dep, bctx, out))
+    };
+
+    out.set(unit, compute_hash(unit, dep_hashes.collect(Array), bctx))
+  };
+
+  out[unit]
+}
+
+private fun compute_hash(
+  unit: Unit,
+  dep_hashes: Array<Int>,
+  bctx: BuildContext,
+): Int {
+  (
+    unit.pkg.manifest.package_id,
+    dep_hashes,
+    bctx.build_config.requested_profile,
+    unit.arch,
+    unit.mode,
+    unit.target.name,
+    unit.target.kind,
+  ).hash()
+}
+
+private fun dirname(path: String): String {
+  path.splitLast("/").i0
+}
+
+module end;

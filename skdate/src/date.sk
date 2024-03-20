@@ -3,20 +3,6 @@ module SKDate;
 @cpp_extern("SKIP_localetimezone")
 native fun localeTimeZone(year: UInt32, month: UInt32, day: UInt32): Int32;
 
-@cpp_extern("SKIP_currenttimemillis")
-native fun natCurrentTimeMillis(): Int;
-
-@cpp_extern("SKIP_JS_currenttimemillis")
-native fun jsCurrentTimeMillis(): Float;
-
-fun currentTimeMillis(): Int {
-  if (SkargoVersion.kWasm32) {
-    (jsCurrentTimeMillis() * 1000.0).toInt()
-  } else {
-    natCurrentTimeMillis()
-  }
-}
-
 class File(value: Calendar) extends SKStore.File
 
 const daysInNonLeapYearMonth: Array<Int> = Array[

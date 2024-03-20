@@ -37,58 +37,58 @@ class ParseResults{
   subcommand: ?String = None(),
   error: ?ArgumentError = None(),
 } {
-  fun getBool(name: String): Bool {
-    this.values[name] match {
+  fun getBool(name: String, fail_on_invalid_arg: Bool = true): Bool {
+    this.getValue(name, fail_on_invalid_arg) match {
     | BoolValue(v) -> v
+    | MissingValue() -> false
     | _ -> invariant_violation(`Argument ${name} is not boolean`)
     }
   }
 
-  fun maybeGetString(name: String): ?String {
-    this.values.maybeGet(name) match {
-    | Some(StringValue(v)) -> Some(v)
-    | Some(MissingValue()) -> None()
-    | Some(_) -> invariant_violation(`Argument ${name} is not a string`)
-    | None() -> invariant_violation(`Argument ${name} is undefined`)
+  fun maybeGetString(name: String, fail_on_invalid_arg: Bool = true): ?String {
+    this.getValue(name, fail_on_invalid_arg) match {
+    | StringValue(v) -> Some(v)
+    | MissingValue() -> None()
+    | _ -> invariant_violation(`Argument ${name} is not a string`)
     }
   }
 
-  fun getString(name: String): String {
-    this.maybeGetString(name) match {
+  fun getString(name: String, fail_on_invalid_arg: Bool = true): String {
+    this.maybeGetString(name, fail_on_invalid_arg) match {
     | Some(s) -> s
     | None() -> invariant_violation(`Argument ${name} is missing`)
     }
   }
 
-  fun maybeGetInt(name: String): ?Int {
-    this.values.maybeGet(name) match {
-    | Some(IntValue(v)) -> Some(v)
-    | Some(MissingValue()) -> None()
-    | Some(_) -> invariant_violation(`Argument ${name} is not an int`)
-    | None() -> invariant_violation(`Argument ${name} is undefined`)
+  fun maybeGetInt(name: String, fail_on_invalid_arg: Bool = true): ?Int {
+    this.getValue(name, fail_on_invalid_arg) match {
+    | IntValue(v) -> Some(v)
+    | MissingValue() -> None()
+    | _ -> invariant_violation(`Argument ${name} is not an int`)
     }
   }
 
-  fun getInt(name: String): Int {
-    this.maybeGetInt(name) match {
+  fun getInt(name: String, fail_on_invalid_arg: Bool = true): Int {
+    this.maybeGetInt(name, fail_on_invalid_arg) match {
     | Some(s) -> s
     | None() -> invariant_violation(`Argument ${name} is missing`)
     }
   }
 
-  fun maybeGetArray(name: String): ?Array<String> {
-    this.values.maybeGet(name) match {
-    | Some(ArrayValue(v)) -> Some(v)
-    | Some(MissingValue()) -> None()
-    | Some(_) -> invariant_violation(`Argument ${name} is not an array`)
-    | None() -> invariant_violation(`Argument ${name} is undefined`)
+  fun getArray(name: String, fail_on_invalid_arg: Bool = true): Array<String> {
+    this.getValue(name, fail_on_invalid_arg) match {
+    | ArrayValue(v) -> v
+    | MissingValue() -> Array[]
+    | _ -> invariant_violation(`Argument ${name} is not an array`)
     }
   }
 
-  fun getArray(name: String): Array<String> {
-    this.maybeGetArray(name) match {
-    | Some(a) -> a
-    | None() -> invariant_violation(`Argument ${name} is missing`)
+  private fun getValue(name: String, fail_on_invalid_arg: Bool = true): Value {
+    this.values.maybeGet(name) match {
+    | Some(v) -> v
+    | None() if (fail_on_invalid_arg) ->
+      invariant_violation(`Argument ${name} is undefined`)
+    | None() -> MissingValue()
     }
   }
 
@@ -113,34 +113,41 @@ private fun updateValue(
   values: mutable Map<String, Value>,
   arg: Arg,
   value: String,
-): ?ArgumentError {
-  arg match {
-  | ArrayArg _ ->
+): Result<void, ArgumentError> {
+  if (arg._repeatable) {
     values.maybeGet(arg.name) match {
     | Some(ArrayValue(arr)) ->
       values.set(arg.name, ArrayValue(arr.concat(Array[value])))
     | None() -> values.set(arg.name, ArrayValue(Array[value]))
-    | Some(v) -> invariant_violation(`Unexpected value type ${v} for ArrayArg`)
+    | Some(v) ->
+      invariant_violation(`Unexpected value type ${v} for repeatable arg`)
     }
-  | StringArg _ ->
-    if (!values.containsKey(arg.name)) {
-      values.set(arg.name, StringValue(value))
-    } else {
-      return Some(DuplicateValueError(arg.name))
-    }
-  | IntArg _ ->
-    if (!values.containsKey(arg.name)) {
+  } else if (!values.containsKey(arg.name)) {
+    arg match {
+    | StringArg _ -> values.set(arg.name, StringValue(value))
+    | IntArg _ ->
       value.toIntOption() match {
       | Some(v) -> values.set(arg.name, IntValue(v))
-      | _ -> return Some(InvalidArgumentError(arg.name))
+      | _ -> return Failure(InvalidArgumentError(arg.name))
       }
-    } else {
-      return Some(DuplicateValueError(arg.name))
+    | _ -> invariant_violation(`Unexpected argument type ${inspect(arg)}`)
     }
-  | _ -> invariant_violation(`Unexpected argument type ${inspect(arg)}`)
+  } else {
+    return Failure(DuplicateValueError(arg.name))
   };
 
-  None()
+  Success(void)
+}
+
+private fun defaultValue(arg: Arg): Value {
+  if (arg._repeatable) {
+    arg._default.default(ArrayValue(Array[]))
+  } else {
+    arg match {
+    | ValuedArg _ -> arg._default.default(MissingValue())
+    | BoolArg _ -> arg._default.default(BoolValue(false))
+    }
+  }
 }
 
 private fun parse(
@@ -175,11 +182,13 @@ private fun parse(
     if (arg._positional) {
       if (posArgs.size() > 0) {
         prevArg = posArgs[posArgs.size() - 1];
-        if (prevArg is ArrayArg _) {
+        if (prevArg._repeatable) {
           invariant_violation(
             `Positional argument ${
               arg.name
-            } cannot appear after array positional argument ${prevArg.name}`,
+            } cannot appear after repeatable positional argument ${
+              prevArg.name
+            }`,
           )
         }
       };
@@ -253,7 +262,7 @@ private fun parse(
         (str, None())
       };
       options.maybeGet(argName) match {
-      | Some(arg) if (arg._takesValue()) ->
+      | Some(arg) if (arg is ValuedArg _) ->
         value = argValue match {
         | Some(v) -> v
         | None() ->
@@ -265,13 +274,20 @@ private fun parse(
           }
         };
         updateValue(values, arg, value) match {
-        | err @ Some _ ->
-          !error = err;
+        | Failure(err) ->
+          !error = Some(err);
           break void
-        | None() -> void
+        | Success _ -> void
         }
       | Some(arg) ->
-        if (!values.containsKey(arg.name)) {
+        if (arg._repeatable) {
+          updateValue(values, arg, "true") match {
+          | Failure(err) ->
+            !error = Some(err);
+            break void
+          | Success _ -> void
+          }
+        } else if (!values.containsKey(arg.name)) {
           values.set(arg.name, BoolValue(!str.startsWith("--no-")))
         } else {
           !error = Some(DuplicateValueError(arg.name));
@@ -279,29 +295,49 @@ private fun parse(
         }
       | None() if (!str.startsWith("-") && posArgId < posArgs.size()) ->
         updateValue(values, posArgs[posArgId], str) match {
-        | err @ Some _ ->
-          !error = err;
+        | Failure(err) ->
+          !error = Some(err);
           break void
-        | _ -> void
+        | Success _ -> void
         };
-        posArgs[posArgId] match {
-        | ArrayArg _ -> void
-        | _ -> !posArgId = posArgId + 1
+        if (!posArgs[posArgId]._repeatable) {
+          !posArgId = posArgId + 1
         }
-      | None() -> // Check for short forms that take values such as `-O2`.
+      | None() ->
         !argName = str.take(2);
-        value = str.substring(str.getIter().forward(2));
         options.maybeGet(argName) match {
-        | Some(arg) if (arg._takesValue()) ->
+        // Check for short forms that take values such as `-O2`.
+        | Some(arg) if (arg is ValuedArg _) ->
+          value = str.stripPrefix(argName);
           updateValue(values, arg, value) match {
-          | err @ Some _ ->
-            !error = err;
+          | Failure(err) ->
+            !error = Some(err);
             break void
-          | None() -> void
+          | Success _ -> void
           }
+        // Check for short boolean flags stringed together such as `-abc`.
         | _ ->
-          !error = Some(InvalidArgumentError(str));
-          break void
+          for (flag in str.stripPrefix("-")) {
+            !argName = `-${flag}`;
+            options.maybeGet(argName) match {
+            | Some(arg) if (arg is BoolArg _) ->
+              if (arg._repeatable) {
+                updateValue(values, arg, "true") match {
+                | Failure(err) ->
+                  !error = Some(err);
+                  break void
+                | Success _ -> void
+                }
+              } else if (!values.containsKey(arg.name)) {
+                values.set(arg.name, BoolValue(true))
+              } else {
+                !error = Some(DuplicateValueError(arg.name))
+              }
+            | _ ->
+              !error = Some(InvalidArgumentError(str));
+              break void
+            }
+          }
         }
       }
     }
@@ -315,15 +351,14 @@ private fun parse(
           break void
         } else {
           env_var = arg._env.map(v -> Environ.var(v));
-          value = arg match {
-          | StringArg _ -> env_var.map(v -> StringValue(v))
-          | IntArg _ -> env_var.map(v -> IntValue(v.toInt()))
-          | BoolArg _ ->
-            env_var.map(b -> BoolValue(b != "no" && b != "false" && b != "0"))
-          | _ ->
-            env_var.map(_ -> invariant_violation("Unexpected argument type."))
-          };
-          values.set(arg.name, value.default(arg._defaultValue()))
+          value = env_var.map(v ->
+            arg match {
+            | StringArg _ -> StringValue(v)
+            | IntArg _ -> IntValue(v.toInt())
+            | BoolArg _ -> BoolValue(v != "no" && v != "false" && v != "0")
+            }
+          );
+          values.set(arg.name, value.default(defaultValue(arg)))
         }
       }
     }

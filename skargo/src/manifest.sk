@@ -1,23 +1,17 @@
 module Skargo;
 
 // TODO: Add support for `git` repositories as a package location.
-class ManifestDependency{
-  version: ?Semver.VersionReq = None(),
-  path: ?String = None(),
-} {
-  static fun fromTOML(basePath: String, toml: TOML.Value): ManifestDependency {
+class TomlDependency{version: ?String = None(), path: ?String = None()} {
+  static fun fromTOML(basePath: String, toml: TOML.Value): TomlDependency {
     toml match {
-    | TOML.String(v) ->
-      ManifestDependency{version => Some(Semver.VersionReq::fromString(v))}
+    | TOML.String(v) -> TomlDependency{version => Some(v)}
     | t @ TOML.Table _ ->
       t.maybeGetString("path") match {
       | Some(path) ->
-        ManifestDependency{
+        TomlDependency{
           // FIXME: This breaks on absolute paths.
           path => Some(Path.join(basePath, path)),
-          version => t
-            .maybeGetString("version")
-            .map(Semver.VersionReq::fromString),
+          version => t.maybeGetString("version"),
         }
       | _ -> invariant_violation("TODO")
       }
@@ -26,132 +20,297 @@ class ManifestDependency{
   }
 }
 
-class TargetTriple(
-  machine: String,
-  vendor: ?String,
-  operatingsystem: ?String,
-) uses Orderable, Show {
-  //
-  static fun fromString(str: String): TargetTriple {
-    components = str.split("-");
-    if (components.isEmpty() || components.size() > 3) {
-      invariant_violation("Invalid target triplet string " + str)
+class Dependency(
+  name: String,
+  source_id: SourceId,
+  req: Semver.VersionReq,
+  kind: DepKind,
+) {
+  static fun create(
+    name: String,
+    source_id: SourceId,
+    version: ?String,
+    kind: DepKind,
+  ): Dependency {
+    version_req = version match {
+    | Some(req) -> Semver.VersionReq::fromString(req)
+    | None() -> Semver.VersionReq::kStar
     };
-    TargetTriple(
-      components[0],
-      components.maybeGet(1) match {
-      | Some(v) if (v != "unknown") -> Some(v)
-      | _ -> None()
-      },
-      components.maybeGet(2) match {
-      | Some(v) if (v != "unknown") -> Some(v)
-      | _ -> None()
-      },
-    )
+
+    Dependency(name, source_id, version_req, kind)
   }
 
-  fun isWasm32(): Bool {
-    this.machine == "wasm32"
-  }
+  static fun fromTomlDependency(
+    toml_name: String,
+    dep: TomlDependency,
+    kind: DepKind,
+  ): Dependency {
+    source_id = (dep.path, dep.version) match {
+    | (None(), None()) ->
+      invariant_violation(
+        `dependency ${toml_name} specified without providing a local path or a version.`,
+      )
+    | (Some(path), _) -> SourceId::from_path(path)
+    | (None(), Some(_version)) ->
+      invariant_violation("TODO: Package registries not implemented yet")
+    };
 
-  fun allows(target: TargetTriple): Bool {
-    this.machine == target.machine &&
-      this.vendor.default("unknown") == target.vendor.default("unknown") &&
-      this.operatingsystem.default("unknown") ==
-        target.operatingsystem.default("unknown")
-  }
-
-  fun toString(): String {
-    `${this.machine}-${this.vendor.default(
-      "unknown",
-    )}-${this.operatingsystem.default("unknown")}`
+    Dependency::create(toml_name, source_id, dep.version, kind)
   }
 }
 
-class ManifestBinary(name: String, main: String) uses Equality {
-  static fun fromTOML(toml: TOML.Table): ManifestBinary {
+class SourceId(url: String, kind: SourceKind) uses Equality {
+  static fun from_path(path: String): SourceId {
+    SourceId(path, PathSource())
+  }
+}
+
+base class SourceKind uses Equality {
+  children =
+  | PathSource()
+  // | GitSource()
+  // | RegistrySource()
+}
+
+base class DepKind {
+  children =
+  | NormalDep()
+  | BuildDep()
+  | DevelopmentDep()
+}
+
+class TomlBinary(name: String, main: String) uses Equality {
+  static fun fromTOML(toml: TOML.Table): TomlBinary {
     name = toml.getString("name");
     main = toml.getString("main");
 
-    ManifestBinary(name, main)
+    TomlBinary(name, main)
   }
 }
 
-class Manifest{
+class TomlManifest{
   name: String,
-  path: String,
-  version: Semver.Version,
-  srcs: Array<String>,
-  tests: Array<String>,
-  testHarness: String,
-  dependencies: Map<String, ManifestDependency>,
-  buildDependencies: Map<String, ManifestDependency>,
-  bin: Array<ManifestBinary>,
-} uses Equality {
-  //
-  fun ==(other: Manifest): Bool {
-    this.name == other.name &&
-      this.path == other.path &&
-      this.version == other.version
-  }
-
-  static fun read(path: String): Manifest {
+  version: String,
+  tests: ?Array<String>,
+  test_harness: ?String,
+  dependencies: Map<String, TomlDependency>,
+  dev_dependencies: Map<String, TomlDependency>,
+  build_dependencies: Map<String, TomlDependency>,
+  bin: Array<TomlBinary>,
+} {
+  static fun read(path: String): TomlManifest {
     basePath = Path.dirname(path);
     toml = TOML.decode(FileSystem.readTextFile(path));
     package = toml.getTable("package");
     name = package.getString("name");
-    version = Semver.Version::fromString(package.getString("version"));
+    version = package.getString("version");
 
-    srcs = package.maybeGetArray("srcs") match {
-    | Some(arr) -> arr.map(x -> x.expectString())
-    | _ ->
-      FileSystem.readFilesRecursive(Path.join(basePath, "src"), f ->
-        f.endsWith(".sk")
-      ).toArray()
-    };
+    test_harness = package.maybeGetString("test-harness");
 
-    testHarness = package.maybeGetString("test-harness").default("SKTest.main");
-
-    tests = package.maybeGetArray("tests") match {
-    | Some(arr) -> arr.map(x -> x.expectString())
-    | _ ->
-      testsPath = Path.join(basePath, "tests");
-      if (FileSystem.exists(testsPath)) {
-        FileSystem.readFilesRecursive(testsPath, f ->
-          f.endsWith(".sk")
-        ).toArray()
-      } else {
-        Array[]
-      }
-    };
-
-    dependencies = toml.getTable("dependencies").map.map((_, v) ->
-      ManifestDependency::fromTOML(basePath, v)
+    tests = package.maybeGetArray("tests").map(arr ->
+      arr.map(x -> x.expectString())
     );
 
-    buildDependencies = toml.maybeGetTable("build-dependencies") match {
+    dependencies = toml.maybeGetTable("dependencies") match {
+    | Some(TOML.Table(t)) ->
+      t.map((_, v) -> TomlDependency::fromTOML(basePath, v))
+    | None() -> Map[]
+    };
+
+    dev_dependencies = toml.maybeGetTable("dev-dependencies") match {
+    | Some(TOML.Table(t)) ->
+      t.map((_, v) -> TomlDependency::fromTOML(basePath, v))
+    | None() -> Map[]
+    };
+
+    build_dependencies = toml.maybeGetTable("build-dependencies") match {
     | Some(bDependencies) ->
-      bDependencies.map.map((_, v) -> ManifestDependency::fromTOML(basePath, v))
+      bDependencies.map.map((_, v) -> TomlDependency::fromTOML(basePath, v))
     | _ -> Map[]
     };
 
     bin = toml.maybeGetArray("bin") match {
-    | Some(arr) -> arr.map(t -> ManifestBinary::fromTOML(t.expectTable()))
+    | Some(arr) -> arr.map(t -> TomlBinary::fromTOML(t.expectTable()))
     | None() -> Array[]
     };
 
-    Manifest{
+    TomlManifest{
       name,
-      path => basePath,
       version,
-      srcs,
       tests,
-      testHarness,
+      test_harness,
       dependencies,
-      buildDependencies,
+      dev_dependencies,
+      build_dependencies,
       bin,
     }
   }
+}
+
+class Manifest(
+  package_id: PackageId,
+  dependencies: Array<Dependency>,
+  targets: Array<Target>,
+  original: TomlManifest,
+) {
+  static fun read(path: String): Manifest {
+    static::fromTomlManifest(TomlManifest::read(path), path)
+  }
+
+  static fun fromTomlManifest(
+    manifest: TomlManifest,
+    manifest_path: String,
+  ): Manifest {
+    package_root = Path.dirname(manifest_path);
+    source_id = SourceId::from_path(package_root);
+    package_id = PackageId(
+      manifest.name,
+      Semver.Version::fromString(manifest.version),
+      source_id,
+    );
+    dependencies = manifest.dependencies
+      .map((toml_name, toml_dep) ->
+        Dependency::fromTomlDependency(toml_name, toml_dep, NormalDep())
+      )
+      .values()
+      .collect(Array);
+    dev_dependencies = manifest.dev_dependencies
+      .map((toml_name, toml_dep) ->
+        Dependency::fromTomlDependency(toml_name, toml_dep, DevelopmentDep())
+      )
+      .values()
+      .collect(Array);
+    build_dependencies = manifest.build_dependencies
+      .map((toml_name, toml_dep) ->
+        Dependency::fromTomlDependency(toml_name, toml_dep, BuildDep())
+      )
+      .values()
+      .collect(Array);
+    targets = manifest_targets(manifest, package_root);
+
+    Manifest(
+      package_id,
+      dependencies.concat(dev_dependencies).concat(build_dependencies),
+      targets,
+      manifest,
+    )
+  }
+
+  fun lib_target(): ?Target {
+    this.targets.find(t -> t.is_lib())
+  }
+
+  fun build_script_target(): ?Target {
+    this.targets.find(t -> t.is_build_script())
+  }
+
+  fun test_target(): ?Target {
+    this.targets.find(t -> t.is_test())
+  }
+}
+
+class PackageId(
+  name: String,
+  version: Semver.Version,
+  source_id: SourceId,
+) uses Equality, Hashable {
+  // TODO: Proper hash
+  fun hash(): Int {
+    `${this.name}@${this.version}`.hash()
+  }
+}
+
+class Target(
+  kind: TargetKind,
+  name: String,
+  srcs: Array<String>,
+  for_host: Bool,
+) uses Equality, Hashable {
+  fun hash(): Int {
+    (this.kind, this.name, this.srcs, this.for_host).hash()
+  }
+
+  fun is_lib(): Bool {
+    this.kind is LibTarget _
+  }
+
+  fun is_bin(): Bool {
+    this.kind is BinTarget _
+  }
+
+  fun is_build_script(): Bool {
+    this.kind is CustomBuildTarget _
+  }
+
+  fun is_test(): Bool {
+    this.kind is TestTarget _
+  }
+}
+
+base class TargetKind uses Equality, Hashable {
+  children =
+  | LibTarget()
+  | BinTarget(entry_point: String)
+  | TestTarget(entry_point: String)
+  | CustomBuildTarget()
+}
+
+private fun manifest_targets(
+  manifest: TomlManifest,
+  package_root: String,
+): Array<Target> {
+  res = mutable Vector[];
+
+  srcs = FileSystem.readFilesRecursive(Path.join(package_root, "src"), f ->
+    f.endsWith(".sk")
+  ).toArray();
+
+  // TODO: Only do this for explicitly specified `[lib]` sections.
+  res.push(Target(LibTarget(), "lib", srcs, /* for_host = */ false));
+
+  for (bin in manifest.bin) {
+    res.push(
+      Target(BinTarget(bin.main), bin.name, Array[], /* for_host = */ false),
+    )
+  };
+
+  build_script_path = Path.join(package_root, "build.sk");
+  if (FileSystem.exists(build_script_path)) {
+    res.push(
+      Target(
+        CustomBuildTarget(),
+        `build-script-${manifest.name}`,
+        Array[build_script_path],
+        /* for_host = */ true,
+      ),
+    )
+  };
+
+  test_srcs = manifest.tests match {
+  | Some(tests) -> tests
+  | _ ->
+    tests_path = Path.join(package_root, "tests");
+    if (FileSystem.exists(tests_path)) {
+      FileSystem.readFilesRecursive(tests_path, f ->
+        f.endsWith(".sk")
+      ).toArray()
+    } else {
+      Array[]
+    }
+  };
+  if (!test_srcs.isEmpty()) {
+    test_harness = manifest.test_harness.default("SKTest.main");
+    res.push(
+      Target(
+        TestTarget(test_harness),
+        "test",
+        test_srcs,
+        /* for_host = */ false,
+      ),
+    )
+  };
+
+  res.collect(Array)
 }
 
 module end;

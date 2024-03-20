@@ -4,7 +4,7 @@ if [ -z "$SKARGO_PROFILE" ]; then
     SKARGO_PROFILE=dev
 fi
 
-SKDB="skargo run --profile $SKARGO_PROFILE -- "
+SKDB="skargo run -q --profile $SKARGO_PROFILE -- "
 
 pass() { printf "%-36s OK\n" "TEST $1:"; }
 fail() { printf "%-36s FAILED\n" "TEST $1:"; }

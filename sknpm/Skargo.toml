@@ -3,12 +3,16 @@ name = "sknpm"
 version = "0.1.0"
 
 [dependencies]
-skargo = { "path" = "../skargo" }
-skbuild = { "path" = "../skbuild" }
-semver = { "path" = "../semver" }
+std = { path = "../prelude" }
+skargo = { path = "../skargo" }
+skbuild = { path = "../skbuild" }
+semver = { path = "../semver" }
+
+[dev-dependencies]
+sktest = { path = "../sktest" }
 
 [build-dependencies]
-skbuild = { "path" = "../skbuild" }
+skbuild = { path = "../skbuild" }
 
 [[bin]]
 name = "sknpm"

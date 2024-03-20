@@ -49,20 +49,25 @@ fun errorFromSyntaxError(error: SyntaxError, filename: String): Error {
   }
 }
 
-fun errorsToString(errors: Vector<Error>): String {
+fun errorsToString(
+  errors: Vector<Error>,
+  get_file: (String) -> String,
+): String {
   strErrors = mutable Vector[];
   for (error in errors) {
     strTraces = mutable Vector[];
     for (trace in error.traces) {
-      strTraces.push(traceToString(trace));
+      strTraces.push(traceToString(trace, get_file));
     };
     strErrors.push(strTraces.join("\n"));
   };
   strErrors.join("")
 }
 
-fun printErrors(errors: Vector<Error>): void {
-  print_error(errorsToString(errors));
+fun printErrors(context: mutable SKStore.Context, errors: Vector<Error>): void {
+  print_error(
+    errorsToString(errors, (filename) -> getFileFromContext(context, filename)),
+  );
 }
 
 class SkipErrorException{
@@ -83,8 +88,14 @@ fun throwFlattenedErrors(errors: Vector<Vector<Error>>): void {
   throwErrors(errors.flatten());
 }
 
-fun printErrorsAndExit<T>(errors: Array<SkipErrorException>): T {
-  SkipError.printErrors(errors.map(x -> x.errors).flatten().collect(Vector));
+fun printErrorsAndExit<T>(
+  context: mutable SKStore.Context,
+  errors: Array<SkipErrorException>,
+): T {
+  SkipError.printErrors(
+    context,
+    errors.map(x -> x.errors).flatten().collect(Vector),
+  );
   skipExit(2)
 }
 
@@ -113,13 +124,14 @@ fun keepErrors(
 
 fun catchErrors(
   _phase: Int,
-  _context: mutable SKStore.Context,
+  context: mutable SKStore.Context,
   f: () -> void,
 ): void {
   try {
     f()
   } catch {
-  | err @ SkipError.SkipErrorException _ -> printErrorsAndExit(Array[err])
+  | err @ SkipError.SkipErrorException _ ->
+    printErrorsAndExit(context, Array[err])
   | exn ->
     debug(exn);
     throw exn
@@ -184,18 +196,6 @@ fun do4WithError<T1, T2, T3, T4>(
   (r1.fromSuccess(), r2.fromSuccess(), r3.fromSuccess(), r4.fromSuccess());
 }
 
-// Reports errors to stderr and exits if any errors are produced by operation.
-fun doAndReportErrors<T>(
-  operation: () -> Result<T, Vector<SkipError.Error>>,
-): T {
-  operation() match {
-  | Success(result) -> result
-  | Failure(errors) ->
-    printErrors(errors.take(100));
-    skipExit(2)
-  }
-}
-
 fun renderTextRange(range: TextRange): String {
   // TODO: This is a poor format as it doesn't show the end line correctly.
   startColumn = range.start.column() + 1;
@@ -217,32 +217,22 @@ private fun render_pos(pos: FileRange): String {
   file + position + "\n";
 }
 
-private fun traceToString(trace: Trace): String {
-  render_pos(trace.i0) + trace.i1 + "\n" + get_context_of_pos(trace.i0);
+private fun traceToString(trace: Trace, get_file: (String) -> String): String {
+  render_pos(trace.i0) +
+    trace.i1 +
+    "\n" +
+    get_context_of_pos(trace.i0, get_file);
 }
 
 private fun get_context_of_pos(
   t: FileRange,
-  fileContents: ?String = None(),
+  get_file: (String) -> String,
 ): String {
   if (t.range.isNone()) {
     return "";
   };
 
-  hasError = false;
-
-  contents = fileContents match {
-  | Some(contents) -> contents
-  | None() ->
-    try {
-      FileSystem.readTextFile(t.filename)
-    } catch {
-    | _ ->
-      !hasError = true;
-      ""
-    }
-  };
-  if (hasError) return "";
+  contents = get_file(t.filename);
 
   getContextOfRange(t.range, contents)
 }
@@ -376,8 +366,21 @@ fun error<T>(pos: FileRange, msg: String, fix: ?Fix = None()): T {
   errorl(List[(pos, msg)], fix);
 }
 
-fun fatalError<T>(pos: FileRange, msg: String, fix: ?Fix = None()): T {
+private fun getFileFromContext(
+  context: mutable SKStore.Context,
+  filename: String,
+): String {
+  FileCache.fileDir.unsafeGetArray(context, SKStore.SID(filename))[0].value
+}
+
+fun fatalError<T>(
+  context: mutable SKStore.Context,
+  pos: FileRange,
+  msg: String,
+  fix: ?Fix = None(),
+): T {
   printErrorsAndExit(
+    context,
     Array[
       SkipErrorException{
         errors => Vector[Error{traces => List[(pos, msg)], fix}],

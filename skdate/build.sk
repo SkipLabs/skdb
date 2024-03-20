@@ -1,5 +1,3 @@
-module SkdateBuild;
-
 @skbuild_source_dirs
 fun source_dirs(env: Skbuild.Env): Array<String> {
   if (env.isWasm32()) Array[] else Array["extern/src"]
@@ -8,6 +6,34 @@ fun source_dirs(env: Skbuild.Env): Array<String> {
 @debug
 fun main(): void {
   _ = Skbuild.build();
-}
 
-module end;
+  file_path = Path.join(Environ.var("OUT_DIR"), "current_time_millis.sk");
+  file = IO.File::open(
+    file_path,
+    IO.OpenOptions{create => true, truncate => true, write => true},
+  );
+
+  contents = Environ.varOpt("TARGET") match {
+  | Some(t) if (t.startsWith("wasm32")) ->
+    `module SKDate;
+@cpp_extern("SKIP_JS_currenttimemillis")
+native fun jsCurrentTimeMillis(): Float;
+
+fun currentTimeMillis(): Int {
+  (jsCurrentTimeMillis() * 1000.0).toInt()
+}
+module end;`
+  | _ ->
+    `module SKDate;
+@cpp_extern("SKIP_currenttimemillis")
+native fun currentTimeMillis(): Int;
+module end;`
+  };
+  file.write_all(contents.bytes()) match {
+  | Success _ -> void
+  | Failure(err) ->
+    print_error(`Could not write ${file_path}: ${err}`);
+    skipExit(1)
+  };
+  print_string(`skargo:skc-extra-source=${file_path}`)
+}

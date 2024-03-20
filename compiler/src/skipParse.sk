@@ -49,40 +49,136 @@ const fileTimeDir: SKStore.EHandle<
 @cpp_extern("SKIP_get_mtime")
 native fun getLastModificationTime(fileName: String): Int;
 
+fun get_old_files_per_package(
+  context: mutable SKStore.Context,
+): Map<String, SortedSet<String>> {
+  allFilesDir
+    .unsafeGetArray(context, SKStore.IID(0))
+    .reduce(
+      (map, fn) -> {
+        key = fn.value;
+        (package, filename) = if (key.contains(":")) {
+          key.splitFirst(":")
+        } else {
+          ("", key)
+        };
+        map.getOrAdd(package, () -> mutable Vector[]).push(filename);
+        map
+      },
+      mutable Map[],
+    )
+    .map((_, v) -> SortedSet::createFromItems(v))
+    .chill()
+}
+
+fun writeFile(
+  context: mutable SKStore.Context,
+  key: String,
+  last_modif_time: Int,
+  contents: String,
+): void {
+  fileTimeDir.writeArray(
+    context,
+    SKStore.SID(key),
+    Array[SKStore.IntFile(last_modif_time)],
+  );
+  fileDir.writeArray(
+    context,
+    SKStore.SID(key),
+    Array[SKStore.StringFile(contents)],
+  )
+}
+
 fun writeFiles(
   context: mutable SKStore.Context,
-  fileNames: Array<String>,
+  file_names: Array<String>,
+  dependencies: Map<String, (String, Sklib.Metadata)>,
+  lib_name_opt: ?String,
 ): void {
-  oldFiles = allFilesDir
-    .unsafeGetArray(context, SKStore.IID(0))
-    .map(x -> x.value)
-    .collect(SortedSet);
-  for (fileName in fileNames) {
-    if (oldFiles.contains(fileName)) {
-      !oldFiles = oldFiles.remove(fileName);
+  old_files_per_package = get_old_files_per_package(context);
+
+  stale_files = Vector::mcreateFromItems(
+    lib_name_opt match {
+    | Some(lib_name) ->
+      old_files_per_package
+        .maybeGet(lib_name)
+        .default(SortedSet[])
+        .difference(SortedSet::createFromItems(file_names))
+        .union(old_files_per_package.maybeGet("").default(SortedSet[]))
+        .map(fn -> `${lib_name}:${fn}`)
+        .collect(Array)
+    | None() ->
+      old_files_per_package
+        .maybeGet("")
+        .default(SortedSet[])
+        .difference(SortedSet::createFromItems(file_names))
+        .collect(Array)
+    },
+  );
+  current_files = Vector::mcreateFromItems(
+    lib_name_opt match {
+    | Some(lib_name) -> file_names.map(fn -> `${lib_name}:${fn}`)
+    | None() -> file_names
+    },
+  );
+
+  for (file_name in file_names) {
+    key = lib_name_opt match {
+    | Some(lib_name) -> `${lib_name}:${file_name}`
+    | None() -> file_name
     };
-    key = SKStore.SID(fileName);
-    lastModifTime = getLastModificationTime(fileName);
-    timeArr = fileTimeDir.unsafeGetArray(context, key);
+    lastModifTime = getLastModificationTime(file_name);
+    timeArr = fileTimeDir.unsafeGetArray(context, SKStore.SID(key));
     if (timeArr.size() > 0 && timeArr[0].value == lastModifTime) continue;
-    fileTimeDir.writeArray(context, key, Array[SKStore.IntFile(lastModifTime)]);
-    fileDir.writeArray(
-      context,
-      SKStore.SID(fileName),
-      Array[SKStore.StringFile(FileSystem.readTextFile(fileName))],
-    )
+    contents = FileSystem.readTextFile(file_name);
+    writeFile(context, key, lastModifTime, contents)
   };
-  for (fileName in oldFiles) {
-    fileDir.writeArray(
-      context,
-      SKStore.SID(fileName),
-      Array[SKStore.StringFile("")],
-    )
+
+  for (lib_name => dep in dependencies) {
+    (lib_path, _) = dep;
+    file = IO.File::open(lib_path, IO.OpenOptions{read => true});
+    lib = Sklib::read(file) match {
+    | Success(lib) -> lib
+    | Failure(err) ->
+      print_error(`Could not read ${lib_path}: ${err}`);
+      skipExit(3)
+    };
+
+    for (f in old_files_per_package
+      .maybeGet(lib_name)
+      .default(SortedSet[])
+      .difference(SortedSet::createFromIterator(lib.sources.keys()))) {
+      stale_files.push(`${lib_name}:${f}`)
+    };
+
+    for (src_path => header in lib.sources) {
+      key = `${lib_name}:${src_path}`;
+      current_files.push(key);
+
+      lastModifTime = header.mtime;
+      timeArr = fileTimeDir.unsafeGetArray(context, SKStore.SID(key));
+      if (timeArr.size() > 0 && timeArr[0].value == lastModifTime) continue;
+      contents = lib.read_file(src_path) match {
+      | Success(v) -> v
+      | Failure(err) ->
+        print_error(`Could not read ${src_path} from ${lib_path} (${err})`);
+        skipExit(3)
+      };
+      writeFile(context, key, lastModifTime, contents)
+    };
+
+    file.close();
+  };
+
+  for (file_name in stale_files) {
+    key = SKStore.SID(file_name);
+    fileDir.writeArray(context, key, Array[SKStore.StringFile("")]);
+    fileTimeDir.writeArray(context, key, Array[])
   };
   allFilesDir.writeArray(
     context,
     SKStore.IID(0),
-    fileNames.map(x -> SKStore.StringFile(x)),
+    current_files.map(x -> SKStore.StringFile(x)).collect(Array),
   );
 }
 

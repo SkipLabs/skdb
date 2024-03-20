@@ -1,0 +1,62 @@
+module Skargo;
+
+class Workspace(package: Package, target_dir_opt: ?String) {
+  static fun create(manifest_path: String, gctx: GlobalContext): Workspace {
+    Workspace(Package::read(manifest_path), gctx.target_dir)
+  }
+
+  fun target_dir(): String {
+    this.target_dir_opt.default(this.default_target_dir())
+  }
+
+  fun root(): String {
+    Path.dirname(this.package.manifest_path)
+  }
+
+  private fun default_target_dir(): String {
+    Path.join(this.root(), "target")
+  }
+}
+
+fun workspace(args: Cli.ParseResults, gctx: GlobalContext): Workspace {
+  manifest_path = root_manifest(args, gctx);
+
+  Workspace::create(manifest_path, gctx)
+}
+
+private fun root_manifest(args: Cli.ParseResults, gctx: GlobalContext): String {
+  args.maybeGetString("manifest-path") match {
+  | Some(path) ->
+    if (!path.startsWith("/")) {
+      !path = Path.join(gctx.cwd, path)
+    };
+    if (!path.endsWith(kManifestFile)) {
+      invariant_violation(
+        `the manifest-path must be a path to a ${kManifestFile} file`,
+      )
+    };
+    if (!FileSystem.exists(path)) {
+      invariant_violation(`manifest path ${path} does not exist`)
+    };
+    path
+  | None() -> find_root_manifest_for_wd(gctx.cwd)
+  }
+}
+
+private fun find_root_manifest_for_wd(path: String): String {
+  cur_path = path;
+  loop {
+    candidate = Path.join(cur_path, kManifestFile);
+    if (FileSystem.exists(candidate)) {
+      return candidate
+    };
+    if (Path.isRoot(cur_path)) {
+      invariant_violation(
+        `could not find \`${kManifestFile}\` in \`${path}\` or any parent directory`,
+      )
+    };
+    !cur_path = Path.parentname(cur_path)
+  }
+}
+
+module end;

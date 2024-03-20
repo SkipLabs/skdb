@@ -6,16 +6,20 @@ PRFDEF=$(shell echo $(PROFILE) | tr  '[:lower:]' '[:upper:]')
 DEFINITIONS=-D$(PRFDEF)
 ifeq ($(PRFDEF),RELEASE)
 OLEVEL=-O3
+DLEVEL=
 else
 ifeq ($(PRFDEF),DEBUG)
-OLEVEL=-O0 -g3
+OLEVEL=-O0
+DLEVEL=-g3
 else
-OLEVEL=-O2 -g3
+OLEVEL=-O2
+DLEVEL=-g3
 endif # ifeq ($(PRFDEF),DEBUG)
 endif # ifeq ($(PRFDEF),RELEASE)
 else
 DEFINITIONS=
-OLEVEL=-O2 -g3
+OLEVEL=-O2
+DLEVEL=-g3
 endif # ifdef PROFILE
 
 COMMONFLAGS=$(OLEVEL) -Werror -Wall -Wextra -Wno-sign-conversion -Wno-sometimes-uninitialized -Wno-c2x-extensions -Wsign-compare -Wextra-semi-stmt
@@ -51,9 +55,10 @@ CFILES32=$(addprefix $(COMP_DIR)/,$(CRELFILES))
 BCFILES32=$(BUILD_DIR)magic.bc $(addprefix $(BUILD_DIR),$(CRELFILES:.c=.bc))
 
 .PHONY: default
-default: $(BUILD_DIR)libskip_runtime32.bc
-	@echo "skargo:library=$(BUILD_DIR)libskip_runtime32.bc"
-	@echo "skargo:preamble=$(COMP_DIR)/preamble/preamble32.ll"
+default: $(BUILD_DIR)libskip_runtime32.a
+	@echo "skargo:skc-preamble=$(COMP_DIR)/preamble/preamble32.ll"
+	@echo "skargo:skc-link-search=$(BUILD_DIR)"
+	@echo "skargo:skc-link-lib=static=skip_runtime32"
 
 $(BUILD_DIR)magic.c:
 	@date | cksum | awk '{print "unsigned long version = " $$1 ";"}' > $(BUILD_DIR)magic.c
@@ -61,13 +66,19 @@ $(BUILD_DIR)magic.c:
 
 $(BUILD_DIR)magic.bc: $(BUILD_DIR)magic.c
 	@[ -d $(dir $@) ] || mkdir -p $(dir $@)
-	@clang $(CC32FLAGS) -o $@ -c $<
+	@clang $(OLEVEL) $(DLEVEL) $(CC32FLAGS) -o $@ -c $<
+
+$(BUILD_DIR)libskip_runtime32.a: $(BUILD_DIR)libskip_runtime32.o
+	llvm-ar crs $@ $^
 
 $(BUILD_DIR)libskip_runtime32.bc: $(BCFILES32)
 	@[ -d $(dir $@) ] || mkdir -p $(dir $@)
-	@llvm-link $(BCFILES32) -o $@
+	llvm-link $(BCFILES32) -o $@
+
+%.o: %.bc
+	@[ -d $(dir $@) ] || mkdir -p $(dir $@)
+	llc -mtriple=wasm32-unknown-unknown $(OLEVEL) -filetype=obj $^ -o $@
 
 $(BUILD_DIR)%.bc: $(COMP_DIR)/%.c
 	@[ -d $(dir $@) ] || mkdir -p $(dir $@)
-	@clang $(CC32FLAGS) -o $@ -c $<
-
+	@clang $(OLEVEL) $(DLEVEL) $(CC32FLAGS) -o $@ -c $<

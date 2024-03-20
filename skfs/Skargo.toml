@@ -1,6 +1,0 @@
-[package]
-name = "skfs"
-version = "0.1.0"
-
-[dependencies]
-sktest = { "path" = "../sktest" }  # TODO: Move this to dev-dependencies.

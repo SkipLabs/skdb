@@ -1000,10 +1000,24 @@ fun writeOutputFiles(
   };
 
   sstr = mutable TextOutputStream.StringTextOutputStream{};
+
   config.preambles.each(p -> sstr.write(FileSystem.readTextFile(p)));
+  for (dep in config.dependencies.values()) {
+    for (p in dep.i1.preambles) {
+      sstr.write(p)
+    }
+  };
 
   // arbitrarily pick some unique input file as the CU for this output file.
-  metadata = AsmOutput.Metadata::create(defs, inputFiles[0]);
+  metadata = AsmOutput.Metadata::create(
+    defs,
+    if (!inputFiles.isEmpty()) {
+      inputFiles[0]
+    } else {
+      // FIXME: This is dirty.
+      "TODO"
+    },
+  );
 
   fileEmpty = true;
 

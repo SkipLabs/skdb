@@ -61,16 +61,18 @@ ONATIVE_FILES=$(BUILD_DIR)magic.o $(addprefix $(BUILD_DIR),$(NATIVE_RELFILES:.c=
 
 .PHONY: default
 default: $(BUILD_DIR)libbacktrace.a $(BUILD_DIR)libskip_runtime64.a
-	@echo "skargo:library=$(BUILD_DIR)libskip_runtime64.a"
-	@echo "skargo:library=$(BUILD_DIR)libbacktrace.a"
-	@echo "skargo:preamble=$(COMP_DIR)/preamble/preamble64.ll"
-	@echo "skargo:link=-lpthread"
+	@echo "skargo:skc-preamble=$(COMP_DIR)/preamble/preamble64.ll"
+	@echo "skargo:skc-link-lib=static=skip_runtime64"
+	@echo "skargo:skc-link-lib=static=backtrace"
+	@echo "skargo:skc-link-lib=pthread"
+	@echo "skargo:skc-link-search=$(OUT_DIR)"
 
 $(BUILD_DIR)magic.c:
 	@date | cksum | awk '{print "unsigned long version = " $$1 ";"}' > $(BUILD_DIR)magic.c
 	@echo "int SKIP_get_version() { return (int)version; }" >> $(BUILD_DIR)magic.c
 
 $(BUILD_DIR)magic.o: $(BUILD_DIR)magic.c
+	@echo "skargo:rerun-if-changed=$^"
 	@[ -d $(dir $@) ] || mkdir -p $(dir $@)
 	@clang $(CC64FLAGS) -o $@ -c $<
 
@@ -90,9 +92,11 @@ $(BUILD_DIR)libbacktrace.a:
 endif
 
 $(BUILD_DIR)runtime/runtime64_specific.o: $(COMP_DIR)/runtime/runtime64_specific.cpp
+	@echo "skargo:rerun-if-changed=$^"
 	@[ -d $(dir $@) ] || mkdir -p $(dir $@)
 	@clang++ $(CC64FLAGS) -g3 -o $@ -c -I$(COMP_DIR)/runtime/libbacktrace/ $<
 
 $(BUILD_DIR)%.o: $(COMP_DIR)/%.c
+	@echo "skargo:rerun-if-changed=$^"
 	@[ -d $(dir $@) ] || mkdir -p $(dir $@)
 	@clang $(CC64FLAGS) -g3 -o $@ -c $<

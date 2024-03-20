@@ -170,7 +170,7 @@ fun is_subtype(
   if (child_name.i1 == parent_name.i1) return true;
   getCD = n ->
     GlobalEnv.getClass(context, n.i1) match {
-    | None() -> SkipError.fatalError(n.i0, `Unbound class: '${n.i1}'`)
+    | None() -> SkipError.fatalError(context, n.i0, `Unbound class: '${n.i1}'`)
     | Some(cd) -> cd
     };
   child_class = getCD(child_name);
@@ -913,7 +913,11 @@ fun getClass(
 ): SkipAst.Class_def {
   maybeGetClass(context, className.i1) match {
   | None() ->
-    SkipError.fatalError(className.i0, `Unbound class: '${className.i1}'`)
+    SkipError.fatalError(
+      context,
+      className.i0,
+      `Unbound class: '${className.i1}'`,
+    )
   | Some(x) -> x
   }
 }

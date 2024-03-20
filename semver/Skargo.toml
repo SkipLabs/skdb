@@ -3,6 +3,7 @@ name = "semver"
 version = "0.1.0"
 
 [dependencies]
-std = { "path" = "../prelude" }
+std = { path = "../prelude" }
 
-sktest = { "path" = "../sktest" }
+[dev-dependencies]
+sktest = { path = "../sktest" }

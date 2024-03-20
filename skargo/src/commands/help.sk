@@ -1,0 +1,33 @@
+module Skargo;
+
+fun help(): (Cli.Command, (GlobalContext, Cli.ParseResults) ~> void) {
+  (
+    Cli.Command("help")
+      .arg(
+        Cli.StringArg("command")
+          .positional()
+          .about(
+            "If specified, the subcommand for which help is to be displayed",
+          ),
+      )
+      .about("Displays help for a skargo subcommand"),
+    execHelp,
+  )
+}
+
+fun execHelp(_gctx: GlobalContext, args: Cli.ParseResults): void {
+  optSubcmd = args.maybeGetString("command");
+  optSubcmd.flatMap(subcmd ->
+    args.cmd._subcommands.filter(cmd -> cmd.name == subcmd).maybeGet(0)
+  ) match {
+  | Some(cmd) -> print_string(Cli.usage(cmd, true, Some(args.cmd)))
+  | _ ->
+    optSubcmd match {
+    | Some(subcmd) -> print_error(`error: Invalid subcommand ${subcmd}.`)
+    | _ -> print_error("error: No subcommand specified.")
+    };
+    print_string(Cli.usage(args.cmd, true))
+  };
+}
+
+module end;

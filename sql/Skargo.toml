@@ -3,10 +3,14 @@ name = "skdb"
 version = "0.1.0"
 
 [dependencies]
-skdate = { "path" = "../skdate" }
-cli = { "path" = "../cli" }
-skjson = { "path" = "../skjson" }
-sqlparser = { "path" = "../sqlparser" }
+std = { path = "../prelude" }
+skdate = { path = "../skdate" }
+cli = { path = "../cli" }
+skjson = { path = "../skjson" }
+sqlparser = { path = "../sqlparser" }
+
+[dev-dependencies]
+sktest = { path = "../sktest" }
 
 [[bin]]
 name = "skdb"

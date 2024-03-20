@@ -8,7 +8,9 @@ module SKDB;
 
 @export("getVersion")
 fun getVersion(): String {
-  `${SkargoVersion.kVersion} (${SkargoVersion.kCommit})`
+  // FIXME
+  // #env("SKARGO_PKG_VERSION")
+  "FIXME (FIXME)"
 }
 
 fun getFieldNames(
@@ -235,7 +237,13 @@ untracked fun main(): void {
     .subcommand(
       Cli.Command("subscribe")
         .about("Subscribe to a directory change")
-        .arg(Cli.ArrayArg("views").positional().required().about("Views"))
+        .arg(
+          Cli.StringArg("views")
+            .repeatable()
+            .positional()
+            .required()
+            .about("Views"),
+        )
         .arg(Cli.BoolArg("connect").about("Send the initial state first"))
         .arg(
           Cli.StringArg("updates").about(

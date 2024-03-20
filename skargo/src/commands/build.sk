@@ -1,0 +1,72 @@
+module Skargo;
+
+fun build(): (Cli.Command, (GlobalContext, Cli.ParseResults) ~> void) {
+  (
+    Cli.Command("build")
+      .short("b")
+      .about("Compile a local package and all of its dependencies")
+      .arg(
+        Cli.StringArg("manifest-path")
+          .value_name("PATH")
+          .about("Path to Skargo.toml"),
+      )
+      .arg(
+        Cli.StringArg("target")
+          .value_name("TRIPLE")
+          .about("Build for the target triple"),
+      )
+      .arg(
+        Cli.StringArg("target-dir")
+          .value_name("PATH")
+          .about("Directory for all generated artifacts"),
+      )
+      .arg(
+        Cli.StringArg("out-dir")
+          .value_name("PATH")
+          .about("Copy final artifacts to this directory"),
+      )
+      .arg(
+        Cli.StringArg("profile")
+          .value_name("PROFILE-NAME")
+          .about("Build artifacts with the specified profile"),
+      )
+      .arg(
+        Cli.BoolArg("release")
+          .short("r")
+          .long("release")
+          .about("Build artifacts in release mode, with optimizations"),
+      )
+      .arg(Cli.BoolArg("lib").about("Build only this package's library"))
+      .arg(
+        Cli.StringArg("bin")
+          .repeatable()
+          .value_name("NAME")
+          .about("Build only the specified binary"),
+      )
+      .arg(Cli.BoolArg("bins").about("Build all binaries"))
+      .arg(Cli.BoolArg("tests").about("Build all tests"))
+      .arg(Cli.BoolArg("all-targets").about("Build all targets")),
+    execBuild,
+  )
+}
+
+fun execBuild(gctx: GlobalContext, args: Cli.ParseResults): void {
+  ws = workspace(args, gctx);
+  opts = compile_options(args);
+  !opts.build_config.export_dir = args.maybeGetString("out-dir");
+  bctx = create_bctx(gctx, ws, opts);
+  withTimer(
+    () -> {
+      build_runner = BuildRunner::create(bctx);
+      build_runner.compile()
+    },
+    t ->
+      gctx.console.status(
+        "Finished",
+        `${opts.build_config.requested_profile} target(s) in ${t}s`,
+      )
+    ,
+  );
+}
+
+module end;

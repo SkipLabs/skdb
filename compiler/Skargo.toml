@@ -5,8 +5,10 @@ tests = ["tests/tests.sk"]
 test-harness = "SkcTests.main"
 
 [dependencies]
-skfs = { "path" = "../skfs" }
-cli = { "path" = "../cli" }
+std = { path = "../prelude" }
+cli = { path = "../cli" }
+arparser = { path = "../arparser" }
+sktest = { path = "../sktest" }
 
 [[bin]]
 name = "skc"

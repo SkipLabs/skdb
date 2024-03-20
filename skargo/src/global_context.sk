@@ -1,0 +1,73 @@
+module Skargo;
+
+class GlobalContext{
+  // // Location of the user's config.
+  // home_path: String,
+  console: Console,
+  /// Path from which `skargo` was invoked
+  cwd: String,
+  /// Target directory via resolved Cli parameter
+  target_dir: ?String,
+  // skargo_exe: String,
+} {
+  static fun create(args: Cli.ParseResults): GlobalContext {
+    verbosity = args.getArray("verbose").size() match {
+    | 0 -> VerbosityNormal()
+    | 1 -> VerbosityVerbose()
+    | _ -> VerbosityProlix()
+    };
+    // TODO: Handle flag incompatibility between -v and -q in `Cli`.
+    if (args.getBool("quiet")) {
+      !verbosity = VerbosityQuiet()
+    };
+    target_dir = args.maybeGetString("target-dir", false);
+
+    GlobalContext{console => Console(verbosity), cwd => getcwd(), target_dir}
+  }
+}
+// const kUserConfiguration: String = ".skargoconfig";
+
+// private class UserConfig{
+//   formatOnCheck: Bool = false,
+//   autoRemoveState: Bool = false,
+//   repositories: Array<String> = Array[],
+// } {
+//   fun update(json: JSON.Object, dir: String): UserConfig {
+//     json.maybeGetBool("auto-remove-state").each(v -> !this.autoRemoveState = v);
+//     json.maybeGetBool("format-on-check").each(v -> !this.formatOnCheck = v);
+//     json.maybeGetArray("repositories").each(v ->
+//       !this.repositories = v.value
+//         .map(jv -> Path.join(dir, jv.expectString()))
+//         .toArray()
+//     );
+//     this;
+//   }
+// }
+
+// private fun findUserConfig(optPath: ?String = None()): UserConfig {
+//   configFiles = mutable Vector<String>[];
+//   path = optPath.default(getcwd());
+//   loop {
+//     file = Path.join(path, kUserConfiguration);
+//     if (FileSystem.exists(file)) {
+//       configFiles.push(file)
+//     };
+//     if (Path.isRoot(path)) {
+//       break void;
+//     };
+//     !path = Path.parentname(path)
+//   };
+//   config = UserConfig{};
+//   configFiles.reversed().each(cFile ->
+//     try {
+//       json = JSON.decode(FileSystem.readTextFile(cFile)).expectObject();
+//       !config = config.update(json, Path.parentname(cFile));
+//     } catch {
+//     | _exn -> void
+//     }
+//   );
+//   config
+// }
+
+
+module end;

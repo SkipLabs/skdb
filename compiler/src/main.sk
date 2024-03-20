@@ -11,11 +11,11 @@ fun main(): void {
     .help()
     .arg(Cli.BoolArg("disasm-all"))
     .arg(Cli.BoolArg("disasm-annotated"))
-    .arg(Cli.ArrayArg("disasm-file").default(Array[]))
-    .arg(Cli.ArrayArg("disasm-function").default(Array[]))
-    .arg(Cli.ArrayArg("export-function").default(Array[]))
-    .arg(Cli.ArrayArg("export-function-as").default(Array[]))
-    .arg(Cli.ArrayArg("export-module").default(Array[]))
+    .arg(Cli.StringArg("disasm-file").repeatable())
+    .arg(Cli.StringArg("disasm-function").repeatable())
+    .arg(Cli.StringArg("export-function").repeatable())
+    .arg(Cli.StringArg("export-function-as").repeatable())
+    .arg(Cli.StringArg("export-module").repeatable())
     .arg(Cli.StringArg("output").long("output").short("o"))
     // .arg(Cli.StringArg("profile-path").default(""))
     .arg(Cli.StringArg("emit").default("link"))
@@ -25,11 +25,16 @@ fun main(): void {
     .arg(Cli.BoolArg("autogc").default(true).negatable())
     .arg(Cli.StringArg("sample-rate").default("0"))
     .arg(Cli.BoolArg("use-specialized-names"))
-    .arg(Cli.BoolArg("version"))
+    .arg(Cli.BoolArg("version").about("Print version info and exit."))
     // Global config flags
-    .arg(Cli.BoolArg("release"))
-    .arg(Cli.BoolArg("verbose").short("v").long("verbose"))
-    .arg(Cli.BoolArg("debug"))
+    .arg(Cli.BoolArg("release").about("Enable release optimizations."))
+    .arg(
+      Cli.BoolArg("verbose")
+        .short("v")
+        .long("verbose")
+        .about("Use verbose output."),
+    )
+    .arg(Cli.BoolArg("debug").about("Print debug information."))
     // Optimization config flags
     // .arg(Cli.BoolArg("localopts").default(true).negatable())
     .arg(Cli.BoolArg("dce").default(true).negatable())
@@ -46,8 +51,38 @@ fun main(): void {
     .arg(Cli.BoolArg("profile"))
     .arg(Cli.StringArg("data"))
     .arg(Cli.StringArg("init"))
-    .arg(Cli.BoolArg("check"))
-    .arg(Cli.ArrayArg("files").positional().default(Array[]))
+    .arg(Cli.BoolArg("check").about("Run the front end only."))
+    .arg(
+      Cli.StringArg("sklib-name")
+        .long("sklib-name")
+        .about("Specify the package name when building an sklib."),
+    )
+    .arg(
+      Cli.BoolArg("std")
+        .negatable()
+        .default(true)
+        .about("Include a dependency to `std` (default: true)."),
+    )
+    .arg(
+      Cli.StringArg("dependencies")
+        .long("dep")
+        .repeatable()
+        .about("Specify a dependency on a skip library."),
+    )
+    .arg(Cli.StringArg("sysroot").about("Override the sysroot location."))
+    .arg(
+      Cli.StringArg("libraries")
+        .short("l")
+        .repeatable()
+        .about("Link against a system library."),
+    )
+    .arg(
+      Cli.StringArg("library-paths")
+        .short("L")
+        .repeatable()
+        .about("Add path to the library search path."),
+    )
+    .arg(Cli.StringArg("files").positional().repeatable())
     .parseArgs();
 
   results.error match {
@@ -70,7 +105,7 @@ fun main(): void {
       SKStore.CStop(
         Some((context, _, _) ~> {
           try {
-            compile(config, context, config.unknown)
+            compile(config, context, config.input_files)
           } catch {
           | exn ->
             print_error(exn.getMessage());

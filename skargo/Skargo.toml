@@ -1,12 +1,12 @@
 [package]
 name = "skargo"
-version = "0.1.0"
+version = "0.2.0"
 
 [dependencies]
-toml = { "path" = "../toml" }
-cli = { "path" = "../cli" }
-std = { "path" = "../prelude" }
-semver = { "path" = "../semver" }
+std = { path = "../prelude" }
+toml = { path = "../toml" }
+cli = { path = "../cli" }
+semver = { path = "../semver" }
 
 [[bin]]
 name = "skargo"

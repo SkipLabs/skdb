@@ -711,7 +711,14 @@ class EagerDir{
             (tick, source, _values) = kv;
             // do not wipe out data that has not yet been seen
             if (wasSeen(tick, source)) {
-              !this = this.writeEntry(context, source, writer, key, Array[])
+              !this = this.writeEntry(
+                context,
+                source,
+                writer,
+                key,
+                Array[],
+                true, // force: reset is low-level and we wish to ignore any safeguards
+              )
             }
           })
         }

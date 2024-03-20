@@ -38,19 +38,22 @@
 // end: The end of the page.
 
 #ifdef SKIP32
-struct sk_obstack* page = NULL;
-char* head = NULL;
-char* end = NULL;
-#endif
+
 
 // In 32bits mode there are no threads, so the obstack does not have to be
 // thread local. This is because wasm doesn't support threads (at least not
 // well).
 
-#ifdef SKIP64
+struct sk_obstack* page = NULL;
+char* head = NULL;
+char* end = NULL;
+
+#else
+
 __thread struct sk_obstack* page = NULL;
 __thread char* head = NULL;
 __thread char* end = NULL;
+
 #endif
 
 /*****************************************************************************/
@@ -84,7 +87,10 @@ int sk_is_large_page(sk_obstack_t* page) {
   return sk_page_size(page) > PAGE_SIZE;
 }
 
-void sk_obstack_attach_page(sk_obstack_t* lpage) {
+void sk_obstack_attach_page(sk_obstack_t* lpage, sk_obstack_t* next) {
+  if (next != NULL) {
+    next->previous = lpage->previous;
+  }
   lpage->previous = page->previous;
   page->previous = lpage;
 }
@@ -94,7 +100,7 @@ char* sk_large_page(size_t size) {
   // This space is needed in case the page gets interned (TO CHECK)
   block_size += 64;
   sk_obstack_t* lpage = (sk_obstack_t*)sk_malloc(block_size);
-  sk_obstack_attach_page(lpage);
+  sk_obstack_attach_page(lpage, NULL);
   lpage->size = block_size;
   sk_saved_obstack_t* saved = &lpage->saved;
   saved->head = NULL;

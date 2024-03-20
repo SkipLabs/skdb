@@ -89,8 +89,9 @@ typedef struct sk_obstack sk_obstack_t;
 #define TOMB ((uint64_t)-1)
 
 typedef struct {
-  void* key;
+  sk_obstack_t* key;
   uint64_t value;
+  sk_obstack_t* next;
 } sk_cell_t;
 
 typedef struct {
@@ -292,7 +293,7 @@ int sk_is_static(void*);
 void* sk_malloc(size_t size);
 void* sk_malloc_end(size_t);
 char* sk_new_const(char* cst);
-void sk_obstack_attach_page(sk_obstack_t* lpage);
+void sk_obstack_attach_page(sk_obstack_t* lpage, sk_obstack_t* next);
 size_t sk_page_size(sk_obstack_t* page);
 void* sk_palloc(size_t size);
 void sk_persist_consts();

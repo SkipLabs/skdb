@@ -21,6 +21,7 @@ jobs:
           name: Run compiler tests
           no_output_timeout: 30m
           command: |
+            update-alternatives --install /usr/bin/llvm-ar llvm-ar /usr/bin/llvm-ar-15 100
             mkdir -p ~/test-results
             cd compiler && make
             PATH=./stage1/bin:$PATH skargo test --jobs 8 --junitxml ~/test-results/skc.xml

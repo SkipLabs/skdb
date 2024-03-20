@@ -4,7 +4,7 @@ if [ -z "$SKARGO_PROFILE" ]; then
     SKARGO_PROFILE=dev
 fi
 
-SKDB_BIN="skargo run --profile $SKARGO_PROFILE -- "
+SKDB_BIN="skargo run -q --profile $SKARGO_PROFILE -- "
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 

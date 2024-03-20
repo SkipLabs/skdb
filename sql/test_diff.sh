@@ -6,7 +6,7 @@ if [ -z "$SKARGO_PROFILE" ]; then
     SKARGO_PROFILE=dev
 fi
 
-SKDB_CMD="skargo run --profile $SKARGO_PROFILE -- "
+SKDB_CMD="skargo run -q --profile $SKARGO_PROFILE -- "
 SKDB="$SKDB_CMD --always-allow-joins --data $DB"
 
 pass() { printf "%-50s OK\n" "$1:"; }

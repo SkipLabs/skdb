@@ -4,7 +4,7 @@ if [ -z "$SKARGO_PROFILE" ]; then
     SKARGO_PROFILE=dev
 fi
 
-SKDB="skargo run --path ./sql/ --profile $SKARGO_PROFILE -- "
+SKDB="skargo run -q --manifest-path ./sql/Skargo.toml --profile $SKARGO_PROFILE -- "
 
 rm -f /tmp/data
 rm -f /tmp/data2

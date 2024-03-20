@@ -206,19 +206,13 @@ void SKIP_destroy_Obstack(sk_saved_obstack_t* saved) {
     saved_head = saved->head;
     saved_end = saved->end;
   }
-  while (!((char*)page <= saved_head && saved_head <= end)) {
-    sk_obstack_t* tofree = page;
-    size_t tosk_free_size = sk_page_size(page);
-    page = page->previous;
-    sk_free_size(tofree, tosk_free_size);
-    if (page == NULL) {
-      head = NULL;
-      page = NULL;
-      end = NULL;
-      return;
-    }
-    size_t size = page->size;
-    end = (char*)page + size;
+
+  sk_obstack_t* tofree;
+  sk_obstack_t* current = page;
+  while (current != NULL && current != saved_page) {
+    tofree = current;
+    current = current->previous;
+    sk_free_size(tofree, tofree->size);
   }
   head = saved_head;
   page = saved_page;

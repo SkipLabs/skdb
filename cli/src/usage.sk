@@ -84,6 +84,11 @@ private fun usageOptions(options: Sequence<Cli.Arg>): String {
       | (None(), Some(long)) -> `    --${long}`
       | _ -> `    --${arg.name}`
       };
+      arg match {
+      | Cli.ArrayArg _ -> !optFlags = `${optFlags} [<${arg._value_name}>]`
+      | Cli.ValuedArg _ -> !optFlags = `${optFlags} <${arg._value_name}>`
+      | _ -> void
+      };
       Array[Some(optFlags), arg._about]
     }),
   )

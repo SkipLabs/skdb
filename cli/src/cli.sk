@@ -12,6 +12,7 @@ base class Arg(
   _default: ?Value = None(),
   _required: Bool = false,
   _positional: Bool = false,
+  _value_name: String = "VALUE",
   // BoolArgs only
   _negatable: Bool = false,
 ) {
@@ -44,6 +45,10 @@ base class Arg(
 base class ValuedArg extends Arg {
   fun required(value: Bool = true): this {
     this with {_required => value}
+  }
+
+  fun value_name(value: String): this {
+    this with {_value_name => value}
   }
 }
 

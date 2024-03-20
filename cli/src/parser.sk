@@ -153,6 +153,13 @@ private fun updateValue(
   None()
 }
 
+private fun defaultValue(arg: Arg): Value {
+  arg match {
+  | ValuedArg _ -> arg._default.default(MissingValue())
+  | BoolArg _ -> arg._default.default(BoolValue(false))
+  }
+}
+
 private fun parse(
   cmd: Command,
   iterator: mutable Iterator<String>,
@@ -263,7 +270,7 @@ private fun parse(
         (str, None())
       };
       options.maybeGet(argName) match {
-      | Some(arg) if (arg._takesValue()) ->
+      | Some(arg) if (arg is ValuedArg _) ->
         value = argValue match {
         | Some(v) -> v
         | None() ->
@@ -302,7 +309,7 @@ private fun parse(
         !argName = str.take(2);
         value = str.substring(str.getIter().forward(2));
         options.maybeGet(argName) match {
-        | Some(arg) if (arg._takesValue()) ->
+        | Some(arg) if (arg is ValuedArg _) ->
           updateValue(values, arg, value) match {
           | err @ Some _ ->
             !error = err;
@@ -333,7 +340,7 @@ private fun parse(
           | _ ->
             env_var.map(_ -> invariant_violation("Unexpected argument type."))
           };
-          values.set(arg.name, value.default(arg._defaultValue()))
+          values.set(arg.name, value.default(defaultValue(arg)))
         }
       }
     }

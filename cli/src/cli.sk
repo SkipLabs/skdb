@@ -8,7 +8,7 @@ base class Arg(
   _global: Bool = false,
   _env: ?String = None(),
   // NOTE: The following parameters cannot be placed in subclasses, since `name` is required.
-  // StringArgs only
+  // Other than BoolArgs only
   _default: ?Value = None(),
   _required: Bool = false,
   _positional: Bool = false,
@@ -39,45 +39,33 @@ base class Arg(
   overridable fun env(name: String): this {
     this with {_env => Some(name)}
   }
-
-  // Internal methods.
-  fun _defaultValue(): Value;
-  fun _takesValue(): Bool;
 }
 
-class StringArg extends Arg {
+base class ValuedArg extends Arg {
+  fun required(value: Bool = true): this {
+    this with {_required => value}
+  }
+}
+
+class StringArg extends ValuedArg {
   fun default(value: String): this {
     this with {_default => Some(StringValue(value))}
   }
-
-  fun required(value: Bool = true): this {
-    this with {_required => value}
-  }
-
-  fun _defaultValue(): Value {
-    this._default.default(MissingValue())
-  }
-
-  fun _takesValue(): Bool {
-    true
-  }
 }
 
-class IntArg extends Arg {
+class IntArg extends ValuedArg {
   fun default(value: Int): this {
     this with {_default => Some(IntValue(value))}
   }
+}
 
-  fun required(value: Bool = true): this {
-    this with {_required => value}
+class ArrayArg extends ValuedArg {
+  fun default(value: Array<String>): this {
+    this with {_default => Some(ArrayValue(value))}
   }
 
-  fun _defaultValue(): Value {
-    this._default.default(MissingValue())
-  }
-
-  fun _takesValue(): Bool {
-    true
+  fun env(_name: String): this {
+    invariant_violation("TODO")
   }
 }
 
@@ -88,36 +76,6 @@ class BoolArg extends Arg {
 
   fun negatable(value: Bool = true): this {
     this with {_negatable => value}
-  }
-
-  fun _defaultValue(): Value {
-    this._default.default(BoolValue(false))
-  }
-
-  fun _takesValue(): Bool {
-    false
-  }
-}
-
-class ArrayArg extends Arg {
-  fun default(value: Array<String>): this {
-    this with {_default => Some(ArrayValue(value))}
-  }
-
-  fun required(value: Bool = true): this {
-    this with {_required => value}
-  }
-
-  fun env(_name: String): this {
-    invariant_violation("TODO")
-  }
-
-  fun _defaultValue(): Value {
-    this._default.default(MissingValue())
-  }
-
-  fun _takesValue(): Bool {
-    true
   }
 }
 

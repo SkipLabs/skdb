@@ -1376,6 +1376,10 @@ private native fun destroyObstack(Obstack): void;
 private native fun destroyObstackWithValue<T>(Obstack, List<T>): List<T>;
 
 @debug
+@cpp_extern("SKIP_copy_value_to_Obstack")
+private native fun copyValueToObstack<T>(Page,List<T>): List<T>;
+
+@debug
 @cpp_extern("SKIP_switch_to_parent")
 private native fun switchToParent(Obstack): Page;
 
@@ -1855,6 +1859,14 @@ fun withRegionFoldRecHelp<K, T>(
     | _ -> throw exn
     }
   }
+}
+
+@debug
+fun copyValueToParentObstack<T>(saved: Obstack, value: List<T>): List<T> {
+  fromPage = switchToParent(saved);
+  res = copyValueToObstack(fromPage, value);
+  restoreFromParent(saved, fromPage);
+  res
 }
 
 module end;

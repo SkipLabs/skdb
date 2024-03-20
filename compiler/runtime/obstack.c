@@ -39,7 +39,6 @@
 
 #ifdef SKIP32
 
-
 // In 32bits mode there are no threads, so the obstack does not have to be
 // thread local. This is because wasm doesn't support threads (at least not
 // well).
@@ -77,7 +76,6 @@ sk_saved_obstack_t init_saved = {NULL, NULL, NULL};
 #else
 __thread sk_saved_obstack_t init_saved = {NULL, NULL, NULL};
 #endif
-
 
 size_t sk_page_size(sk_obstack_t* page) {
   return page->size;
@@ -223,6 +221,14 @@ void SKIP_destroy_Obstack(sk_saved_obstack_t* saved) {
     saved->head = NULL;
     saved->end = NULL;
   }
+}
+
+void* SKIP_copy_value_to_Obstack(sk_obstack_t* from_page, void* toCopy) {
+  size_t nbr_pages = sk_get_nbr_pages(from_page, page);
+  sk_cell_t* pages = sk_get_pages(from_page, nbr_pages);
+  void* result = SKIP_copy_with_pages(toCopy, nbr_pages, pages);
+  sk_free_size(pages, sizeof(sk_cell_t) * nbr_pages);
+  return result;
 }
 
 void* SKIP_destroy_Obstack_with_value(sk_saved_obstack_t* saved, void* toCopy) {

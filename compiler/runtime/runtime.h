@@ -108,8 +108,8 @@ sk_cell_t* sk_htbl_find(sk_htbl_t* table, void* key);
 int sk_htbl_mem(sk_htbl_t* table, void* key);
 void sk_htbl_remove(sk_htbl_t* table, void* key);
 SkipInt SKIP_String_cmp(unsigned char* str1, unsigned char* str2);
-size_t sk_get_nbr_pages(sk_obstack_t* saved_page);
-sk_cell_t* sk_get_pages(size_t size);
+size_t sk_get_nbr_pages(sk_obstack_t* from_page, sk_obstack_t* to_page);
+sk_cell_t* sk_get_pages(sk_obstack_t* from_page, size_t size);
 size_t sk_get_obstack_idx(char* ptr, sk_cell_t* pages, size_t size);
 
 /*****************************************************************************/

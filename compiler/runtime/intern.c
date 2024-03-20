@@ -163,8 +163,8 @@ void* SKIP_intern_shared(void* obj) {
   sk_stack_t* st = &st_holder;
   sk_stack3_t st3_holder;
   sk_stack3_t* st3 = &st3_holder;
-  size_t nbr_pages = sk_get_nbr_pages(NULL);
-  sk_cell_t* pages = sk_get_pages(nbr_pages);
+  size_t nbr_pages = sk_get_nbr_pages(NULL, NULL);
+  sk_cell_t* pages = sk_get_pages(NULL, nbr_pages);
 
   sk_stack_init(st, STACK_INIT_CAPACITY);
   sk_stack3_init(st3, STACK_INIT_CAPACITY);

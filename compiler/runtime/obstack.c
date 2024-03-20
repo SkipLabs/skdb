@@ -232,8 +232,8 @@ void SKIP_destroy_Obstack(sk_saved_obstack_t* saved) {
 }
 
 void* SKIP_destroy_Obstack_with_value(sk_saved_obstack_t* saved, void* toCopy) {
-  size_t nbr_pages = sk_get_nbr_pages(saved->page);
-  sk_cell_t* pages = sk_get_pages(nbr_pages);
+  size_t nbr_pages = sk_get_nbr_pages(page, saved->page);
+  sk_cell_t* pages = sk_get_pages(page, nbr_pages);
 
   page = saved->page;
   head = saved->head;
@@ -380,23 +380,26 @@ void sk_heap_sort(sk_cell_t* arr, size_t n) {
 /* Search. */
 /*****************************************************************************/
 
-size_t sk_get_nbr_pages(sk_obstack_t* saved_page) {
+size_t sk_get_nbr_pages(sk_obstack_t* from_page, sk_obstack_t* to_page) {
   size_t nbr_page = 0;
-  sk_obstack_t* cursor = page;
-  while (cursor != NULL && cursor != saved_page) {
+  sk_obstack_t* cursor = from_page != NULL ? from_page : page;
+  while (cursor != NULL && cursor != to_page) {
     cursor = cursor->previous;
     nbr_page++;
   }
   return nbr_page;
 }
 
-sk_cell_t* sk_get_pages(size_t nbr_pages) {
+sk_cell_t* sk_get_pages(sk_obstack_t* from_page, size_t nbr_pages) {
   sk_cell_t* result = (sk_cell_t*)sk_malloc(sizeof(sk_cell_t) * nbr_pages);
   unsigned int i = 0;
-  sk_obstack_t* cursor = page;
+  sk_obstack_t* cursor = from_page != NULL ? from_page : page;
+  sk_obstack_t* next = NULL;
   for (i = 0; i < nbr_pages; i++) {
     result[i].key = cursor;
     result[i].value = (uint64_t)cursor + cursor->size;
+    result[i].next = next;
+    next = cursor;
     cursor = cursor->previous;
   }
   sk_heap_sort(result, nbr_pages);

@@ -323,4 +323,28 @@ fun intArgsFromEnv(): void {
   T.expectEq(args.getInt("baz"), 42);
 }
 
+@test
+fun multipleBoolArgsTogether(): void {
+  cmd = Cli.Command("foo")
+    .arg(Cli.BoolArg("bar").short("b"))
+    .arg(Cli.BoolArg("baz").short("z"))
+    .arg(Cli.BoolArg("foobar").short("f"));
+  args = Cli.parseArgsFrom(cmd, Array["-bz"]);
+
+  T.expectTrue(args.getBool("bar"));
+  T.expectTrue(args.getBool("baz"));
+  T.expectFalse(args.getBool("foobar"));
+}
+
+@test
+fun nonBoolShortArgsTogether(): void {
+  cmd = Cli.Command("foo")
+    .arg(Cli.BoolArg("bar").short("b"))
+    .arg(Cli.StringArg("baz").short("z"))
+    .arg(Cli.BoolArg("foobar").short("f"));
+  args = Cli.parseArgsFrom(cmd, Array["-bz"]);
+
+  T.expectTrue(args.error is Some(Cli.InvalidArgumentError _))
+}
+
 module end;

@@ -123,7 +123,7 @@ private fun updateValue(
   values: mutable Map<String, Value>,
   arg: Arg,
   value: String,
-): ?ArgumentError {
+): Result<void, ArgumentError> {
   arg match {
   | ArrayArg _ ->
     values.maybeGet(arg.name) match {
@@ -136,21 +136,21 @@ private fun updateValue(
     if (!values.containsKey(arg.name)) {
       values.set(arg.name, StringValue(value))
     } else {
-      return Some(DuplicateValueError(arg.name))
+      return Failure(DuplicateValueError(arg.name))
     }
   | IntArg _ ->
     if (!values.containsKey(arg.name)) {
       value.toIntOption() match {
       | Some(v) -> values.set(arg.name, IntValue(v))
-      | _ -> return Some(InvalidArgumentError(arg.name))
+      | _ -> return Failure(InvalidArgumentError(arg.name))
       }
     } else {
-      return Some(DuplicateValueError(arg.name))
+      return Failure(DuplicateValueError(arg.name))
     }
   | _ -> invariant_violation(`Unexpected argument type ${inspect(arg)}`)
   };
 
-  None()
+  Success(void)
 }
 
 private fun defaultValue(arg: Arg): Value {
@@ -282,10 +282,10 @@ private fun parse(
           }
         };
         updateValue(values, arg, value) match {
-        | err @ Some _ ->
-          !error = err;
+        | Failure(err) ->
+          !error = Some(err);
           break void
-        | None() -> void
+        | Success _ -> void
         }
       | Some(arg) ->
         if (!values.containsKey(arg.name)) {
@@ -296,29 +296,43 @@ private fun parse(
         }
       | None() if (!str.startsWith("-") && posArgId < posArgs.size()) ->
         updateValue(values, posArgs[posArgId], str) match {
-        | err @ Some _ ->
-          !error = err;
+        | Failure(err) ->
+          !error = Some(err);
           break void
-        | _ -> void
+        | Success _ -> void
         };
         posArgs[posArgId] match {
         | ArrayArg _ -> void
         | _ -> !posArgId = posArgId + 1
         }
-      | None() -> // Check for short forms that take values such as `-O2`.
+      | None() ->
         !argName = str.take(2);
-        value = str.substring(str.getIter().forward(2));
         options.maybeGet(argName) match {
+        // Check for short forms that take values such as `-O2`.
         | Some(arg) if (arg is ValuedArg _) ->
+          value = str.stripPrefix(argName);
           updateValue(values, arg, value) match {
-          | err @ Some _ ->
-            !error = err;
+          | Failure(err) ->
+            !error = Some(err);
             break void
-          | None() -> void
+          | Success _ -> void
           }
+        // Check for short boolean flags stringed together such as `-abc`.
         | _ ->
-          !error = Some(InvalidArgumentError(str));
-          break void
+          for (flag in str.stripPrefix("-")) {
+            !argName = `-${flag}`;
+            options.maybeGet(argName) match {
+            | Some(arg) if (arg is BoolArg _) ->
+              if (!values.containsKey(arg.name)) {
+                values.set(arg.name, BoolValue(true))
+              } else {
+                !error = Some(DuplicateValueError(arg.name))
+              }
+            | _ ->
+              !error = Some(InvalidArgumentError(str));
+              break void
+            }
+          }
         }
       }
     }

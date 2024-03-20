@@ -47,7 +47,7 @@ private fun usageUsage(
       } else {
         `[${arg.name}]`
       };
-      if (arg is ArrayArg _) {
+      if (arg._repeatable) {
         !argString = argString + "...";
       };
       !res = res + " " + argString
@@ -84,10 +84,14 @@ private fun usageOptions(options: Sequence<Cli.Arg>): String {
       | (None(), Some(long)) -> `    --${long}`
       | _ -> `    --${arg.name}`
       };
-      arg match {
-      | Cli.ArrayArg _ -> !optFlags = `${optFlags} [<${arg._value_name}>]`
-      | Cli.ValuedArg _ -> !optFlags = `${optFlags} <${arg._value_name}>`
-      | _ -> void
+      if (arg is Cli.ValuedArg _) {
+        !optFlags = if (arg._repeatable) {
+          `${optFlags} [<${arg._value_name}>]`
+        } else {
+          `${optFlags} <${arg._value_name}>`
+        }
+      } else if (arg._repeatable) {
+        !optFlags = `${optFlags}...`
       };
       Array[Some(optFlags), arg._about]
     }),

@@ -24,9 +24,10 @@ untracked fun main(): void {
   args = Cli.Command("skfmt")
     .about("Format skip code")
     .arg(
-      Cli.ArrayArg("files")
+      Cli.StringArg("files")
         .positional()
-        .default(Array["-"])
+        .repeatable()
+        .default_values(Array["-"])
         .about("Skip file(s) to format"),
     )
     .arg(

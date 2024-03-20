@@ -75,21 +75,11 @@ class ParseResults{
     }
   }
 
-  fun maybeGetArray(
-    name: String,
-    fail_on_invalid_arg: Bool = true,
-  ): ?Array<String> {
-    this.getValue(name, fail_on_invalid_arg) match {
-    | ArrayValue(v) -> Some(v)
-    | MissingValue() -> None()
-    | _ -> invariant_violation(`Argument ${name} is not an array`)
-    }
-  }
-
   fun getArray(name: String, fail_on_invalid_arg: Bool = true): Array<String> {
-    this.maybeGetArray(name, fail_on_invalid_arg) match {
-    | Some(a) -> a
-    | None() -> invariant_violation(`Argument ${name} is missing`)
+    this.getValue(name, fail_on_invalid_arg) match {
+    | ArrayValue(v) -> v
+    | MissingValue() -> Array[]
+    | _ -> invariant_violation(`Argument ${name} is not an array`)
     }
   }
 
@@ -124,39 +114,39 @@ private fun updateValue(
   arg: Arg,
   value: String,
 ): Result<void, ArgumentError> {
-  arg match {
-  | ArrayArg _ ->
+  if (arg._repeatable) {
     values.maybeGet(arg.name) match {
     | Some(ArrayValue(arr)) ->
       values.set(arg.name, ArrayValue(arr.concat(Array[value])))
     | None() -> values.set(arg.name, ArrayValue(Array[value]))
-    | Some(v) -> invariant_violation(`Unexpected value type ${v} for ArrayArg`)
+    | Some(v) ->
+      invariant_violation(`Unexpected value type ${v} for repeatable arg`)
     }
-  | StringArg _ ->
-    if (!values.containsKey(arg.name)) {
-      values.set(arg.name, StringValue(value))
-    } else {
-      return Failure(DuplicateValueError(arg.name))
-    }
-  | IntArg _ ->
-    if (!values.containsKey(arg.name)) {
+  } else if (!values.containsKey(arg.name)) {
+    arg match {
+    | StringArg _ -> values.set(arg.name, StringValue(value))
+    | IntArg _ ->
       value.toIntOption() match {
       | Some(v) -> values.set(arg.name, IntValue(v))
       | _ -> return Failure(InvalidArgumentError(arg.name))
       }
-    } else {
-      return Failure(DuplicateValueError(arg.name))
+    | _ -> invariant_violation(`Unexpected argument type ${inspect(arg)}`)
     }
-  | _ -> invariant_violation(`Unexpected argument type ${inspect(arg)}`)
+  } else {
+    return Failure(DuplicateValueError(arg.name))
   };
 
   Success(void)
 }
 
 private fun defaultValue(arg: Arg): Value {
-  arg match {
-  | ValuedArg _ -> arg._default.default(MissingValue())
-  | BoolArg _ -> arg._default.default(BoolValue(false))
+  if (arg._repeatable) {
+    arg._default.default(ArrayValue(Array[]))
+  } else {
+    arg match {
+    | ValuedArg _ -> arg._default.default(MissingValue())
+    | BoolArg _ -> arg._default.default(BoolValue(false))
+    }
   }
 }
 
@@ -192,11 +182,13 @@ private fun parse(
     if (arg._positional) {
       if (posArgs.size() > 0) {
         prevArg = posArgs[posArgs.size() - 1];
-        if (prevArg is ArrayArg _) {
+        if (prevArg._repeatable) {
           invariant_violation(
             `Positional argument ${
               arg.name
-            } cannot appear after array positional argument ${prevArg.name}`,
+            } cannot appear after repeatable positional argument ${
+              prevArg.name
+            }`,
           )
         }
       };
@@ -288,7 +280,14 @@ private fun parse(
         | Success _ -> void
         }
       | Some(arg) ->
-        if (!values.containsKey(arg.name)) {
+        if (arg._repeatable) {
+          updateValue(values, arg, "true") match {
+          | Failure(err) ->
+            !error = Some(err);
+            break void
+          | Success _ -> void
+          }
+        } else if (!values.containsKey(arg.name)) {
           values.set(arg.name, BoolValue(!str.startsWith("--no-")))
         } else {
           !error = Some(DuplicateValueError(arg.name));
@@ -301,9 +300,8 @@ private fun parse(
           break void
         | Success _ -> void
         };
-        posArgs[posArgId] match {
-        | ArrayArg _ -> void
-        | _ -> !posArgId = posArgId + 1
+        if (!posArgs[posArgId]._repeatable) {
+          !posArgId = posArgId + 1
         }
       | None() ->
         !argName = str.take(2);
@@ -323,7 +321,14 @@ private fun parse(
             !argName = `-${flag}`;
             options.maybeGet(argName) match {
             | Some(arg) if (arg is BoolArg _) ->
-              if (!values.containsKey(arg.name)) {
+              if (arg._repeatable) {
+                updateValue(values, arg, "true") match {
+                | Failure(err) ->
+                  !error = Some(err);
+                  break void
+                | Success _ -> void
+                }
+              } else if (!values.containsKey(arg.name)) {
                 values.set(arg.name, BoolValue(true))
               } else {
                 !error = Some(DuplicateValueError(arg.name))
@@ -346,14 +351,13 @@ private fun parse(
           break void
         } else {
           env_var = arg._env.map(v -> Environ.var(v));
-          value = arg match {
-          | StringArg _ -> env_var.map(v -> StringValue(v))
-          | IntArg _ -> env_var.map(v -> IntValue(v.toInt()))
-          | BoolArg _ ->
-            env_var.map(b -> BoolValue(b != "no" && b != "false" && b != "0"))
-          | _ ->
-            env_var.map(_ -> invariant_violation("Unexpected argument type."))
-          };
+          value = env_var.map(v ->
+            arg match {
+            | StringArg _ -> StringValue(v)
+            | IntArg _ -> IntValue(v.toInt())
+            | BoolArg _ -> BoolValue(v != "no" && v != "false" && v != "0")
+            }
+          );
           values.set(arg.name, value.default(defaultValue(arg)))
         }
       }

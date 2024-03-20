@@ -7,6 +7,7 @@ base class Arg(
   _about: ?String = None(),
   _global: Bool = false,
   _env: ?String = None(),
+  _repeatable: Bool = false,
   // NOTE: The following parameters cannot be placed in subclasses, since `name` is required.
   // Other than BoolArgs only
   _default: ?Value = None(),
@@ -37,6 +38,15 @@ base class Arg(
     this with {_global => true}
   }
 
+  fun repeatable(value: Bool = true): this {
+    if (value && this._default is Some _) {
+      invariant_violation(
+        "Cannot call repeatable(true) after default(). Use default_values() instead.",
+      )
+    };
+    this with {_repeatable => value}
+  }
+
   overridable fun env(name: String): this {
     this with {_env => Some(name)}
   }
@@ -54,23 +64,27 @@ base class ValuedArg extends Arg {
 
 class StringArg extends ValuedArg {
   fun default(value: String): this {
+    if (this._repeatable) {
+      invariant_violation(
+        "Cannot call default() if repeatable() was called first. Use default_values() instead.",
+      )
+    };
     this with {_default => Some(StringValue(value))}
+  }
+
+  fun default_values(values: Array<String>): this {
+    if (!this._repeatable) {
+      invariant_violation(
+        "Cannot call default_values() unless repeatable() was called first. Use default() instead.",
+      )
+    };
+    this with {_default => Some(ArrayValue(values))}
   }
 }
 
 class IntArg extends ValuedArg {
   fun default(value: Int): this {
     this with {_default => Some(IntValue(value))}
-  }
-}
-
-class ArrayArg extends ValuedArg {
-  fun default(value: Array<String>): this {
-    this with {_default => Some(ArrayValue(value))}
-  }
-
-  fun env(_name: String): this {
-    invariant_violation("TODO")
   }
 }
 

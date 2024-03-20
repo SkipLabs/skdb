@@ -4,7 +4,7 @@ module CliTests;
 
 @test
 fun unexpectedExtraArguments(): void {
-  cmd = Cli.Command("foo").arg(Cli.ArrayArg("bar"));
+  cmd = Cli.Command("foo").arg(Cli.StringArg("bar").repeatable());
   args = Cli.parseArgsFrom(cmd, Array["--", "foo2", "--bar", "--foo2"]);
 
   T.expectTrue(args.error is Some(Cli.InvalidArgumentError _));
@@ -12,7 +12,7 @@ fun unexpectedExtraArguments(): void {
 
 @test
 fun extraArguments(): void {
-  cmd = Cli.Command("foo").arg(Cli.ArrayArg("bar")).extra();
+  cmd = Cli.Command("foo").arg(Cli.StringArg("bar").repeatable()).extra();
   args = Cli.parseArgsFrom(cmd, Array["--", "foo2", "--bar", "--foo2"]);
 
   T.expectEq(args.extra, Array["foo2", "--bar", "--foo2"]);
@@ -194,7 +194,7 @@ fun subcommandGlobalOptions(): void {
 
 @test
 fun arrayArgs(): void {
-  cmd = Cli.Command("foo").arg(Cli.ArrayArg("bar"));
+  cmd = Cli.Command("foo").arg(Cli.StringArg("bar").repeatable());
   args = Cli.parseArgsFrom(cmd, Array["--bar", "foo1", "--bar=foo2"]);
 
   T.expectEq(args.getArray("bar"), Array["foo1", "foo2"]);
@@ -203,7 +203,7 @@ fun arrayArgs(): void {
 @test
 fun arrayArgsDefault(): void {
   cmd = Cli.Command("foo").arg(
-    Cli.ArrayArg("bar").default(Array["foo1", "foo2"]),
+    Cli.StringArg("bar").repeatable().default_values(Array["foo1", "foo2"]),
   );
   args = Cli.parseArgsFrom(cmd, Array[]);
 
@@ -212,7 +212,7 @@ fun arrayArgsDefault(): void {
 
 @test
 fun arrayArgsPositional(): void {
-  cmd = Cli.Command("foo").arg(Cli.ArrayArg("bar").positional());
+  cmd = Cli.Command("foo").arg(Cli.StringArg("bar").repeatable().positional());
   args = Cli.parseArgsFrom(cmd, Array["foo1", "foo2"]);
 
   T.expectEq(args.getArray("bar"), Array["foo1", "foo2"]);
@@ -221,7 +221,7 @@ fun arrayArgsPositional(): void {
 @test
 fun arrayArgsPositionalIntertwined(): void {
   cmd = Cli.Command("foo")
-    .arg(Cli.ArrayArg("bar").positional())
+    .arg(Cli.StringArg("bar").repeatable().positional())
     .arg(Cli.StringArg("baz"));
   args = Cli.parseArgsFrom(cmd, Array["foo1", "--baz", "foo", "foo2"]);
 
@@ -231,7 +231,7 @@ fun arrayArgsPositionalIntertwined(): void {
 @test
 fun arrayArgsPositionalAfterArray(): void {
   cmd = Cli.Command("foo")
-    .arg(Cli.ArrayArg("bar").positional())
+    .arg(Cli.StringArg("bar").repeatable().positional())
     .arg(Cli.StringArg("baz").positional());
 
   T.expectThrow(() -> {
@@ -241,10 +241,24 @@ fun arrayArgsPositionalAfterArray(): void {
 
 @test
 fun arrayArgsPositionalWithExtra(): void {
-  cmd = Cli.Command("foo").arg(Cli.ArrayArg("bar").positional());
+  cmd = Cli.Command("foo").arg(Cli.StringArg("bar").repeatable().positional());
   args = Cli.parseArgsFrom(cmd, Array["foo1", "foo2", "--", "baz"]);
 
   T.expectEq(args.getArray("bar"), Array["foo1", "foo2"]);
+}
+
+@test
+fun repeatableBoolArg(): void {
+  cmd = Cli.Command("foo")
+    .arg(Cli.BoolArg("bar").repeatable())
+    .arg(Cli.BoolArg("baz").repeatable())
+    .arg(Cli.BoolArg("verbose").short("v").repeatable());
+
+  args = Cli.parseArgsFrom(cmd, Array["--bar", "--bar", "--bar", "-vv"]);
+
+  T.expectEq(args.getArray("bar").size(), 3);
+  T.expectEq(args.getArray("baz").size(), 0);
+  T.expectEq(args.getArray("verbose").size(), 2)
 }
 
 @test

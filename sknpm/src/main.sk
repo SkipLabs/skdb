@@ -359,14 +359,16 @@ fun test(): (Cli.Command, Cli.ParseResults ~> void) {
       .short("t")
       .about("Run the tests")
       .arg(
-        Cli.ArrayArg("target")
+        Cli.StringArg("target")
+          .repeatable()
           .positional()
           .about(
             "If specified, only run tests for the specified test targets (defined in target.json)",
           ),
       )
       .arg(
-        Cli.ArrayArg("filter")
+        Cli.StringArg("filter")
+          .repeatable()
           .short("f")
           .long("filter")
           .about("If specified, only run tests with names matching the filter"),
@@ -441,9 +443,8 @@ fun execTest(args: Cli.ParseResults, env: Skargo.Env): void {
   };
   services = Array<String>[];
   targets = Array<String>[];
-  args.maybeGetArray("target") match {
-  | Some(a) ->
-    a.each(v ->
+  if (args.getArray("target").size() > 0) {
+    args.getArray("target").each(v ->
       availables.maybeGet(v) match {
       | Some(target) ->
         !services = services.concat(target.services);
@@ -451,11 +452,12 @@ fun execTest(args: Cli.ParseResults, env: Skargo.Env): void {
       | _ -> invariant_violation(`${v} target not defined.`)
       }
     )
-  | _ ->
+  } else {
     availables.each((_, target) -> {
       !services = services.concat(target.services);
     })
   };
+
   processes = mutable Vector<Int>[];
   done = mutable Set<String>[];
   environment = mutable Map<String, String>[];
@@ -477,10 +479,11 @@ fun execTest(args: Cli.ParseResults, env: Skargo.Env): void {
     Environ.set_var("PLAYWRIGHT_JUNIT_OUTPUT_NAME", v);
     "junit"
   });
-  filters = args
-    .maybeGetArray("filter")
-    .map(a -> Array["-g", a.join("|")])
-    .default(Array[]);
+  filters = if (args.getArray("filter").size() > 0) {
+    Array["-g", args.getArray("filter").join("|")]
+  } else {
+    Array[]
+  };
   cmd = Array[
     "npx",
     "playwright",

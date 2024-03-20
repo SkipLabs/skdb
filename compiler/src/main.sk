@@ -11,11 +11,11 @@ fun main(): void {
     .help()
     .arg(Cli.BoolArg("disasm-all"))
     .arg(Cli.BoolArg("disasm-annotated"))
-    .arg(Cli.ArrayArg("disasm-file").default(Array[]))
-    .arg(Cli.ArrayArg("disasm-function").default(Array[]))
-    .arg(Cli.ArrayArg("export-function").default(Array[]))
-    .arg(Cli.ArrayArg("export-function-as").default(Array[]))
-    .arg(Cli.ArrayArg("export-module").default(Array[]))
+    .arg(Cli.StringArg("disasm-file").repeatable())
+    .arg(Cli.StringArg("disasm-function").repeatable())
+    .arg(Cli.StringArg("export-function").repeatable())
+    .arg(Cli.StringArg("export-function-as").repeatable())
+    .arg(Cli.StringArg("export-module").repeatable())
     .arg(Cli.StringArg("output").long("output").short("o"))
     // .arg(Cli.StringArg("profile-path").default(""))
     .arg(Cli.StringArg("emit").default("link"))
@@ -64,25 +64,25 @@ fun main(): void {
         .about("Include a dependency to `std` (default: true)."),
     )
     .arg(
-      Cli.ArrayArg("dependencies")
+      Cli.StringArg("dependencies")
         .long("dep")
-        .default(Array[])
+        .repeatable()
         .about("Specify a dependency on a skip library."),
     )
     .arg(Cli.StringArg("sysroot").about("Override the sysroot location."))
     .arg(
-      Cli.ArrayArg("libraries")
+      Cli.StringArg("libraries")
         .short("l")
-        .default(Array[])
+        .repeatable()
         .about("Link against a system library."),
     )
     .arg(
-      Cli.ArrayArg("library-paths")
+      Cli.StringArg("library-paths")
         .short("L")
-        .default(Array[])
+        .repeatable()
         .about("Add path to the library search path."),
     )
-    .arg(Cli.ArrayArg("files").positional().default(Array[]))
+    .arg(Cli.StringArg("files").positional().repeatable())
     .parseArgs();
 
   results.error match {

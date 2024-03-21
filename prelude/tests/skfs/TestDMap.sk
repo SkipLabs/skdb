@@ -1,0 +1,17 @@
+module SKStoreTest;
+
+@test
+fun testDMap(): void {
+  x = SKStore.DMap::empty();
+  !x = x.set(SKStore.TickRange::create(SKStore.Tick(1)), SKStore.IID(1), 1);
+  !x = x.set(SKStore.TickRange::create(SKStore.Tick(1)), SKStore.IID(2), 2);
+  !x = x.set(SKStore.TickRange::create(SKStore.Tick(1)), SKStore.IID(3), 3);
+  !x = x.set(SKStore.TickRange::create(SKStore.Tick(2)), SKStore.IID(1), 23);
+  SKTest.expectEq(
+    Array[1, 2, 3],
+    x.getChangesAfter(SKStore.Tick(1)).toArray().map(x -> x.value),
+    "Changes after",
+  )
+}
+
+module end;

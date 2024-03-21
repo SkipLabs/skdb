@@ -1,0 +1,60 @@
+/*
+module SKStoreTest;
+
+fun testUnion(): mutable SKStore.Context {
+  SKStore.run(context ~> {
+    getData = (dir, key) -> context.unsafeGetDir(dir.dirName).getArrayRaw(key);
+
+    dirInput1 = context.mkdir(
+      SKStore.IntFile::fromFile,
+      SKStore.DirName::create("/input1/"),
+      Array[(SKStore.IID(0), SKStore.IntFile(23)), (SKStore.IID(1), SKStore.IntFile(35))],
+    );
+    dirInput2 = context.mkdir(
+      SKStore.IntFile::fromFile,
+      SKStore.DirName::create("/input2/"),
+      Array[(SKStore.IID(0), SKStore.IntFile(24)), (SKStore.IID(2), SKStore.IntFile(36))],
+    );
+    dir = dirInput1.union(
+      context,
+      SKStore.DirName::create("/union/"),
+      Array[dirInput2],
+    );
+    arr0 = getData(dir, SKStore.IID(0));
+    expectEq("Union multi-value", arr0, () ->
+      Array[SKStore.IntFile(23), SKStore.IntFile(24)]
+    );
+    arr1 = getData(dir, SKStore.IID(1));
+    expectEq("Union left", arr1, () -> Array[SKStore.IntFile(35)]);
+    arr2 = getData(dir, SKStore.IID(2));
+    expectEq("Union right", arr2, () -> Array[SKStore.IntFile(36)]);
+    write = (
+      dirInput1: SKStore.EHandle<SKStore.IntFile>,
+      key: SKStore.Key,
+      values: Array<SKStore.IntFile>,
+    ) -> {
+      context
+        .unsafeGetEagerDir(dirInput1.dirName)
+        .writeArray(context, key, values);
+    };
+
+    write(dirInput1, SKStore.IID(0), Array[]);
+    context.update();
+    !arr0 = getData(dir, SKStore.IID(0));
+    expectEq("Union update1", arr0, () -> Array[SKStore.IntFile(24)]);
+
+    write(dirInput2, SKStore.IID(0), Array[]);
+    context.update();
+    !arr0 = dir.getArray(context, SKStore.IID(0));
+    expectEq("Union update2", arr0, () -> Array[]);
+
+    write(dirInput2, SKStore.IID(1), Array[SKStore.IntFile(37), SKStore.IntFile(38)]);
+    context.update();
+    !arr1 = getData(dir, SKStore.IID(1));
+    expectEq("Union update3", arr1, () ->
+      Array[SKStore.IntFile(35), SKStore.IntFile(37), SKStore.IntFile(38)]
+    );
+  });
+}
+
+*/

@@ -1,0 +1,406 @@
+/*****************************************************************************/
+/* Module implementing RangeMaps.
+ *
+ * A RangeMap is a data-structure that associates a value to a range.
+ * The aim of the game is to be able to find all the values given a single
+ * element (as opposed to a range).
+ *
+ * So concretely, you will be able to insert things of this form:
+ * [2, 4] => MyValue1
+ * [3, 7] => MyValue2
+ *
+ * And then ask for all the values associated to 3 (in this case: MyValue1,
+ * MyValue2).
+ * But you will not be able to ask all the values associated with [3, 4].
+ *
+ * We use this datastructure to be able to quickly identify the sub-directories
+ * defined as slices. So let's consider the a directory parent P and 3 sub-dirs
+ * C1, C2, C3. C1 is defined over the range [1, 3], C2 [5, 10] and C3 [0, 100].
+ *
+ * If we receive and update on P on the key (5), we would like to be able to
+ * quickly tell that we need to update C2, without having to walk all the
+ * sub-dirs defined as slices.
+ */
+/*****************************************************************************/
+
+module RangeMap;
+
+base class .RangeMap<+K: Orderable, +V: Orderable> {
+  children =
+  | Nil()
+  | Node{
+    h: Int,
+    key1: K,
+    key2: K,
+    vset: Rope<V>,
+    left: RangeMap<K, V>,
+    right: RangeMap<K, V>,
+  }
+
+  static fun create(): RangeMap<K, V> {
+    Nil()
+  }
+
+  static fun createFromItems<
+    K2: Orderable,
+    V2: Orderable,
+    I: readonly Sequence<((K2, K2), V2)>,
+  >[K: K2, V: V2](
+    items: I,
+  ): RangeMap<K2, V2> {
+    items.foldl(
+      (m, p) -> {
+        (keys, v) = p;
+        (k1, k2) = keys;
+        m.add(k1, k2, v)
+      },
+      RangeMap::create(),
+    )
+  }
+
+  fun isEmpty(): Bool
+  | Nil() -> true
+  | _ -> false
+
+  fun min(): ?K
+  | Nil() -> None()
+  | Node{key1, left} ->
+    left match {
+    | Nil() -> Some(key1)
+    | x -> x.min()
+    }
+
+  fun max(): ?K
+  | Nil() -> None()
+  | Node{key2, right} ->
+    right match {
+    | Nil() -> Some(key2)
+    | x -> x.max()
+    }
+
+  fun get<K2: Orderable>[K: K2](key: K2): SortedSet<V> {
+    this.getRope(key).values().collect(SortedSet)
+  }
+
+  fun getRope<K2: Orderable>[K: K2](key: K2): Rope<V>
+  | Nil() -> Rope[]
+  | Node{key1, key2, vset, left, right} ->
+    compare(key, key1) match {
+    | LT() -> left.getRope(key)
+    | EQ() ->
+      if (key == key2) {
+        vset.union(left.getRope(key)).union(right.getRope(key))
+      } else {
+        vset.union(left.getRope(key))
+      }
+    | GT() ->
+      compare(key, key2) match {
+      | LT() -> vset
+      | EQ() -> vset.union(right.getRope(key))
+      | GT() -> right.getRope(key)
+      }
+    }
+
+  fun add<K2: Orderable, V2: Orderable>[K: K2, V: V2](
+    key1: K2,
+    key2: K2,
+    value: V2,
+  ): RangeMap<K2, V2> {
+    this.addSet(key1, key2, Rope[value]);
+  }
+
+  fun addSet<K2: Orderable, V2: Orderable>[K: K2, V: V2](
+    key1: K2,
+    key2: K2,
+    values: Rope<V2>,
+  ): RangeMap<K2, V2>
+  | Nil() -> static::node(key1, key2, values, Nil(), Nil())
+  | Node _ ->
+    invariant(key1 <= key2);
+    l: RangeMap<K2, V2> = this.left;
+    r: RangeMap<K2, V2> = this.right;
+    v: Rope<V2> = this.vset;
+    compare(key2, this.key1) match {
+    | LT()
+    | EQ() ->
+      static::balance(this.key1, this.key2, v, l.addSet(key1, key2, values), r)
+    | GT() ->
+      compare(key1, this.key2) match {
+      | GT()
+      | EQ() ->
+        static::balance(
+          this.key1,
+          this.key2,
+          v,
+          l,
+          r.addSet(key1, key2, values),
+        )
+      | _ ->
+        (key1.compare(this.key1), key2.compare(this.key2)) match {
+        | (EQ(), EQ()) ->
+          static::node(this.key1, this.key2, values.union(v), l, r)
+        | (LT(), LT()) ->
+          !l = l.addSet(key1, this.key1, values);
+          !r = r.addSet(key2, this.key2, v);
+          static::node(this.key1, key2, values.union(v), l, r)
+        | (GT(), LT()) ->
+          !l = l.addSet(this.key1, key1, v);
+          !r = r.addSet(key2, this.key2, v);
+          static::node(key1, key2, values.union(v), l, r)
+        | (GT(), GT()) ->
+          !l = l.addSet(this.key1, key1, v);
+          !r = r.addSet(this.key2, key2, values);
+          static::node(key1, this.key2, values.union(v), l, r)
+        | (LT(), GT()) ->
+          !l = l.addSet(key1, this.key1, values);
+          !r = r.addSet(this.key2, key2, values);
+          static::node(this.key1, this.key2, values.union(v), l, r)
+        | (EQ(), GT()) ->
+          !r = r.addSet(this.key2, key2, values);
+          static::balance(this.key1, this.key2, values.union(v), l, r)
+        | (GT(), EQ()) ->
+          !l = l.addSet(this.key1, key1, v);
+          static::balance(key1, this.key2, values.union(v), l, r)
+        | (LT(), EQ()) ->
+          !l = l.addSet(key1, this.key1, values);
+          static::balance(this.key1, this.key2, values.union(v), l, r)
+        | (EQ(), LT()) ->
+          !r = r.addSet(key2, this.key2, v);
+          static::balance(this.key1, key2, values.union(v), l, r)
+        }
+      }
+    }
+
+  fun values(): mutable Iterator<((K, K), Rope<V>)> {
+    this match {
+    | Nil() -> void
+    | Node{key1, key2, vset, left, right} ->
+      for (elt in left) {
+        yield elt
+      };
+      yield ((key1, key2), vset);
+      for (elt in right) {
+        yield elt
+      }
+    }
+  }
+
+  fun valueAcc<K2: Orderable, V2: Orderable>[K: K2, V: V2](
+    acc: mutable Vector<((K2, K2), Rope<V2>)>,
+  ): void {
+    this match {
+    | Nil() -> void
+    | Node{key1, key2, vset, left, right} ->
+      for (elt in left) {
+        acc.push(elt)
+      };
+      acc.push(((key1, key2), vset));
+      for (elt in right) {
+        acc.push(elt)
+      }
+    }
+  }
+
+  fun height(): Int
+  | Nil() -> 0
+  | Node{h} -> h
+
+  protected static fun node<K2: Orderable, V2: Orderable>[K: K2, V: V2](
+    k1: K2,
+    k2: K2,
+    v: Rope<V2>,
+    l: RangeMap<K2, V2>,
+    r: RangeMap<K2, V2>,
+  ): RangeMap<K2, V2> {
+    Node{
+      h => max(l.height(), r.height()) + 1,
+      key1 => k1,
+      key2 => k2,
+      vset => v,
+      left => l,
+      right => r,
+    }
+  }
+
+  protected static fun balance<K2: Orderable, V2: Orderable>[K: K2, V: V2](
+    k1: K2,
+    k2: K2,
+    v: Rope<V2>,
+    l: RangeMap<K2, V2>,
+    r: RangeMap<K2, V2>,
+  ): RangeMap<K2, V2> {
+    hl = l.height();
+    hr = r.height();
+    if (hl > hr + 2) {
+      l match {
+      | Nil() -> invariant_violation("RangeMap::balance: empty left tree")
+      | Node{
+        left => ll,
+        right => lr,
+        key1 => lk1,
+        key2 => lk2,
+        vset => lv,
+        h => _,
+      } ->
+        if (ll.height() >= lr.height()) {
+          static::node(lk1, lk2, lv, ll, static::node(k1, k2, v, lr, r))
+        } else {
+          lr match {
+          | Nil() ->
+            invariant_violation("RangeMap::balance: empty l.right tree")
+          | Node{
+            left => lrl,
+            right => lrr,
+            key1 => lrk1,
+            key2 => lrk2,
+            vset => lrv,
+            h => _,
+          } ->
+            static::node(
+              lrk1,
+              lrk2,
+              lrv,
+              static::node(lk1, lk2, lv, ll, lrl),
+              static::node(k1, k2, v, lrr, r),
+            )
+          }
+        }
+      }
+    } else if (hr > hl + 2) {
+      r match {
+      | Nil() -> invariant_violation("RangeMap::balance empty right tree")
+      | Node{left => rl, right => rr, key1 => rk1, key2 => rk2, vset => rv} ->
+        if (rr.height() >= rl.height()) {
+          static::node(rk1, rk2, rv, static::node(k1, k2, v, l, rl), rr)
+        } else {
+          rl match {
+          | Nil() -> invariant_violation("RangeMap::balance empty r.left tree")
+          | Node{
+            left => rll,
+            right => rlr,
+            key1 => rlk1,
+            key2 => rlk2,
+            vset => rlv,
+          } ->
+            static::node(
+              rlk1,
+              rlk2,
+              rlv,
+              static::node(k1, k2, v, l, rll),
+              static::node(rk1, rk2, rv, rlr, rr),
+            )
+          }
+        }
+      }
+    } else {
+      static::node(k1, k2, v, l, r)
+    }
+  }
+}
+
+class CompactRangeMap<+K: Orderable, +V: Orderable>(
+  data: Array<((K, K), Array<V>)>,
+) {
+  fun values(): mutable Iterator<((K, K), Array<V>)> {
+    this.data.values()
+  }
+
+  static fun fromRangeMap(rmap: RangeMap<K, V>): CompactRangeMap<K, V> {
+    acc = Vector::mcreate(1200);
+    rmap.valueAcc(acc);
+    CompactRangeMap(acc.map(x -> (x.i0, x.i1.toArray())).collect(Array))
+  }
+
+  fun get<K2: Orderable>[K: K2](key: K2): SortedSet<V> {
+    this.getij(key, 0, this.data.size() - 1)
+  }
+
+  fun getij<K2: Orderable>[K: K2](key: K2, i: Int, j: Int): SortedSet<V> {
+    if (i > j) return SortedSet[];
+    pivot = i + (j - i) / 2;
+    node = this.data[pivot];
+    key1 = node.i0.i0;
+    key2 = node.i0.i1;
+    vset = node.i1.values().collect(SortedSet);
+    compare(key, key1) match {
+    | LT() -> this.getij(key, i, pivot - 1)
+    | EQ() ->
+      if (key == key2) {
+        vset
+          .union(this.getij(key, i, pivot - 1))
+          .union(this.getij(key, pivot + 1, j))
+      } else {
+        vset.union(this.getij(key, i, pivot - 1))
+      }
+    | GT() ->
+      compare(key, key2) match {
+      | LT() -> vset
+      | EQ() -> vset.union(this.getij(key, pivot + 1, j))
+      | GT() -> this.getij(key, pivot + 1, j)
+      }
+    }
+  }
+}
+
+class .RangeMapList<+K: Orderable, +V: Orderable> private (
+  rmap: RangeMap<K, V>,
+  rmaps: List<CompactRangeMap<K, V>>,
+) {
+  static fun createFromItems<
+    K2: Orderable,
+    V2: Orderable,
+    I: readonly Sequence<((K2, K2), V2)>,
+  >[K: K2, V: V2](
+    items: I,
+  ): RangeMapList<K2, V2> {
+    RangeMapList(RangeMap::createFromItems(items), List[])
+  }
+
+  fun add<K2: Orderable, V2: Orderable>[K: K2, V: V2](
+    key1: K2,
+    key2: K2,
+    value: V2,
+  ): RangeMapList<K2, V2> {
+    this.addSet(key1, key2, Rope[value]);
+  }
+
+  fun addSet<K2: Orderable, V2: Orderable>[K: K2, V: V2](
+    key1: K2,
+    key2: K2,
+    vset: Rope<V2>,
+  ): RangeMapList<K2, V2> {
+    nthis: RangeMapList<K2, V2> = this;
+    !nthis.rmap = nthis.rmap.addSet(key1, key2, vset);
+    if (key1 != key2 && nthis.rmap.height() >= 10) {
+      !nthis = RangeMapList(
+        RangeMap[],
+        List.Cons(CompactRangeMap::fromRangeMap(nthis.rmap), nthis.rmaps),
+      );
+    };
+    nthis
+  }
+
+  fun values(): mutable Iterator<((K, K), Array<V>)> {
+    for (elt in this.rmap) {
+      (k, rope) = elt;
+      yield (k, rope.values().collect(Array));
+    };
+    for (rmap in this.rmaps) {
+      for (elt in rmap) {
+        yield elt;
+      }
+    }
+  }
+
+  fun get<K2: Orderable>[K: K2](key: K2): SortedSet<V> {
+    nthis: RangeMapList<K2, V> = this;
+    result = SortedSet[];
+    !result = result.union(nthis.rmap.get(key));
+    for (rmap in nthis.rmaps) {
+      !result = result.union(rmap.get(key));
+    };
+    result
+  }
+}
+
+module end;

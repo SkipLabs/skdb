@@ -1,0 +1,69 @@
+module alias T = SKTest;
+
+module SKStoreTest;
+
+@test
+fun testSize(): void {
+  context = SKStore.run(context ~> {
+    dirSInput = context.mkdir(
+      SKStore.IID::keyType,
+      SKStore.StringFile::type,
+      SKStore.DirName::create("/sinput/"),
+      Array[
+        (SKStore.IID(0), SKStore.StringFile("23")),
+        (SKStore.IID(1), SKStore.StringFile("35")),
+      ],
+    );
+
+    _dir = dirSInput.map(
+      SKStore.IID::keyType,
+      SKStore.IntFile::type,
+      context,
+      SKStore.DirName::create("/input/"),
+      (context, writer, key, _values) ~>
+        writer.set(key, SKStore.IntFile(dirSInput.size(context)))
+      ,
+    );
+  });
+
+  /***************************************************************************/
+  // STARTING TESTS
+
+  dirSInput = SKStore.DirName::create("/sinput/");
+  dir = SKStore.DirName::create("/input/");
+
+  T.expectEq(
+    Array<SKStore.File>[SKStore.IntFile(2)],
+    getData(context, dir, SKStore.IID(0)),
+    "Test size init",
+  );
+
+  write(context, dirSInput, SKStore.IID(3), Array[SKStore.StringFile("3")]);
+  context.update();
+
+  T.expectEq(
+    Array<SKStore.File>[SKStore.IntFile(3)],
+    getData(context, dir, SKStore.IID(0)),
+    "Test size after new file",
+  );
+
+  write(context, dirSInput, SKStore.IID(3), Array[SKStore.StringFile("4")]);
+  context.update();
+
+  T.expectEq(
+    Array<SKStore.File>[SKStore.IntFile(3)],
+    getData(context, dir, SKStore.IID(0)),
+    "Test size after file modif",
+  );
+
+  write(context, dirSInput, SKStore.IID(3), Array[]);
+  context.update();
+
+  T.expectEq(
+    Array<SKStore.File>[SKStore.IntFile(2)],
+    getData(context, dir, SKStore.IID(0)),
+    "Test size after file removal",
+  )
+}
+
+module end;

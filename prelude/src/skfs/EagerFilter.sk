@@ -1,0 +1,266 @@
+/*****************************************************************************/
+// An EagerFilter creates a new EagerDir out of an old one. The new
+// directory is a "filtered" version of the old one, that can also
+// accept a limit in size.
+//
+// Note that files don't always have a size 1. The size of a file is
+// defined by the user.
+//
+// Assuming 'm' is the size of the source directory and 'n' the size
+// of the filtered dir (the result), the current implementation is in
+// O(n) when a change affecting the filtered dir occurs. Just to be
+// clear, if a key in the source directory is modified, and that this
+// key is not a part of the filtered result, this is a noop. However,
+// if a change occurs that does affect the filtered directory, then
+// the update is in O(n). This could be optimized later down the road,
+// but for now, limits are only used for reactive queries, and
+// reactive queries cost us O(n) to rebuild anyway. So let's start
+// with something simple, we can revisit the day we need it.
+/*****************************************************************************/
+module SKStore;
+
+class MaxKeyFile(key: Key) extends SKStore.File
+
+value class FilterRange private (ranges: Array<KeyRange>, max: Key) {
+  static fun create(rangesOpt: ?Array<KeyRange>): ?this {
+    rangesOpt match {
+    | None() -> None()
+    | Some(ranges) ->
+      invariant(ranges.size() > 0);
+      maxKey = ranges[0].end;
+      for (range in ranges) {
+        invariant(range.start <= range.end);
+        if (range.end > maxKey) !maxKey = range.end;
+      };
+      Some(FilterRange(ranges.sorted(), maxKey))
+    }
+  }
+}
+
+class EagerFilter private {
+  // The name of the parent directory
+  parentName: DirName,
+
+  // The name of the directory we are filtering to
+  childName: DirName,
+
+  // Directory containing all the EagerFilters at capacity
+  fullName: DirName,
+
+  // The size at which we stop introducing new elements
+  capacity: Int,
+
+  // The function that returns the size of a file
+  fileSize: File ~> Int,
+
+  // Given a file of a size > 1, returns the same version of the file
+  // where N elements have been removed from the file
+  removeFromFile: (File, Int) ~> File,
+
+  // The filtering function (on the parent's files)
+  filter: (mutable SKStore.Context, Key, File) ~> Bool,
+} {
+  // Returns the size of an entire array
+  private fun arraySize(array: Array<File>): Int {
+    count = 0;
+    for (file in array) {
+      !count = count + this.fileSize(file);
+    };
+    count
+  }
+
+  private fun bindDirectories(
+    context: mutable Context,
+    rangesOpt: ?FilterRange,
+  ): void {
+    sinkName = DirName::create(
+      this.childName.toString() + "filter-sink/" + genSym(0) + "/",
+    );
+    EagerDir::apply(
+      context,
+      this.parentName,
+      sinkName,
+      (_context, _writer, _key, _fileIter) ~> {
+        void
+      },
+      None(),
+      None(),
+      Some((context, keys) ~> this.syncData(context, Some(keys), rangesOpt)),
+      true,
+    )
+  }
+
+  private static fun mkDir(
+    context: mutable Context,
+    childName: DirName,
+    suffix: String,
+  ): DirName {
+    time = context.timeStamp();
+    fixedData = FixedDataMap::create(mutable Vector[]);
+    creator = context.currentArrow();
+    dirName = DirName::create(childName.toString() + suffix);
+    dir = EagerDir{
+      time,
+      input => false,
+      dirName,
+      fixedData,
+      totalSize => 0,
+      creator,
+    };
+    context.setDir(dirName, dir);
+    dirName
+  }
+
+  private fun syncData(
+    context: mutable Context,
+    changedKeysOpt: ?SortedSet<Key>,
+    rangesOpt: ?FilterRange,
+  ): void {
+    startKeyOpt = changedKeysOpt match {
+    | None() -> None()
+    | Some(changedKeys) ->
+      rangesOpt match {
+      | None() -> void
+      | Some(FilterRange(ranges, largestKey)) ->
+        invariant(ranges.size() > 0);
+        changedKeys.min() match {
+        | Some(minChangedKey) if (minChangedKey > largestKey) -> return void
+        | _ -> void
+        };
+        changedKeys.max() match {
+        | Some(maxChangedKey) if (maxChangedKey < ranges[0].start) ->
+          return void
+        | _ -> void
+        }
+      };
+      changedKeys.min()
+    };
+    parentDir = context.unsafeGetEagerDir(this.parentName);
+    childDir = context.unsafeGetEagerDir(this.childName);
+
+    // If we are at capacity and the first changed key is past our
+    // last key, we can bail.
+
+    startKeyOpt match {
+    | None() -> void
+    | Some(startKey) ->
+      arr = context
+        .unsafeGetEagerDir(this.fullName)
+        .getArrayRaw(this.childName);
+      if (arr.size() > 0 && MaxKeyFile::type(arr[0]).key < startKey) {
+        return void;
+      }
+    };
+
+    // Let's determine the size until the starting key
+    size = 0;
+    startKeyOpt match {
+    | None() -> void
+    | Some(startKey) ->
+      for (kv in childDir.unsafeGetFileIter(None())) {
+        (key, files) = kv;
+        if (startKey <= key) break void;
+        for (file in files) {
+          !size = this.fileSize(file) + size;
+        };
+      }
+    };
+
+    toAdd = this.capacity - size;
+
+    if (toAdd == 0) return void;
+
+    keys = SortedSet[];
+    rangeIndex = 0;
+
+    for (kv in parentDir.unsafeGetFileIter(startKeyOpt)) {
+      (key, files) = kv;
+      vec = mutable Vector[];
+      for (file in files) {
+        if (!this.filter(context, key, file)) continue;
+        rangesOpt match {
+        | None() -> void
+        | Some(FilterRange(ranges, _)) ->
+          while (rangeIndex < ranges.size() && key > ranges[rangeIndex].end) {
+            !rangeIndex = rangeIndex + 1;
+          };
+          if (rangeIndex >= ranges.size()) break void;
+          if (key < ranges[rangeIndex].start) continue
+        };
+        fsize = this.fileSize(file);
+        if (fsize > toAdd) {
+          !file = this.removeFromFile(file, fsize - toAdd);
+          !fsize = toAdd;
+        };
+        !keys = keys.set(key);
+        vec.push(file);
+        !toAdd = toAdd - fsize;
+        invariant(toAdd >= 0);
+        if (toAdd == 0) break void;
+      };
+      source = Path(this.parentName, key);
+      !childDir = childDir.writeEntry(
+        context,
+        source,
+        source,
+        key,
+        vec.toArray(),
+      );
+      if (toAdd == 0) break void;
+    };
+
+    !rangeIndex = 0;
+
+    for (kv in childDir.unsafeGetFileIter(startKeyOpt)) {
+      (key, _) = kv;
+      if (keys.contains(key)) continue;
+      source = Path(this.parentName, key);
+      !childDir = childDir.writeEntry(context, source, source, key, Array[]);
+    };
+
+    fullFiles = if (toAdd == 0) Array[MaxKeyFile(keys.max().fromSome())] else {
+      Array[]
+    };
+
+    source = Path(childDir.dirName, SKStore.IID(0));
+    fullDir = context.unsafeGetEagerDir(this.fullName);
+    !fullDir = fullDir.writeEntry(
+      context,
+      source,
+      source,
+      childDir.dirName,
+      fullFiles,
+    );
+
+    context.setDir(fullDir.dirName, fullDir);
+    context.setDir(childDir.dirName, childDir)
+  }
+
+  static fun create(
+    context: mutable Context,
+    parentName: DirName,
+    childName: DirName,
+    capacity: Int,
+    fileSize: File ~> Int,
+    removeFromFile: (File, Int) ~> File,
+    filter: (mutable SKStore.Context, Key, File) ~> Bool,
+    rangesOpt: ?Array<KeyRange>,
+  ): void {
+    filterRange = FilterRange::create(rangesOpt);
+    _ = static::mkDir(context, childName, "");
+    fullName = static::mkDir(context, childName, "full/");
+    result = static{
+      parentName,
+      childName,
+      fullName,
+      capacity,
+      fileSize,
+      removeFromFile,
+      filter,
+    };
+    result.bindDirectories(context, filterRange);
+    result.syncData(context, None(), filterRange);
+  }
+}
+
+module end;

@@ -1,0 +1,67 @@
+/*****************************************************************************/
+/* Rope (for faster unions). */
+/*****************************************************************************/
+
+module Rope;
+
+base class .Rope<+T> {
+  children =
+  | Nil()
+  | Union(Rope<T>, Rope<T>)
+  | Cons(T, Rope<T>)
+
+  static fun createFromItems(seq: readonly Sequence<T>): Rope<T> {
+    result: Rope<T> = Nil();
+    for (elt in seq) {
+      !result = Cons(elt, result)
+    };
+    result
+  }
+
+  fun +<T2>[T: T2](v: T2): Rope<T2> {
+    Cons(v, this)
+  }
+
+  fun union<T2>[T: T2](other: Rope<T2>): Rope<T2> {
+    Union(this, other)
+  }
+
+  fun append<T2>[T: T2](other: Rope<T2>): Rope<T2> {
+    this.union(other)
+  }
+
+  fun valueAcc<T2>[T: T2](
+    acc: mutable Vector<T2>,
+    todo: mutable Vector<Rope<T2>>,
+  ): void {
+    this match {
+    | Nil() -> void
+    | Union(x1, x2) ->
+      todo.push((x1 : Rope<T2>));
+      todo.push((x2 : Rope<T2>))
+    | Cons(x, rl) ->
+      acc.push(x);
+      todo.push((rl : Rope<T2>))
+    }
+  }
+
+  fun values(): mutable Iterator<T> {
+    acc = mutable Vector[];
+    todo = mutable Vector[this];
+    while (!todo.isEmpty()) {
+      todo.pop().valueAcc(acc, todo);
+    };
+    acc.values()
+  }
+
+  fun toArray(): Array<T> {
+    acc = mutable Vector[];
+    todo = mutable Vector[this];
+    while (!todo.isEmpty()) {
+      todo.pop().valueAcc(acc, todo);
+    };
+    acc.toArray()
+  }
+}
+
+module end;

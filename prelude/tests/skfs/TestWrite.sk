@@ -1,0 +1,116 @@
+module alias T = SKTest;
+
+module SKStoreTest;
+
+fun insertSpecialChars(rand: mutable Random, prob: Int, input: String): String {
+  chars = input.chars();
+  result = mutable Vector[];
+
+  for (i in Range(0, chars.size())) {
+    if (rand.random(0, 100) < prob) {
+      rand.random(0, 3) match {
+      | 0 -> result.push('\\')
+      | 1 -> result.push('\t')
+      | 2 -> result.push('\n')
+      | _ -> invariant_violation("Internal error")
+      }
+    };
+    result.push(chars[i]);
+  };
+
+  String::fromChars(result.toArray())
+}
+
+// Tests that we can interrupt a chunk anywhere, restart with the same chunk and
+// the result is the same.
+@test
+fun testWriteChunk(): void {
+  nbrEntries = 5;
+  maxWidth = 4;
+  maxValue = 100;
+  nbrRetries = 10;
+  nbrRounds = 1000;
+  randSeed = 23;
+
+  rand = Random::mcreate(randSeed);
+  eq = true;
+
+  for (_round in Range(0, nbrRounds)) {
+    entries = mutable Vector[];
+
+    for (i in Range(0, nbrEntries)) {
+      values = mutable Vector[];
+      for (_ in Range(0, rand.random(1, 1 + maxWidth))) {
+        valueStr = "v" + rand.random(0, maxValue);
+        !valueStr = insertSpecialChars(rand, 10, valueStr);
+        values.push(SKStore.StringFile(valueStr));
+      };
+      keyStr = "k" + i;
+      !keyStr = insertSpecialChars(rand, 10, keyStr);
+      entries.push((SKStore.SID::create(keyStr), values.toArray()));
+    };
+
+    entries.sortBy(x ~> x.i0);
+
+    buffer = mutable Vector[];
+    o = str -> buffer.push(str);
+
+    for (kv in entries) {
+      (key, values) = kv;
+      for (value in values) {
+        o(SKStore.escape(key.toString()));
+        o("\t\"");
+        o(SKStore.escape(value.value.toString()));
+        o("\"\n");
+      };
+    };
+
+    chunk = "\n\n" + "".join(buffer);
+    chunkSize = chunk.length();
+    chunksBuffer = mutable Vector[];
+
+    for (_ in Range(0, nbrRetries)) {
+      chunksBuffer.push(chunk.sub(chunk.getIter(), rand.random(0, chunkSize)));
+    };
+
+    chunksBuffer.push(chunk);
+
+    chunks = "".join(chunksBuffer);
+    chunksIter = chunks.getIter();
+    next = () -> {
+      chunksIter.next() match {
+      | None() -> throw EndOfFile()
+      | Some(c) -> c
+      }
+    };
+
+    buffer.clear();
+
+    parsedEntries = SortedMap[];
+    for (kv in SKStore.getWriteKeyValuesIter(next).collect(Array)) {
+      (key, values) = kv;
+      !parsedEntries[key] = values;
+    };
+
+    for (key => values in parsedEntries) {
+      for (value in values) {
+        o(SKStore.escape(key.toString()));
+        o("\t\"");
+        o(SKStore.escape(value));
+        o("\"\n");
+      };
+    };
+
+    parsedChunk = "\n\n" + "".join(buffer);
+
+    !eq = eq && (chunk == parsedChunk);
+
+    if (chunk != parsedChunk) {
+      break void;
+    }
+  };
+
+  T.expectTrue(eq, "Write escaping test ")
+}
+
+module end;

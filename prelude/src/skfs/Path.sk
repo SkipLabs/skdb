@@ -1,0 +1,367 @@
+/*****************************************************************************/
+/* File logic.
+ *
+ * This code validates files and directory names. So we check that we use
+ * the right characters (a-zA-Z0-9_) and that the paths are properly separated
+ * with '/'.
+ *
+ */
+/*****************************************************************************/
+
+module SKStore;
+
+// Decomposes the string into the tuple: (directory name, base name).
+fun splitPath(path: String): (String, String) {
+  chars = path.chars();
+  i = chars.size() - 1;
+  lastSlashOpt = loop {
+    if (i < 0) {
+      break None();
+    };
+    if (chars[i] == '/') {
+      break Some(i);
+    };
+    !i = i - 1;
+  };
+  lastSlash = lastSlashOpt match {
+  | None() -> error("Invalid path, no '/' found")
+  | Some(x) -> x
+  };
+  dirNameChars = mutable Vector[];
+  baseNameChars = mutable Vector[];
+  for (j in Range(0, chars.size())) {
+    if (j <= lastSlash) {
+      dirNameChars.push(chars[j]);
+    } else {
+      baseNameChars.push(chars[j])
+    }
+  };
+  if (baseNameChars.size() == 0) {
+    error("Invalid path, missing Key");
+  };
+  dirName = String::fromChars(dirNameChars.toArray());
+  baseName = String::fromChars(baseNameChars.toArray());
+  (dirName, baseName)
+}
+
+@cpp_extern("SKIP_hash_combine")
+native fun hashCombine(Int, Int): Int;
+
+class Path(dirName: DirName, baseName: Key) uses Orderable {
+  static fun create(dirName: DirName, baseName: Key): this {
+    static(dirName, baseName)
+  }
+
+  static fun fromString(path: String): this {
+    (dirNameStr, baseNameStr) = splitPath(path);
+    dirName = DirName::create(dirNameStr);
+    baseName = SID::create(baseNameStr);
+    Path::create(dirName, baseName)
+  }
+
+  fun toString(): String {
+    this.dirName.toString() + this.baseName
+  }
+}
+
+class DirName(
+  dirName: String,
+  hashTag1: Int,
+  hashTag2: Int,
+) extends Key uses Hashable, Show {
+  static fun create(dirName: String): DirName {
+    !dirName = dirName.lowercase();
+    static::validateDirName(dirName);
+    dirNameHash1 = hash(dirName);
+    dirNameHash2 = hash((1, dirName));
+    static(dirName, dirNameHash1, dirNameHash2)
+  }
+
+  fun compare(base: Key): Order {
+    base match {
+    | dir @ DirName _ ->
+      this.hashTag1.compare(dir.hashTag1) match {
+      | EQ() -> this.hashTag2.compare(dir.hashTag2)
+      | x -> x
+      }
+    | _ -> invariant_violation("Expected a DirName")
+    }
+  }
+
+  fun hash(): Int {
+    this.hashTag1
+  }
+
+  fun pre(): this {
+    DirName::create(this.dirName + "pre/")
+  }
+
+  fun next(): this {
+    DirName::create(this.dirName + "next/")
+  }
+
+  fun tag(): this {
+    dirName = this.dirName + "tag/";
+    dirNameHash1 = hash(dirName);
+    dirNameHash2 = hash((1, dirName));
+    static(dirName, dirNameHash1, dirNameHash2)
+  }
+
+  fun size(): this {
+    dirName = this.dirName + "size/";
+    dirNameHash1 = hash(dirName);
+    dirNameHash2 = hash((1, dirName));
+    static(dirName, dirNameHash1, dirNameHash2)
+  }
+
+  fun files(): this {
+    dirName = this.dirName + "files/";
+    dirNameHash1 = hash(dirName);
+    dirNameHash2 = hash((1, dirName));
+    static(dirName, dirNameHash1, dirNameHash2)
+  }
+
+  fun aggr(): this {
+    dirName = this.dirName + "aggr/";
+    dirNameHash1 = hash(dirName);
+    dirNameHash2 = hash((1, dirName));
+    static(dirName, dirNameHash1, dirNameHash2)
+  }
+
+  static private fun validateDirName(dirName: String): void {
+    validator = mutable SKStoreImpl.NameValidator(dirName, dirName.chars(), 0);
+    validator.go()
+  }
+
+  static fun isValidDirName(dirName: String): Bool {
+    validator = mutable SKStoreImpl.NameValidator(dirName, dirName.chars(), 0);
+    try {
+      validator.go();
+      true
+    } catch {
+    | _ -> false
+    }
+  }
+
+  fun sub(str: String): this {
+    validator = mutable SKStoreImpl.NameValidator(str, str.chars(), 0);
+    validator.mustBeKey();
+    DirName::create(this.dirName + str + "/")
+  }
+
+  fun toString(): String {
+    this.dirName
+  }
+}
+
+base class Key uses Orderable, Show {
+  static fun unTyped(x: Key): Key {
+    x
+  }
+
+  deferred macro overridable static fun keyType(obj: Key): this {
+    obj match {
+    | x @ #ThisClass _ -> x
+    }
+  }
+
+  overridable fun toKVStringRemove(_csv: OutputFormat): String {
+    "" + escape(this.toString()) + "\t\n"
+  }
+  overridable fun writeKVString(
+    writer: (String) -> void,
+    format: OutputFormat,
+    files: Array<File>,
+  ): void {
+    for (file in files) {
+      writer(file.toKVString(format, this))
+    }
+  }
+
+  overridable fun toString(): String {
+    inspect(this).toString()
+  }
+}
+
+class DirTag() extends Key {
+  fun toString(): String {
+    "DirTag()"
+  }
+}
+
+class SizeTag() extends Key {
+  fun toString(): String {
+    "SizeTag()"
+  }
+}
+
+class FilesTag() extends Key {
+  fun toString(): String {
+    "FilesTag()"
+  }
+}
+
+class IsEmptyTag() extends Key {
+  fun toString(): String {
+    "IsEmptyTag()"
+  }
+}
+
+class IID(value: Int) extends Key {
+  static fun create(key: String): IID {
+    chars = Vector::mcreateFromItems(key.chars());
+    chars.reverse();
+    base = 1;
+    n = 0;
+    for (c in chars) {
+      if (c == '-') {
+        !n = -n;
+        continue;
+      };
+      !n = n + (c.code() - '0'.code()) * base;
+      !base = base * 10;
+    };
+    IID(n)
+  }
+
+  fun toString(): String {
+    this.value.toString()
+  }
+}
+class SID(value: String) extends Key {
+  static fun create(value: String): this {
+    SID(value)
+  }
+
+  fun toString(): String {
+    this.value
+  }
+}
+
+base class Exception extends .Exception uses Show
+class InvalidPathExn(reason: String) extends SKStore.Exception {
+  fun toString(): String {
+    `Invalid path: ${this.reason}`
+  }
+}
+
+fun error<T>(msg: String): T {
+  throw Error(msg)
+}
+
+class Error(msg: String) extends Exception {
+  fun toString(): String {
+    this.msg
+  }
+}
+
+module end;
+
+/*****************************************************************************/
+/* Implementation details. */
+/*****************************************************************************/
+
+module SKStoreImpl;
+
+// This is a state machine that walks the string and checks that is it a
+// correct dirName.
+
+mutable class NameValidator(
+  dirName: String,
+  chars: Vector<Char>,
+  mutable idx: Int,
+) {
+  readonly fun error(msg: String): void {
+    SKStore.error(msg)
+  }
+
+  readonly fun current(): Char {
+    this.chars[this.idx]
+  }
+
+  readonly fun reachedEnd(): Bool {
+    this.idx >= this.chars.size()
+  }
+
+  mutable fun next(): void {
+    this.!idx = this.idx + 1
+  }
+
+  mutable fun go(): void {
+    if (this.reachedEnd()) {
+      this.error("path is empty");
+    };
+    while (this.idx < this.chars.size() - 1) {
+      this.mustBeSlash();
+      this.mustBeKey();
+    };
+    this.mustBeSlash();
+    if (!this.reachedEnd()) {
+      this.error("Unexpected characters at the end of the path");
+    };
+  }
+
+  mutable fun mustBeSlash(): void {
+    if (this.reachedEnd()) {
+      this.error(
+        `Expected a slash, reached the end of the path instead (${
+          this.dirName
+        })`,
+      );
+    };
+    c = this.current();
+    if (c == '/') {
+      this.next()
+    } else {
+      this.error(`Expected a slash, found '${c}' instead (${this.dirName})`);
+    }
+  }
+
+  static fun validChar(c: Char): Bool {
+    c match {
+    | '_' | '-' -> true
+    | _ -> false
+    }
+  }
+
+  mutable fun mustBeKey(): void {
+    if (this.reachedEnd() || this.current() == '/') {
+      this.error(`Empty baseName ${this.dirName}`);
+    };
+    c = this.current();
+    if (c >= '0' && c <= '9' || c == '-') {
+      this.next();
+      while (!this.reachedEnd()) {
+        !c = this.current();
+        if (c >= '0' && c <= '9' || c == '-') {
+          this.next();
+        } else {
+          break void
+        };
+      }
+    } else {
+      !c = this.current();
+      if (
+        (c >= 'a' && c <= 'z') ||
+        c >= 'A' && c <= 'Z' ||
+        static::validChar(c)
+      ) {
+        while (!this.reachedEnd()) {
+          !c = this.current();
+          if (
+            (c >= 'a' && c <= 'z') ||
+            c >= 'A' && c <= 'Z' ||
+            c >= '0' && c <= '9' ||
+            static::validChar(c)
+          ) {
+            this.next();
+          } else {
+            break void
+          };
+        }
+      }
+    }
+  }
+}
+
+module end;

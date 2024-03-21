@@ -3,7 +3,5 @@ name = "std"
 version = "0.1.0"
 
 [dependencies]
-skfs = { "path" = "../skfs" }  # Temporary
 
-[build-dependencies]
-std = { "path" = "." }
+sktest = { path = "../sktest" }

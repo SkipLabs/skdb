@@ -1,0 +1,57 @@
+/*****************************************************************************/
+/* Some SQL types are exposed here to enable specializing SKFS operations to */
+/* structures/patterns found in SKDB without inducing any cyclic dependency */
+/* in the build process. */
+/*****************************************************************************/
+
+module SQLParser;
+
+base class Type uses Orderable {
+  children =
+  | FLOAT()
+  | INTEGER()
+  | TEXT()
+  | JSON()
+  | SCHEMA()
+}
+
+base class IKind uses Orderable {
+  children =
+  | INONE()
+  | IASC()
+  | IDESC()
+}
+
+module end;
+module SKDB;
+
+base class CValue uses Orderable {
+  children =
+  | CInt(value: Int)
+  | CFloat(value: Float)
+  | CString(value: String)
+}
+
+class RowKey(
+  row: RowValues,
+  kinds: Array<(Int, SQLParser.IKind, SQLParser.Type)>,
+) extends SKStore.Key
+
+class RowValues(
+  values: Array<?CValue>,
+  repeat: Int,
+) uses Orderable extends SKStore.File
+
+class IndexProjKey(
+  row: RowValues,
+  kinds: Array<(Int, SQLParser.IKind, SQLParser.Type)>,
+) extends SKStore.Key
+
+class ProjKey(
+  value: ?CValue,
+  colNbr: Int,
+  leftShard: Int,
+  rightShard: Int,
+) extends SKStore.Key
+
+module end;

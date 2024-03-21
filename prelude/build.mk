@@ -61,10 +61,6 @@ ONATIVE_FILES=$(BUILD_DIR)magic.o $(addprefix $(BUILD_DIR),$(NATIVE_RELFILES:.c=
 
 .PHONY: default
 default: $(BUILD_DIR)libbacktrace.a $(BUILD_DIR)libskip_runtime64.a
-	@echo "skargo:library=$(BUILD_DIR)libskip_runtime64.a"
-	@echo "skargo:library=$(BUILD_DIR)libbacktrace.a"
-	@echo "skargo:preamble=$(COMP_DIR)/preamble/preamble64.ll"
-	@echo "skargo:link=-lpthread"
 
 $(BUILD_DIR)magic.c:
 	@date | cksum | awk '{print "unsigned long version = " $$1 ";"}' > $(BUILD_DIR)magic.c

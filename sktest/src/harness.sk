@@ -154,9 +154,6 @@ fun test_harness(tests: readonly Map<String, readonly Sequence<Test>>): void {
     for ((i, pfd) in pollfds.items()) {
       if (pfd.fd == -1) continue;
       if (pfd.pollin()) {
-        // TODO: This loop effectively forces sequential reading of subprocess
-        // outputs. Revisit once `BufferedReader` exposes an API to check for
-        // available buffered data.
         loop {
           line = readers[i].read_line() match {
           | Failure(err) -> throw err
@@ -171,6 +168,9 @@ fun test_harness(tests: readonly Map<String, readonly Sequence<Test>>): void {
             !success = false
           };
           reporters.each(x -> x.report(res));
+          if (!readers[i].has_buffered_data()) {
+            break void
+          }
         }
       } else if (pfd.pollerr() || pfd.pollhup()) {
         pollfds.set(i, Posix.Pollfd::create(-1));

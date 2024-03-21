@@ -1,0 +1,679 @@
+/*****************************************************************************/
+/* Module generating tests for the filesystem. */
+/*****************************************************************************/
+
+module alias T = SKTest;
+
+module SKStoreTest;
+
+base class RNbr {
+  children =
+  | RFixed(Int)
+  | RRange(Int, Int)
+  | RProb(Int)
+}
+
+class Config{
+  nbrInputs: RNbr = RRange(1, 5),
+  nbrDiffRounds: Int = 2,
+  nbrParents: RNbr = RRange(1, 5),
+  inputSize: RNbr = RRange(1, 5),
+  missingKey: RNbr = RProb(40),
+  valueWidth: RNbr = RRange(1, 5),
+  valueRange: RNbr = RRange(0, 5),
+  nbrDirs: RNbr = RRange(1, 5),
+  funBodySize: RNbr = RRange(1, 5),
+  mergeSize: RNbr = RRange(1, 5),
+  probKeyChange: RNbr = RProb(50),
+  probLazyDir: RNbr = RProb(30),
+  probKeyChangeRemoved: RNbr = RProb(10),
+  nbrRounds: Int = 400,
+}
+
+/*
+class Config{
+  nbrInputs: RNbr = RRange(1, 2),
+  inputSize: RNbr = RRange(1, 2),
+  missingKey: RNbr = RProb(30),
+  valueWidth: RNbr = RRange(1, 3),
+  valueRange: RNbr = RRange(0, 10),
+  nbrDirs: RNbr = RRange(1, 2),
+  funBodySize: RNbr = RRange(1, 2),
+  mergeSize: RNbr = RRange(1, 2),
+  probKeyChange: RNbr = RProb(50),
+  probLazyDir: RNbr = RProb(0),
+  probKeyChangeRemoved: RNbr = RProb(0),
+  nbrRounds: Int = 1000,
+}
+*/
+
+const VALUE_SIZE: Int = 10;
+
+class Program(
+  inputs: List<Input>,
+  diffs: Map<String, Map<Int, List<SKStore.IntFile>>>,
+  mDirs: List<DirValue>,
+) extends SKStore.File
+
+class Input{name: String, data: Map<Int, List<SKStore.IntFile>>}
+base class DirValue{name: String} {
+  children =
+  | MDir{inputs: Array<String>, readDirs: List<SKStore.DirName>}
+  | LDir{readDirs: List<SKStore.DirName>}
+}
+
+/*****************************************************************************/
+/* Interpreter using SKStore. */
+/*****************************************************************************/
+
+fun merge(
+  l1: List<SKStore.IntFile>,
+  l2: List<SKStore.IntFile>,
+): List<SKStore.IntFile> {
+  (l1, l2) match {
+  | (List.Nil(), l)
+  | (l, List.Nil()) ->
+    l
+  | (List.Cons(x1, rl1), List.Cons(x2, rl2)) ->
+    List.Cons(
+      SKStore.IntFile((x1.value + x2.value) % VALUE_SIZE),
+      merge(rl1, rl2),
+    )
+  }
+}
+
+fun eval(
+  context: mutable SKStore.Context,
+  prog: Program,
+  debug: Bool = false,
+): void {
+  makeEnv(context, prog.inputs);
+  evalDirs(context, prog.mDirs);
+  if (!debug) return void;
+  for (kv in context.dirs.state.items()) {
+    (dirName, dir) = kv;
+    print_string("Dir: " + dirName);
+    for (key in dir.keys()) {
+      print_string(
+        "  " +
+          key +
+          " => " +
+          dir.getArrayRaw(key).map(x ->
+            SKStore.IntFile::type(x).value.toString()
+          ),
+      );
+    }
+  }
+}
+
+fun makeEnv(context: mutable SKStore.Context, inputs: List<Input>): void {
+  for (input in inputs) {
+    data = mutable Vector[];
+    for (key => values in input.data) {
+      for (value in values) {
+        data.push((SKStore.IID(key), value));
+      }
+    };
+    _ = context.mkdir(
+      SKStore.IID::keyType,
+      SKStore.IntFile::type,
+      SKStore.DirName::create(input.name),
+      data.toArray(),
+    );
+  }
+}
+
+fun evalDirs(context: mutable SKStore.Context, dirs: List<DirValue>): void {
+  for (dir in dirs) {
+    dir match {
+    | mDir @ MDir _ -> evalMDir(context, mDir)
+    | lDir @ LDir _ -> evalLDir(context, lDir)
+    }
+  }
+}
+
+fun evalMDir(context: mutable SKStore.Context, dir: MDir): void {
+  name = dir.name;
+  parents = mutable Vector[];
+  readDirs = dir.readDirs;
+  for (input in dir.inputs) {
+    parents.push(
+      (
+        SKStore.DirName::create(input),
+        Array[
+          (
+            (context, writer, key, valueIter) ~> {
+              values = valueIter.collect(Array);
+              if (values.size() == 0) return void;
+              evalFun(
+                input,
+                context,
+                writer,
+                name.toString(),
+                readDirs,
+                key,
+                values,
+              )
+            },
+            None(),
+            None(),
+          ),
+        ],
+      ),
+    )
+  };
+  SKStore.EagerDir::applyMany(
+    context,
+    SKStore.FixedSingle::create(parents),
+    SKStore.DirName::create(name),
+  )
+}
+
+fun evalLDir(context: mutable SKStore.Context, dir: LDir): void {
+  _ = SKStore.LazyDir::create(
+    context,
+    SKStore.DirName::create(dir.name),
+    (context, _self, key) ~> {
+      Some(Array[evalLFun(context, dir.name, dir.readDirs, key)])
+    },
+  )
+}
+
+fun evalSub(
+  input: String,
+  context: mutable SKStore.Context,
+  thisDirName: String,
+  readDirs: List<SKStore.DirName>,
+  currentKey: SKStore.Key,
+  currentFiles: Array<SKStore.File>,
+): List<SKStore.DirName> {
+  sumAcc = 0;
+
+  currentValues = currentFiles.map(x -> SKStore.IntFile::type(x).value);
+
+  for (elt in currentValues) {
+    !sumAcc = sumAcc + elt;
+  };
+
+  sum = sumAcc;
+
+  subDirs = List<String>[];
+
+  for (dirName in readDirs.sorted().unique()) {
+    genericDir = context.unsafeGetDir(dirName);
+    dir = genericDir match {
+    | SKStore.LazyDir _
+    | SKStore.DeletedDir _ ->
+      continue
+    | x @ SKStore.EagerDir _ -> x
+    };
+    subDirNameStr =
+      dirName.toString() +
+      "sub" +
+      currentKey +
+      "_" +
+      sum +
+      hash(input) +
+      thisDirName;
+    subDirName = SKStore.DirName::create(subDirNameStr);
+    !subDirs = List.Cons(subDirNameStr, subDirs);
+    SKStore.EagerDir::apply(
+      context,
+      dir.dirName,
+      subDirName,
+      (context, writer, localKey, iterator) ~> {
+        localSum = sum;
+        for (readDirName in readDirs) {
+          readDir = context.unsafeGetDir(readDirName);
+          read = readDir.getArray(context, localKey).map(x ->
+            SKStore.IntFile::type(x)
+          );
+          for (value in read) {
+            !localSum = localSum + value.value
+          };
+        };
+        for (value in iterator) {
+          !localSum = localSum + SKStore.IntFile::type(value).value;
+        };
+        writer.set(localKey, SKStore.IntFile(localSum))
+      },
+      None(),
+      if (
+        (true || sum % 2 == 0) &&
+        currentValues.size() >= 2 &&
+        currentValues[0] <= currentValues[1]
+      ) {
+        Some(
+          Array[
+            SKStore.KeyRange(
+              SKStore.IID(currentValues[0]),
+              SKStore.IID(currentValues[1]),
+            ),
+          ],
+        )
+      } else {
+        None()
+      },
+    )
+  };
+
+  subDirs.map(x -> SKStore.DirName::create(x))
+}
+
+fun evalLFun(
+  context: mutable SKStore.Context,
+  thisDirName: String,
+  readDirs: List<SKStore.DirName>,
+  key: SKStore.Key,
+): SKStore.File {
+  reads = List[];
+  for (dirName in readDirs) {
+    dir = context.unsafeGetDir(dirName);
+    value = key match {
+    | SKStore.IID(x) -> SKStore.IntFile(x)
+    | _ -> T.fail()
+    };
+    read = dir
+      .getArray(context, SKStore.IID(SKStore.IntFile::type(value).value))
+      .map(x -> SKStore.IntFile::type(x));
+    !reads = List.Cons(read, reads);
+  };
+
+  result = 0;
+  for (ilist in reads) {
+    for (x in ilist) {
+      !result = result + SKStore.IntFile::type(x).value;
+    }
+  };
+  keyValue = key match {
+  | SKStore.IID(x) -> x
+  | _ -> T.fail()
+  };
+  if (keyValue > 10) {
+    thisDir = context.unsafeGetLazyDir(SKStore.DirName::create(thisDirName));
+    !result =
+      result +
+      SKStore.IntFile::type(
+        thisDir.getArray(context, SKStore.IID(keyValue / 2))[0],
+      ).value;
+  };
+  SKStore.IntFile(result)
+}
+
+fun evalFun(
+  input: String,
+  context: mutable SKStore.Context,
+  writer: mutable SKStore.Writer,
+  thisDirName: String,
+  readDirs: List<SKStore.DirName>,
+  currentKey: SKStore.Key,
+  currentValues: Array<SKStore.File>,
+): void {
+  subDirs = evalSub(
+    input,
+    context,
+    thisDirName,
+    readDirs,
+    currentKey,
+    currentValues,
+  );
+
+  reads = List[currentValues];
+  for (dirName in readDirs.concat(subDirs)) {
+    dir = context.unsafeGetDir(dirName);
+    value = currentValues[0];
+    read = dir
+      .getArray(context, SKStore.IID(SKStore.IntFile::type(value).value))
+      .map(x -> SKStore.IntFile::type(x));
+    !reads = List.Cons(read, reads);
+  };
+
+  frozenReads = reads;
+  result = List<SKStore.IntFile>[];
+  for (ilist in frozenReads) {
+    !result = merge(
+      result,
+      List::createFromItems(ilist).map(x -> SKStore.IntFile::type(x)),
+    );
+  };
+  out = Array::createFromItems(result);
+
+  allValues = SortedMap[];
+  for (file in out) {
+    key = SKStore.IID(SKStore.IntFile::type(file).value);
+    if (!allValues.containsKey(key)) !allValues[key] = mutable Vector[];
+    allValues[key].push(
+      SKStore.IntFile(
+        currentKey match {
+        | SKStore.IID(x) -> x
+        | _ -> T.fail()
+        },
+      ),
+    );
+  };
+
+  for (key => values in allValues) {
+    writer.setArray(key, values.toArray())
+  };
+}
+
+/*****************************************************************************/
+/* Compare outputs. */
+/*****************************************************************************/
+
+fun compareContext(
+  context1: readonly SKStore.Context,
+  context2: readonly SKStore.Context,
+): Bool {
+  hasError = false;
+  for (kv in context1.dirs.state.items()) {
+    (dirName, dir) = kv;
+    dirFiles = dir.keys();
+    if (dirFiles.isEmpty()) continue;
+
+    if (context2.unsafeMaybeGetDir(dirName) is None _) {
+      if (dirName.toString().contains("LAZY")) continue;
+      if (dir is SKStore.DeletedDir _) {
+        print_error(`missing directory ${dirName}`);
+        T.fail();
+      };
+      continue;
+    };
+    dir2 = context2.unsafeGetDir(dirName);
+    isLazy = dir2.getDirName().toString().contains("LAZY");
+    for (key in dirFiles) {
+      values1 = dir.getArrayRaw(key).map(x -> SKStore.IntFile::type(x));
+      values2 = dir2.getArrayRaw(key).map(x -> SKStore.IntFile::type(x));
+      if (dir2 is SKStore.LazyDir _) {
+        if (values1 == Array[] || values2 == Array[]) continue;
+      };
+      if (values1 != values2) {
+        if (isLazy && (values1.isEmpty() || values2.isEmpty())) {
+          continue
+        };
+        !hasError = true;
+        print_string(`Error: values differ for ${dirName}${key}`);
+        print_string(`       ${values1}`);
+        dir match {
+        | SKStore.EagerDir{fixedData} ->
+          for (fixed in fixedData.getIter(key)) {
+            (_, k, _, files) = fixed;
+            intFiles = files.map(file -> SKStore.IntFile::type(file));
+            print_string(`FIXED  ${k} => ${intFiles}`)
+          }
+        | _ -> void
+        };
+        dir match {
+        | SKStore.LazyDir{data} ->
+          data.maybeGet(key) match {
+          | None()
+          | Some(SKStore.LAbsent())
+          | Some(SKStore.LRemoved _)
+          | Some(SKStore.LCycle _)
+          | Some(SKStore.LDelayed()) ->
+            print_string("EMPTY DATA")
+          | Some(SKStore.LDefined(files, _)) ->
+            intFiles = files.map(file -> SKStore.IntFile::type(file));
+            print_string(`       ${intFiles}`)
+          }
+        | SKStore.EagerDir{data} ->
+          data.maybeGet(key) match {
+          | None() -> print_string("EMPTY DATA")
+          | Some(sources) ->
+            for (tickSource => files in sources) {
+              (_, k, _) = tickSource;
+              intFiles = files.map(file -> SKStore.IntFile::type(file));
+              print_string(`       ${k} => ${intFiles}`)
+            }
+          }
+        | _ -> void
+        };
+        print_string("");
+        print_string(`       ${values2}`);
+        dir2 match {
+        | SKStore.EagerDir{fixedData} ->
+          for (fixed in fixedData.getIter(key)) {
+            (_, k, _, files) = fixed;
+            intFiles = files.map(file -> SKStore.IntFile::type(file));
+            print_string(`FIXED  ${k} => ${intFiles}`)
+          }
+        | _ -> void
+        };
+        print_string("");
+      }
+    };
+  };
+  hasError
+}
+
+/*****************************************************************************/
+/* Program generator. */
+/*****************************************************************************/
+
+type GenDirs = mutable Vector<String>;
+
+fun genValues(rand: RNbr -> Int, config: Config): List<SKStore.IntFile> {
+  values = List[];
+  for (_ in Range(0, rand(config.valueWidth))) {
+    file = SKStore.IntFile(rand(config.valueRange));
+    !values = List.Cons(file, values)
+  };
+  values
+}
+
+fun genInputData(
+  rand: RNbr -> Int,
+  config: Config,
+): Map<Int, List<SKStore.IntFile>> {
+  data = mutable Map[];
+  for (i in Range(0, rand(config.inputSize))) {
+    if (rand(config.missingKey) == 1) continue;
+    data![i] = genValues(rand, config);
+  };
+  data.chill()
+}
+
+fun genInputs(rand: RNbr -> Int, config: Config): (List<Input>, GenDirs) {
+  result = List<Input>[];
+  dirs = mutable Vector[];
+  for (i in Range(0, rand(config.nbrInputs))) {
+    name = "/input" + i + "/";
+    data = genInputData(rand, config);
+    dir = Input{name, data};
+    !result = List.Cons(dir, result);
+    dirs.push(name);
+  };
+  (result, dirs)
+}
+
+fun genGet(rand: RNbr -> Int, dirs: GenDirs): String {
+  dirNbr = rand(RRange(0, dirs.size()));
+  dirName = dirs[dirNbr];
+  dirName
+}
+
+fun genReadDirs(
+  rand: RNbr -> Int,
+  config: Config,
+  dirs: GenDirs,
+): List<SKStore.DirName> {
+  readDirs = List[];
+  funBodySize = 1 + rand(config.funBodySize);
+  for (_ in Range(1, funBodySize)) {
+    !readDirs = List.Cons(genGet(rand, dirs), readDirs);
+  };
+  readDirs.map(x -> SKStore.DirName::create(x))
+}
+
+fun genMDir(
+  rand: RNbr -> Int,
+  config: Config,
+  dirs: GenDirs,
+  mdirs: GenDirs,
+  nbr: Int,
+): MDir {
+  name = "/dir" + nbr + "/";
+  inputs = mutable Set[];
+  for (_ in Range(0, rand(config.nbrParents))) {
+    inputNbr = rand(RRange(0, mdirs.size()));
+    inputs.insert(mdirs[inputNbr]);
+  };
+  readDirs = genReadDirs(rand, config, dirs);
+  dirs.push(name);
+  mdirs.push(name);
+  MDir{name, inputs => inputs.toArray(), readDirs}
+}
+
+fun genLDir(rand: RNbr -> Int, config: Config, dirs: GenDirs, nbr: Int): LDir {
+  name = "/dir" + nbr + "LAZY/";
+  readDirs = genReadDirs(rand, config, dirs);
+  dirs.push(name);
+  ldir = LDir{name, readDirs};
+  ldir
+}
+
+fun genDirs(rand: RNbr -> Int, config: Config, dirs: GenDirs): List<DirValue> {
+  mdirs = Vector::mcreateFromItems(dirs);
+  result = List[];
+  size = dirs.size() + rand(config.nbrDirs);
+  for (i in Range(dirs.size(), size)) {
+    dir = if (i == size - 1 || rand(config.probLazyDir) == 0) {
+      genMDir(rand, config, dirs, mdirs, i)
+    } else {
+      genLDir(rand, config, dirs, i)
+    };
+    !result = List.Cons(dir, result);
+  };
+  result.reversed()
+}
+
+fun genDiffs(
+  rand: RNbr -> Int,
+  config: Config,
+  inputs: List<Input>,
+): Map<String, Map<Int, List<SKStore.IntFile>>> {
+  diffs = mutable Map[];
+  for (input in inputs) {
+    data = mutable Map[];
+    for (key => _ in input.data) {
+      if (rand(config.probKeyChange) == 1) {
+        newValues = if (rand(config.probKeyChangeRemoved) == 1) List[] else {
+          genValues(rand, config)
+        };
+        data![key] = newValues;
+      }
+    };
+    diffs![input.name] = data.chill();
+  };
+  diffs.chill()
+}
+
+fun genProgram(config: Config, round: Int): Program {
+  random = Random::mcreate(1 + round);
+  rand = (rnbr: RNbr) ->
+    rnbr match {
+    | RFixed(fixed) -> fixed
+    | RRange(rmin, rmax) -> random.random(rmin, rmax)
+    | RProb(prob) -> if (random.random(0, 100) < prob) 1 else 0
+    };
+  (inputs, inputDirs) = genInputs(rand, config);
+  dirs = genDirs(rand, config, inputDirs);
+  diffs = genDiffs(rand, config, inputs);
+  Program(inputs, diffs, dirs)
+}
+
+/*****************************************************************************/
+/* Function that applies the diff. */
+/*****************************************************************************/
+
+fun updateProgram(
+  context: mutable SKStore.Context,
+  prog: Program,
+  i: Int,
+): Program {
+  !prog.diffs = prog.diffs.map((_, diff) ->
+    diff.map((_, arr) -> arr.map(x -> x + i))
+  );
+  !prog.inputs = prog.inputs.map(input -> {
+    dirName = SKStore.DirName::create(input.name);
+    diff = prog.diffs[input.name];
+    data = mutable Map[];
+    for (key => values in input.data) {
+      if (diff.containsKey(key)) {
+        newValues = diff[key];
+        dir = context.unsafeGetEagerDir(dirName);
+        valuesArr = Array::createFromItems(newValues);
+        dir.writeArray(context, SKStore.IID(key), valuesArr);
+        data![key] = diff[key];
+      } else {
+        data![key] = values;
+      }
+    };
+    input with {data => data.chill()}
+  });
+  prog
+}
+
+/*****************************************************************************/
+/* Test. */
+/*****************************************************************************/
+
+@test
+fun testStress(): void {
+  config = Config{};
+  print_string("Stress Test Begin");
+  origContext = SKStore.Context{};
+  _ = SKStore.runWithGcReturnContext(origContext, context ~> {
+    round = context.getGlobal("ROUND") match {
+    | None() -> 0
+    | Some(x) -> SKStore.IntFile::type(x).value
+    };
+    context.replaceFromSaved(origContext);
+    if (SKStore.debugMode) {
+      print_string("Round: " + round);
+    };
+    origProg = genProgram(config, round);
+    eval(context, origProg);
+    if (context.debugMode) print_string("Initialization finished");
+    prog = updateProgram(context, origProg, 0);
+    context.update();
+    context.setGlobal("PROG", prog);
+    for (i in Range(1, config.nbrDiffRounds)) {
+      !prog = SKStore.withRegion(context, (_, context) ~> {
+        lprog = context.getGlobal("PROG") match {
+        | Some(x @ Program _) -> x
+        | _ -> invariant_violation("Was expecting a program")
+        };
+        !lprog = updateProgram(context, lprog, i);
+        context.update();
+        context.setGlobal("PROG", lprog);
+        lprog
+      })
+    };
+    if (context.debugMode) print_string("Running program from scratch");
+    newProg = prog;
+    context2 = SKStore.run(context ~> {
+      eval(context, newProg);
+    });
+    if (context.debugMode) {
+      print_string("Compare contexts (Phase 1: updated/scratch)")
+    };
+    hasError = compareContext(context, context2);
+    if (hasError) invariant_violation("Stress test failed");
+    if (context.debugMode) {
+      print_string("Compare contexts (Phase 2: scratch/updated)")
+    };
+    hasError2 = compareContext(context2, context);
+    if (hasError2) invariant_violation("Stress test failed");
+    !round = round + 1;
+    context.setGlobal("ROUND", SKStore.IntFile(round));
+    if (round < config.nbrRounds) {
+      SKStore.CContinue(None())
+    } else {
+      print_string("Stress Test end");
+      SKStore.CStop(None())
+    }
+  })
+}
+
+module end;

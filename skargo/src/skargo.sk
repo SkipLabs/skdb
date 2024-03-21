@@ -312,9 +312,12 @@ fun checkBuildFiles(
   });
   if (!libraries.isEmpty()) {
     Environ.set_var(
-      "SKC_LINK",
-      libraries.toArray().concat(links.toArray()).join(Path.listSeparator),
+      "SKC_LIBRARIES",
+      libraries.toArray().join(Path.listSeparator),
     );
+  };
+  if (!links.isEmpty()) {
+    Environ.set_var("SKC_LINK", links.toArray().join(Path.listSeparator));
   };
   if (!preambles.isEmpty()) {
     Environ.set_var("SKC_PREAMBLE", preambles.join(Path.listSeparator));

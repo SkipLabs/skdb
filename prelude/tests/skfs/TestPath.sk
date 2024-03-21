@@ -1,0 +1,20 @@
+module alias T = SKTest;
+
+module SKStoreTest;
+
+@test
+fun testDirName(): void {
+  T.expectThrow(() -> _ = SKStore.DirName::create(" "));
+  T.expectThrow(() -> _ = SKStore.DirName::create("??$"));
+  T.expectThrow(() -> _ = SKStore.DirName::create("."));
+  T.expectThrow(() -> _ = SKStore.DirName::create("//"));
+  T.expectThrow(() -> _ = SKStore.DirName::create("\n"));
+  T.expectThrow(() -> _ = SKStore.DirName::create("/missingTrailingSlash"));
+
+  _ = SKStore.DirName::create("/");
+  _ = SKStore.DirName::create("/1223/");
+  _ = SKStore.DirName::create("/dir/");
+  _ = SKStore.DirName::create("/dir1/dir2/");
+}
+
+module end;

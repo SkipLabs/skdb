@@ -1,0 +1,79 @@
+/*****************************************************************************/
+/* Place Holder when a dictionary is delted */
+/*****************************************************************************/
+module SKStore;
+
+class DeletedDir{time: Time, dirName: DirName} extends Dir {
+  fun incrRefCount(_context: mutable Context): void {
+    void
+  }
+  fun decrRefCount(_context: mutable Context): void {
+    void
+  }
+
+  static fun addDirtyReader(mutable Context, DirName, DirName, Key): void {
+    void
+  }
+  static fun updateDirtyReaders(mutable Context, Path): void {
+    void
+  }
+  fun isInput(): Bool {
+    false
+  }
+  fun reset(mutable Context): void {
+    void
+  }
+  fun getTime(): Time {
+    this.time
+  }
+  fun getArrayRaw(Key): Array<File> {
+    Array[]
+  }
+
+  fun getArray(mutable Context, Key): Array<File> {
+    Array[]
+  }
+
+  fun getIter(mutable Context, Key): mutable Iterator<File> {
+    mutable EmptyIterator()
+  }
+
+  fun writeEntry(mutable Context, Path, Key, Array<File>): this {
+    this
+  }
+
+  fun unsafeIterKeys((Key, Int) -> void): void {
+    void
+  }
+  fun keys(): SortedSet<Key> {
+    SortedSet[]
+  }
+  fun getDirName(): DirName {
+    this.dirName
+  }
+  fun getOld(DirName, Key): Array<Key> {
+    Array[]
+  }
+
+  fun updateNewDirs(
+    mutable Context,
+    Key,
+    SortedSet<DirName>,
+  ): (this, Vector<DirName>) {
+    (this, Vector[])
+  }
+  fun writeArray(mutable Context, Key, Array<File>): void {
+    void
+  }
+  fun write(mutable Context, Key, File): void {
+    void
+  }
+  fun remove(mutable Context, Key): void {
+    void
+  }
+  fun isDeleted(): Bool {
+    true
+  }
+}
+
+module end;

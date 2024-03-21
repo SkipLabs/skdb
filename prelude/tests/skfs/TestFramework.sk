@@ -1,0 +1,39 @@
+module SKStoreTest;
+
+fun write(
+  context: mutable SKStore.Context,
+  dirInput: SKStore.DirName,
+  key: SKStore.Key,
+  values: Array<SKStore.File>,
+): void {
+  context.unsafeGetEagerDir(dirInput).writeArray(context, key, values);
+}
+
+fun getData(
+  context: mutable SKStore.Context,
+  dirName: SKStore.DirName,
+  key: SKStore.Key,
+): Array<SKStore.File> {
+  context.unsafeGetDir(dirName) match {
+  | SKStore.DeletedDir _ ->
+    invariant_violation("Trying to write to an empty directory")
+  | edir @ SKStore.EagerDir _ -> edir.getArrayRaw(key)
+  | ldir @ SKStore.LazyDir _ -> ldir.unsafeGetArray(context, key)
+  }
+}
+
+fun getLazyData(
+  context: mutable SKStore.Context,
+  dirName: SKStore.DirName,
+  key: SKStore.Key,
+  isAsync: Bool = false,
+): Array<SKStore.File> {
+  context.unsafeGetDir(dirName) match {
+  | SKStore.DeletedDir _ ->
+    invariant_violation("Trying to write to an empty directory")
+  | SKStore.EagerDir _ -> invariant_violation("Was expecting a Lazy dir")
+  | ldir @ SKStore.LazyDir _ -> ldir.unsafeGetArray(context, key, isAsync)
+  }
+}
+
+module end;

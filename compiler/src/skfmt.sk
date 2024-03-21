@@ -54,7 +54,11 @@ untracked fun main(): void {
     };
     prettyPrint(contents, file) match {
     | Failure(error) ->
-      print_error_ln(SkipError.errorsToString(Vector[error]));
+      print_error_ln(
+        SkipError.errorsToString(Vector[error], filename ->
+          FileSystem.readTextFile(filename)
+        ),
+      );
       skipExit(1)
     | Success(formattedContents) ->
       if (inplace) {

@@ -1,0 +1,188 @@
+module alias T = SKTest;
+
+module SKStoreTest;
+
+@test
+fun testSubDir(): void {
+  dataStr1 = Array[
+    (SKStore.IID(1), SKStore.StringFile("1")),
+    (SKStore.IID(2), SKStore.StringFile("2")),
+  ];
+  context = SKStore.run(context ~> {
+    dirStr1 = context.mkdir(
+      SKStore.IID::keyType,
+      SKStore.StringFile::type,
+      SKStore.DirName::create("/dirStr1/"),
+      dataStr1,
+    );
+    dirSingle = context.mkdir(
+      SKStore.IID::keyType,
+      SKStore.StringFile::type,
+      SKStore.DirName::create("/dirSingle/"),
+      Array[(SKStore.IID(0), SKStore.StringFile("0"))],
+    );
+    dir1 = dirStr1.map(
+      SKStore.IID::keyType,
+      SKStore.IntFile::type,
+      context,
+      SKStore.DirName::create("/dir1/"),
+      ((_context, writer, key, values) ~>
+        writer.set(key, SKStore.IntFile(values.first.value.toInt()))),
+    );
+    _dir2 = dir1.map(
+      SKStore.IID::keyType,
+      SKStore.IntFile::type,
+      context,
+      SKStore.DirName::create("/dir2/"),
+      (context, _writer, _key, values) ~> {
+        v = values.first;
+        dirName = SKStore.DirName::create("/dir2/" + v.value + "/");
+        _ = dir1.map(
+          SKStore.IID::keyType,
+          SKStore.IntFile::type,
+          context,
+          dirName,
+          (_context, writer, key, values) ~> writer.set(key, values.first),
+        );
+      },
+    );
+    dir3 = SKStore.LHandle::create(
+      SKStore.IID::keyType,
+      SKStore.StringFile::type,
+      context,
+      SKStore.DirName::create("/dir3/"),
+      (context, _self, key) ~> {
+        keyStr = key.toString();
+        dirName = SKStore.DirName::create("/dir3/" + keyStr + "/");
+        _ = dirStr1.map(
+          SKStore.IID::keyType,
+          SKStore.StringFile::type,
+          context,
+          dirName,
+          (_context, writer, key, values) ~> writer.set(key, values.first),
+        );
+        Array[SKStore.StringFile(keyStr)]
+      },
+    );
+    _dir4 = dir1.map(
+      SKStore.IID::keyType,
+      SKStore.IntFile::type,
+      context,
+      SKStore.DirName::create("/dir4/"),
+      (context, _writer, _, values) ~> {
+        value = values.first;
+        v = dir3.get(context, SKStore.IID(value.value));
+        dirName = SKStore.DirName::create("/dir4/" + v.value + "/");
+        toAdd = dirSingle.get(context, SKStore.IID(0)).value;
+        _ = dir1.map(
+          SKStore.IID::keyType,
+          SKStore.IntFile::type,
+          context,
+          dirName,
+          (_context, writer, key, values) ~>
+            writer.set(key, SKStore.IntFile(values.first.value + toAdd.toInt()))
+          ,
+        );
+      },
+    );
+  });
+  T.expectTrue(
+    context.maybeGetDir(SKStore.DirName::create("/dir2/1/")) is Some _,
+    "Testing subdir exists",
+  );
+  T.expectTrue(
+    context.maybeGetDir(SKStore.DirName::create("/dir3/1/")) is Some _,
+    "Testing lazy subdir exists",
+  );
+  inputDir = context.unsafeGetEagerDir(SKStore.DirName::create("/dirStr1/"));
+  inputSingle = context.unsafeGetEagerDir(
+    SKStore.DirName::create("/dirSingle/"),
+  );
+  inputDir.writeArray(context, SKStore.IID(1), Array[SKStore.StringFile("23")]);
+  context.update();
+  context.maybeGetDir(SKStore.DirName::create("/dir2/1/")) match {
+  | None() -> T.fail("Expected an empty directory, not None")
+  | Some(dir) ->
+    T.expectTrue(dir is SKStore.DeletedDir _, "Testing subdir has been removed")
+  };
+  context.maybeGetDir(SKStore.DirName::create("/dir3/1/")) match {
+  | None() -> T.fail("Expected an empty directory, not None")
+  | Some(dir) ->
+    T.expectTrue(
+      dir is SKStore.DeletedDir _,
+      "Testing lazy subdir has been removed",
+    )
+  };
+  T.expectTrue(
+    context.maybeGetDir(SKStore.DirName::create("/dir2/23/")) is Some _,
+    "Testing new subdir exists",
+  );
+  T.expectTrue(
+    context.maybeGetDir(SKStore.DirName::create("/dir3/23/")) is Some _,
+    "Testing new lazy subdir exists",
+  );
+  inputDir.writeArray(
+    context,
+    SKStore.IID(255),
+    Array[SKStore.StringFile("255")],
+  );
+  context.update();
+  inputDir.writeArray(
+    context,
+    SKStore.IID(255),
+    Array[SKStore.StringFile("255")],
+  );
+  context.update();
+  inputSingle.writeArray(
+    context,
+    SKStore.IID(0),
+    Array[SKStore.StringFile("1")],
+  );
+  inputDir.writeArray(
+    context,
+    SKStore.IID(255),
+    Array[SKStore.StringFile("255")],
+  );
+  context.update()
+}
+
+@test
+fun testSubSubDirUnit(): void {
+  context = SKStore.run(context ~> {
+    dir1 = context.mkdir(
+      SKStore.IID::keyType,
+      SKStore.IntFile::type,
+      SKStore.DirName::create("/dir1/"),
+      Array[(SKStore.IID(0), SKStore.IntFile(0))],
+    );
+    dir2 = context.mkdir(
+      SKStore.IID::keyType,
+      SKStore.IntFile::type,
+      SKStore.DirName::create("/dir2/"),
+      Array[(SKStore.IID(0), SKStore.IntFile(0))],
+    );
+    subDir2 = dir2.map(
+      SKStore.IID::keyType,
+      SKStore.IntFile::type,
+      context,
+      SKStore.DirName::create("/subDir2/"),
+      (_context, writer, key, values) ~> writer.set(key, values.first + 1),
+    );
+    _ = dir1.map(
+      SKStore.IID::keyType,
+      SKStore.IntFile::type,
+      context,
+      SKStore.DirName::create("/subDir1/"),
+      (context, writer, key, values) ~> {
+        x = values.first;
+        !x.value = x.value + subDir2.get(context, SKStore.IID(0)).value;
+        writer.set(key, x)
+      },
+    )
+  });
+  dir2 = context.unsafeGetEagerDir(SKStore.DirName::create("/dir2/"));
+  dir2.writeArray(context, SKStore.IID(0), Array[SKStore.IntFile(1)]);
+  context.update()
+}
+
+module end;

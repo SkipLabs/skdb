@@ -1,0 +1,605 @@
+/*****************************************************************************/
+/* Module exposing a typed interface to the file system.
+ *
+ * The code implementing the file system is not statically typed. A first
+ * version attempted to do that, but it became clear very quickly that it
+ * would require to bend the type-system in ways that were counter-productive.
+ *
+ * Moreover, remote-directories, because of their nature break the static
+ * type-checking.
+ *
+ * Hence the idea of an implementation where every file in the system has the
+ * same type "File" and every key the type "Key".
+ *
+ * However, type-checking is nice! So how do we get the best of both worlds?
+ * By exposing a typed API!
+ *
+ * This is what the Handle module is for. The idea is to add a layer of type-
+ * checking and expose that to the user.
+ *
+ * Concretely, let's say we want to manipulate a directory where the files are
+ * all of type IntFile. The type Handle<IntFile> is there to the rescue! Every
+ * operation will be type-checked (statically) against the type IntFile.
+ *
+ * So if I try to write a StringFile instead of an IntFile I get a static error.
+ * The other important part is that all the higher order operations are also
+ * typed. So applying a map to a Handle also produces a handle.
+ *
+ * What's nice about that is that it becomes relatively straightforward to
+ * write a program that is fully type-checked. The dynamic nature of the file-
+ * system becomes an implementation detail. All you need to do is to stick with
+ * Handles. Never try to manipulate "Dir" directly and you will be safe!
+ */
+/*****************************************************************************/
+
+module SKStore;
+
+/*****************************************************************************/
+/* Iterator capable of answering if it produces at least one element. */
+/*****************************************************************************/
+
+mutable base class FileIterator<+T> extends Iterator<T> {
+  static fun create(iter: mutable Iterator<T>): mutable FileIterator<T> {
+    iter.next() match {
+    | None() -> mutable EmptyIterator()
+    | Some(v) -> mutable NonEmptyIterator(v, iter)
+    }
+  }
+
+  readonly fun isEmpty(): Bool;
+}
+
+mutable class EmptyIterator<T>() extends FileIterator<T> {
+  mutable fun next(): ?T {
+    None()
+  }
+
+  readonly fun isEmpty(): Bool {
+    true
+  }
+}
+
+mutable class NonEmptyIterator<+T>(
+  mutable first: T,
+  iter: mutable Iterator<T>,
+  mutable isPassedFirstValue: Bool = false,
+) extends FileIterator<T> {
+  mutable fun next(): ?T {
+    if (this.isPassedFirstValue) return this.iter.next();
+    this.!isPassedFirstValue = true;
+    Some(this.first)
+  }
+
+  readonly fun isEmpty(): Bool {
+    false
+  }
+
+  mutable fun nonEmptyMap<U>(f: T -> U): mutable NonEmptyIterator<U> {
+    mutable NonEmptyIterator(f(this.first), this.iter.map(f))
+  }
+
+  mutable fun assertUnique(
+    err: () -> void = () ->
+      invariant_violation("Expected an iterator with only one element"),
+  ): void {
+    if (this.isPassedFirstValue) {
+      invariant_violation(
+        "Cannot use assertUnique on an iterator that has already been used",
+      )
+    };
+    this.next() match {
+    | None() -> void
+    | Some _ ->
+      this.next() match {
+      | None() -> this.!isPassedFirstValue = false
+      | Some _ -> err()
+      }
+    }
+  }
+}
+
+/*****************************************************************************/
+/* The class handed over to the closures mapping over a directory. */
+/*****************************************************************************/
+
+mutable class Writer{
+  mutable writes: SortedMap<Key, Array<File>> = SortedMap[],
+} {
+  mutable fun setArray(key: Key, values: Array<File>): void {
+    this.!writes[key] = values;
+  }
+
+  mutable fun set(key: Key, value: File): void {
+    this.!writes[key] = Array[value];
+  }
+
+  mutable fun remove(key: Key): void {
+    this.!writes[key] = Array[];
+  }
+
+  readonly fun getWrites(): Array<(Key, Array<File>)> {
+    result = mutable Vector[];
+    for (key => values in this.writes) {
+      result.push((key, values));
+    };
+    result.toArray()
+  }
+}
+
+/*****************************************************************************/
+/* Typed version of Writer. */
+/*****************************************************************************/
+
+mutable class TWriter<K: Key, V: File>{
+  mutable writes: SortedMap<Key, Array<File>> = SortedMap[],
+} {
+  mutable fun setArray(key: K, values: Array<V>): void {
+    this.!writes[key] = values;
+  }
+
+  mutable fun set(key: K, value: V): void {
+    this.!writes[key] = Array[value];
+  }
+
+  mutable fun remove(key: K): void {
+    this.!writes[key] = Array[];
+  }
+
+  readonly fun getWrites(): Array<(Key, Array<File>)> {
+    result = mutable Vector[];
+    for (key => values in this.writes) {
+      result.push((key, values));
+    };
+    result.toArray()
+  }
+}
+
+/*****************************************************************************/
+/* Typed version of the Reducer. */
+/*****************************************************************************/
+
+class EReducer<V2, V3: File>{
+  type: File ~> V3,
+  canReset: Bool,
+  init: (mutable Iterator<V2> ~> Array<V3>),
+  update: (Array<V3>, Array<V2>, Array<V3>) ~> ?Array<V3>,
+}
+
+/*****************************************************************************/
+/* A few predefined Reducers. */
+/*****************************************************************************/
+
+fun countReducer(): EReducer<_, IntFile> {
+  EReducer{
+    type => IntFile::type,
+    canReset => false,
+    init => iter ~> {
+      count = 0;
+      for (_ in iter) {
+        !count = count + 1;
+      };
+      Array[IntFile(count)]
+    },
+    update => (state, old, new) ~> {
+      count = state[0].value;
+      for (_ in old) {
+        !count = count - 1;
+      };
+      for (_ in new) {
+        !count = count + 1;
+      };
+      Some(Array[IntFile(count)])
+    },
+  };
+}
+
+fun sumReducer(): EReducer<IntFile, IntFile> {
+  EReducer{
+    type => IntFile::type,
+    canReset => false,
+    init => iter ~> {
+      sum = 0;
+      for (x in iter) {
+        !sum = sum + x.value;
+      };
+      Array[IntFile(sum)]
+    },
+    update => (state, old, new) ~> {
+      sum = state[0].value;
+      for (x in old) {
+        !sum = sum - x.value;
+      };
+      for (x in new) {
+        !sum = sum + x.value;
+      };
+      Some(Array[IntFile(sum)])
+    },
+  };
+}
+
+/*****************************************************************************/
+/* The preferred way of accessing the file-system. */
+/*****************************************************************************/
+
+base class Handle<K: Key, +V: File> {
+  macro fun getDirName(): DirName {
+    this.dirName
+  }
+
+  macro overridable fun getType(): SKStore.File ~> V {
+    this.type
+  }
+
+  fun getKeyType(): SKStore.Key ~> K;
+
+  fun getArray(context: mutable Context, key: K): Array<V> {
+    dir = context.unsafeGetDir(this.getDirName());
+    dir.getArray(context, key).map(this.getType())
+  }
+
+  fun get(context: mutable Context, key: K): V {
+    values = this.getArray(context, key);
+    if (values.size() >= 2) {
+      msg = `Error: Duplicate keys '${key}' in '${this.getDirName()}'`;
+      print_error(msg);
+      invariant_violation(msg);
+    };
+    if (values.size() == 0) {
+      msg = `Error: No value for keys '${key}' in '${this.getDirName()}'`;
+      print_error(msg);
+      invariant_violation(msg);
+    };
+    values[0]
+  }
+}
+
+/*****************************************************************************/
+/* A lazy handle is updated "lazily", in other words, an entry is computed
+ * only when someone tries to access it.
+ */
+/*****************************************************************************/
+
+class LHandle<K: Key, +V: File>(
+  typeKey: Key ~> K,
+  type: File ~> V,
+  dirName: DirName,
+) extends Handle<K, V> {
+  static fun create<V: File>(
+    typeKey: Key ~> K,
+    type: File ~> V,
+    context: mutable Context,
+    dirName: DirName,
+    f: (mutable Context, LHandle<K, V>, K) ~> Array<V>,
+    collect: Bool = true,
+  ): LHandle<K, V> {
+    dir = LazyDir::create(
+      context,
+      dirName,
+      (context, dirName, key) ~> {
+        Some(f(context, LHandle(typeKey, type, dirName), typeKey(key)));
+      },
+      collect,
+    );
+    LHandle(typeKey, type, dir.getDirName())
+  }
+
+  static fun createAsync<K: Key, V: File>(
+    typeKey: Key ~> K,
+    type: File ~> V,
+    context: mutable Context,
+    dirName: DirName,
+    f: (mutable Context, LHandle<K, V>, K) ~> ?Array<V>,
+    collect: Bool = true,
+  ): LHandle<K, V> {
+    dir = LazyDir::create(
+      context,
+      dirName,
+      (context, dirName, key) ~> {
+        f(context, LHandle(typeKey, type, dirName), typeKey(key));
+      },
+      collect,
+    );
+    LHandle(typeKey, type, dir.getDirName())
+  }
+
+  fun getKeyType(): SKStore.Key ~> K {
+    this.typeKey
+  }
+
+  fun getArrayAsync(context: mutable Context, key: Key): Array<V> {
+    dir = context.unsafeGetLazyDir(this.getDirName());
+    results = dir.getArrayAsync(context, key).map(this.getType());
+    results
+  }
+
+  fun getArrayWithOptions(
+    context: mutable Context,
+    key: Key,
+    isAsync: Bool,
+    throwOnCycle: Bool,
+  ): Array<V> {
+    dir = context.unsafeGetLazyDir(this.getDirName());
+    results = dir
+      .getArrayWithOptions(context, key, isAsync, throwOnCycle)
+      .map(this.getType());
+    results
+  }
+}
+
+/*****************************************************************************/
+/* Eager handles. */
+/*****************************************************************************/
+
+class EHandle<K: Key, V: File>(
+  keyType: Key ~> K,
+  type: File ~> V,
+  dirName: DirName,
+) extends Handle<K, V> {
+  static fun multiMap<K, V, K2: Key, V2: File>(
+    typeOutputKey: Key ~> K2,
+    typeOutput: File ~> V2,
+    context: mutable Context,
+    parents: Array<
+      (
+        EHandle<K, V>,
+        (
+          (
+            mutable Context,
+            mutable TWriter<K2, V2>,
+            K,
+            mutable NonEmptyIterator<V>,
+          ) ~> void,
+          ?Array<KeyRange>,
+        ),
+      ),
+    >,
+    dirName: DirName,
+  ): EHandle<K2, V2> {
+    dynParents = mutable Map[];
+    parentSet = mutable Set[];
+    for (parent in parents) {
+      (parentHandle, parentData) = parent;
+      (mapFun, rangeOpt) = parentData;
+      typeInputKey = parentHandle.keyType;
+      typeInput = parentHandle.type;
+      parentName = parentHandle.dirName;
+      dynamicMapFun = (context, writer, key, fileIter) ~> {
+        FileIterator::create(fileIter) match {
+        | EmptyIterator _ -> return void
+        | iter @ NonEmptyIterator _ ->
+          twriter = mutable TWriter<K2, V2>{writes => writer.writes};
+          mapFun(
+            context,
+            twriter,
+            typeInputKey(key),
+            iter.nonEmptyMap(typeInput),
+          );
+          writer.!writes = twriter.writes
+        }
+      };
+      if (!parentSet.contains(parentName)) {
+        parentSet.add(parentName);
+        dynParents.set(parentName, mutable Vector[])
+      };
+      dynParents[parentName].push((dynamicMapFun, rangeOpt, None()))
+    };
+    fixedParents = FixedSingle::create(
+      Vector::mcreateFromItems(
+        dynParents.items().map(kv -> (kv.i0, kv.i1.toArray())).collect(Array),
+      ),
+    );
+    EagerDir::applyMany(context, fixedParents, dirName, None());
+    EHandle(typeOutputKey, typeOutput, dirName)
+  }
+
+  static fun multiMapReduce<K, V, K2: Key, V2: File, V3: File>(
+    typeOutputKey: Key ~> K2,
+    typeOutput: File ~> V2,
+    context: mutable Context,
+    parents: Array<
+      (
+        EHandle<K, V>,
+        (
+          (
+            mutable Context,
+            mutable TWriter<K2, V2>,
+            K,
+            mutable NonEmptyIterator<V>,
+          ) ~> void,
+          ?Array<KeyRange>,
+        ),
+      ),
+    >,
+    dirName: DirName,
+    reducer: EReducer<V2, V3>,
+  ): EHandle<K2, V3> {
+    dynParents = mutable Map[];
+    parentSet = mutable Set[];
+    for (parent in parents) {
+      (parentHandle, parentData) = parent;
+      (mapFun, rangeOpt) = parentData;
+      typeInputKey = parentHandle.keyType;
+      typeInput = parentHandle.type;
+      parentName = parentHandle.dirName;
+      dynamicMapFun = (context, writer, key, fileIter) ~> {
+        FileIterator::create(fileIter) match {
+        | EmptyIterator _ -> return void
+        | iter @ NonEmptyIterator _ ->
+          twriter = mutable TWriter<K2, V2>{writes => writer.writes};
+          mapFun(
+            context,
+            twriter,
+            typeInputKey(key),
+            iter.nonEmptyMap(typeInput),
+          );
+          writer.!writes = twriter.writes
+        }
+      };
+      if (!parentSet.contains(parentName)) {
+        parentSet.add(parentName);
+        dynParents.set(parentName, mutable Vector[])
+      };
+      dynParents[parentName].push((dynamicMapFun, rangeOpt, None()))
+    };
+    fixedParents = FixedSingle::create(
+      Vector::mcreateFromItems(
+        dynParents.items().map(kv -> (kv.i0, kv.i1.toArray())).collect(Array),
+      ),
+    );
+    EagerDir::applyMany(
+      context,
+      fixedParents,
+      dirName,
+      Some(
+        IReducer{
+          init => files ~> reducer.init(files.map(typeOutput)),
+          update => (state, old, new) ~>
+            reducer.update(
+              state.map(reducer.type),
+              old.map(typeOutput),
+              new.map(reducer.type),
+            ),
+        },
+      ),
+    );
+    EHandle(typeOutputKey, reducer.type, dirName)
+  }
+
+  fun getKeyType(): SKStore.Key ~> K {
+    this.keyType
+  }
+
+  fun map<K2: Key, V2: File>(
+    typeKey: Key ~> K2,
+    type: File ~> V2,
+    context: mutable Context,
+    dirName: DirName,
+    f: (
+      mutable Context,
+      mutable TWriter<K2, V2>,
+      K,
+      mutable NonEmptyIterator<V>,
+    ) ~> void,
+  ): EHandle<K2, V2> {
+    static::multiMap(
+      typeKey,
+      type,
+      context,
+      Array[
+        (SKStore.EHandle(this.keyType, this.type, this.dirName), (f, None())),
+      ],
+      dirName,
+    )
+  }
+
+  fun mapReduce<K2: Key, V2: File, V3: File>(
+    typeKey: Key ~> K2,
+    type: File ~> V2,
+    context: mutable Context,
+    dirName: DirName,
+    f: (
+      mutable Context,
+      mutable TWriter<K2, V2>,
+      K,
+      mutable NonEmptyIterator<V>,
+    ) ~> void,
+    reducer: EReducer<V2, V3>,
+  ): EHandle<K2, V3> {
+    static::multiMapReduce(
+      typeKey,
+      type,
+      context,
+      Array[
+        (SKStore.EHandle(this.keyType, this.type, this.dirName), (f, None())),
+      ],
+      dirName,
+      reducer,
+    )
+  }
+
+  fun filter(
+    context: mutable Context,
+    childName: DirName,
+    capacity: Int,
+    f: (mutable SKStore.Context, K, V) ~> Bool,
+    fileSize: V ~> Int,
+    removeFromFile: (V, Int) ~> File,
+    rangesOpt: ?Array<KeyRange>,
+  ): EHandle<K, V> {
+    EagerFilter::create(
+      context,
+      this.dirName,
+      childName,
+      capacity,
+      (file: File) ~> fileSize(this.type(file)),
+      (file: File, n: Int) ~> removeFromFile(this.type(file), n),
+      (context, key, file) ~> f(context, this.keyType(key), this.type(file)),
+      rangesOpt,
+    );
+    EHandle(this.keyType, this.type, childName)
+  }
+
+  fun pre(context: mutable Context): ?EHandle<K, V> {
+    if (!context.hasPre.contains(this.dirName)) {
+      context.!hasPre = context.hasPre.add(this.dirName);
+    };
+    context.maybeGetDir(this.dirName.pre()) match {
+    | None() -> None()
+    | Some(dir) -> Some(EHandle(this.keyType, this.type, dir.getDirName()))
+    }
+  }
+
+  fun size(context: mutable Context): Int {
+    context.getEagerDir(this.dirName).size(context)
+  }
+
+  fun isEmpty(context: mutable Context): Bool {
+    context.getEagerDir(this.dirName).isEmpty(context)
+  }
+
+  fun writeArray<U: File>[V: U](
+    context: mutable Context,
+    key: K,
+    values: Array<U>,
+  ): void {
+    dir = context.unsafeGetEagerDir(this.dirName);
+    dir.writeArray(context, key, values);
+  }
+
+  fun items(
+    context: mutable Context,
+  ): mutable Iterator<(K, mutable Iterator<V>)> {
+    dir = context.unsafeGetEagerDir(this.getDirName());
+    dir.getIterator(context).map(kv ->
+      (this.keyType(kv.i0), kv.i1.map(this.getType()))
+    )
+  }
+
+  fun getIter(context: mutable Context, key: K): mutable Iterator<V> {
+    dir = context.unsafeGetDir(this.getDirName());
+    dir.getIter(context, key).map(this.getType())
+  }
+
+  fun containsKey(context: mutable Context, key: K): Bool {
+    this.getArray(context, key).size() > 0
+  }
+
+  fun maybeGet(context: mutable Context, key: K): ?V {
+    values = this.getArray(context, key);
+    if (values.size() == 0) return None();
+    Some(values[0])
+  }
+
+  fun unsafeGetArray(context: mutable Context, key: K): Array<V> {
+    dir = context.unsafeGetDir(this.getDirName());
+    dir.getArrayRaw(key).map(this.getType())
+  }
+
+  fun unsafeGet(context: mutable Context, key: K): V {
+    arr = this.unsafeGetArray(context, key);
+    invariant(arr.size() == 1);
+    arr[0]
+  }
+}
+
+module end;

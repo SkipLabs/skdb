@@ -52,8 +52,6 @@ BCFILES32=$(BUILD_DIR)magic.bc $(addprefix $(BUILD_DIR),$(CRELFILES:.c=.bc))
 
 .PHONY: default
 default: $(BUILD_DIR)libskip_runtime32.bc
-	@echo "skargo:library=$(BUILD_DIR)libskip_runtime32.bc"
-	@echo "skargo:preamble=$(COMP_DIR)/preamble/preamble32.ll"
 
 $(BUILD_DIR)magic.c:
 	@date | cksum | awk '{print "unsigned long version = " $$1 ";"}' > $(BUILD_DIR)magic.c

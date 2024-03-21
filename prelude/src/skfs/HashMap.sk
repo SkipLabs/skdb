@@ -1,0 +1,160 @@
+/*****************************************************************************/
+/* Module implemeting a HashMap. */
+/*****************************************************************************/
+
+value class HashMap<+K: Hashable, +V>(map: SortedMap<Int, V>) {
+  static fun createFromItems<K2: Hashable, V2, I: readonly Sequence<(K2, V2)>>[
+    K: K2,
+    V: V2,
+  ](
+    items: I,
+  ): HashMap<K2, V2> {
+    HashMap(
+      SortedMap::createFromItems(
+        items.map(kv -> {
+          (k, v) = kv;
+          (k.hash(), v)
+        }),
+      ),
+    )
+  }
+
+  fun maybeGet<K2: Hashable, V2>[K: K2, V: V2](k: K2): ?V2 {
+    this.map.maybeGet(k.hash())
+  }
+
+  fun containsKey<K2: Hashable>[K: K2](key: K2): Bool {
+    this.map.containsKey(key.hash())
+  }
+
+  fun set<K2: Hashable, V2>[K: K2, V: V2](key: K2, value: V2): HashMap<K2, V2> {
+    nthis: HashMap<K2, V2> = this;
+    nthis with {map => this.map.set(key.hash(), value)}
+  }
+
+  fun get<K2: Hashable>[K: K2](key: K2): V {
+    this.map.get(key.hash())
+  }
+
+  fun remove<K2: Hashable>[K: K2](key: K2): HashMap<K, V> {
+    !this.map = this.map.remove(key.hash());
+    this
+  }
+  /*
+    fun chill(): SortedMap<K, V>;
+
+    static fun create(): SortedMap<K, V>;
+
+    static fun createFromIterator<
+      K2: Hashable,
+      V2,
+      I: mutable Iterator<(K2, V2)>,
+    >[K: K2, V: V2](
+      items: I,
+    ): SortedMap<K2, V2>;
+
+    fun inspect(): Inspect;
+
+    fun isEmpty(): Bool;
+    fun size(): Int;
+
+    private static fun containsKeyImpl<K2: Hashable, V2>[K: K2, V: V2](
+      map: SortedMap<K2, V2>,
+      k: K2,
+    ): Bool;
+
+    fun maybeGetItem<K2: Hashable>[K: K2](k: K2): ?(K, V);
+
+    fun getItem<K2: Hashable>[K: K2](key: K2): (K, V);
+
+
+
+    fun minimum(): ?(K, V);
+
+    fun head(): ?V;
+
+    fun maximum(): ?(K, V);
+
+    fun last(): ?V;
+
+    fun eqBy<K2: Hashable, V2>[K: K2, V: V2](
+      other: SortedMap<K2, V2>,
+      eq: (V2, V2) -> Bool,
+    ): Bool;
+
+    fun hash[K: Hashable, V: Hashable](): Int;
+
+    fun toString[K: readonly Show, V: readonly Show](): String;
+
+    private static fun toStringRecursive<K2: K, V2: V>[
+      K: readonly Show,
+      V: readonly Show,
+    ](
+      m: SortedMap<K2, V2>,
+      vec: mutable Array<String>,
+      offset: Int,
+    ): void;
+
+
+    fun add<K2: Hashable, V2>[K: K2, V: V2](
+      key: K2,
+      value: V2,
+    ): SortedMap<K2, V2>;
+
+    fun setWith<K2: Hashable, V2>[K: K2, V: V2](
+      key: K2,
+      value: V2,
+      f: (V2, V2) -> V2,
+    ): SortedMap<K2, V2>;
+
+
+    fun mergeWith<K2: Hashable, U, R>[K: K2](
+      other: SortedMap<K2, U>,
+      f: (K2, ?V, ?U) -> ?R,
+    ): SortedMap<K2, R>;
+
+    fun merge<K2: Hashable, V2>[K: K2, V: V2](
+      map2: SortedMap<K2, V2>,
+    ): SortedMap<K2, V2>;
+
+    static fun mergeAll<K2: Hashable, V2, I: Sequence<SortedMap<K2, V2>>>[
+      K: K2,
+      V: V2,
+    ](
+      maps: I,
+    ): SortedMap<K2, V2>;
+
+    frozen async fun genMap<V2: frozen>(f: V ~> ^V2): ^SortedMap<K, V2>;
+    fun filter(f: (K, V) -> Bool): SortedMap<K, V>;
+
+    frozen async fun genFilter(f: V ~> ^Bool): ^SortedMap<K, V>;
+    frozen async fun genFilterWithKey(f: (K, V) ~> ^Bool): ^SortedMap<K, V>;
+    fun items(): mutable Iterator<(K, V)>;
+
+    fun keys(): mutable Iterator<K>;
+
+    fun values(): mutable Iterator<V>;
+
+    fun reduce<R>(f: (R, K, V) -> R, init: R): R;
+
+    fun find(p: (K, V) -> Bool): ?V;
+
+    fun findItem(p: (K, V) -> Bool): ?(K, V);
+
+    fun mapAcc<V2, R>(f: (R, K, V) -> (R, V2), init: R): (R, SortedMap<K, V2>);
+    fun joinKeys[K: readonly Show](separator: String): String;
+
+    fun joinValues[V: readonly Show](separator: String): String;
+
+    fun checkInvariants(): void;
+    fun each(f: (K, V) -> void): void;
+
+    fun all(p: (K, V) -> Bool): Bool;
+
+    fun any(p: (K, V) -> Bool): Bool;
+
+    fun mapItems<K2: Hashable, V2>(s: (K, V) -> (K2, V2)): SortedMap<K2, V2>;
+
+    fun filterNone<U>[V: ?U](): SortedMap<K, U>;
+  */
+}

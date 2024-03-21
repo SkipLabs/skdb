@@ -1,0 +1,353 @@
+/*****************************************************************************/
+// This file tests the behavior of the EagerFilter in SKStore to
+// filter a certain amount of files in a directory. What is new is not
+// the ability to filter (you could have done that with a map), it's
+// the ability to define a maximum capacity for that filter. So if you
+// decide to have, let's say, a capacity of 5, the filtering method
+// will only return the first 5 elements. Although that is completely
+// trivial to write in a non-incremental mode (just stop after you
+// outputed 5 files), it's actually a lot more complicated than it
+// seems in an incremental environment. Especially in one where you
+// have to deal with ranges of values to filter over etc ...
+//
+// So this file tests this behavior. How? By generating modifications
+// to a directory that has been filtered with a maximum capacity. How
+// do we know those generated tests are any good?  The methodology is
+// the following (the same to test the rest of SKStore): we know that
+// we want things to incrementally "update". But we also know that,
+// semantically, the result of the update should be exactly the same
+// had we recomputed everything from scratch. So that's exaclty what
+// we are doing in this test. We perform an operation, and then check
+// that the state we end up in is exactly the same as the
+// "recompute-from-scratch" state (as we did in the StressTest for
+// SKStore).
+//
+// Next question you probably have in mind: how do we know that those
+// tests have a good coverage of the edge-cases in the code? Well, I
+// went and introduced an off-by-one error for every single line
+// (where it made sense) in EagerFilter.sync and made sure that the
+// test was catching the error. So I am pretty confident that the
+// logic that we have today is covered. Of course, if the logic
+// changed dramatically, that would no longer be the case. But this
+// test should capture introduced by cosmetic changes.
+//
+// It might seem to be a bit of an overkill. But trust me, when things
+// that were supposed to refresh ... don't. You are in for a very bad
+// day.
+/*****************************************************************************/
+
+module alias T = SKTest;
+
+module SKTest;
+
+/*****************************************************************************/
+/* Configuration class. */
+/*****************************************************************************/
+
+class FilterTestConfig private {
+  nbrRounds: Int,
+  numberOfWritesPerRound: Int,
+  probabilityOfHavingRanges: Int,
+  maxRangeWidth: Int,
+  keyRange: Int,
+  numberOfFilesPerKeyRange: Int,
+  probabilityOfFilteredFile: Int,
+  numberOfRepeatitionPerFileRange: Int,
+  filterCapacityRange: Int,
+  probabilityOfDeleteAtCapacity: Int,
+  probabilityOfDeleteNotAtCapacity: Int,
+} {
+  static fun create(
+    nbrRounds: Int = 100,
+    numberOfWritesPerRound: Int = 10,
+    probabilityOfHavingRanges: Int = 50,
+    maxRangeWidth: Int = 10,
+    keyRange: Int = 10,
+    numberOfFilesPerKeyRange: Int = 4,
+    probabilityOfFilteredFile: Int = 50,
+    numberOfRepeatitionPerFileRange: Int = 3,
+    filterCapacityRange: Int = 5,
+    probabilityOfDeleteAtCapacity: Int = 90,
+    probabilityOfDeleteNotAtCapacity: Int = 10,
+  ): this {
+    invariant(nbrRounds > 0);
+    invariant(numberOfWritesPerRound >= 1);
+    invariant(
+      probabilityOfHavingRanges >= 0 && probabilityOfHavingRanges <= 100,
+    );
+    invariant(maxRangeWidth >= 0);
+    invariant(keyRange >= 1);
+    invariant(numberOfFilesPerKeyRange >= 1);
+    invariant(
+      probabilityOfFilteredFile > 0 && probabilityOfFilteredFile <= 100,
+    );
+    invariant(numberOfRepeatitionPerFileRange >= 1);
+    invariant(filterCapacityRange >= 1);
+    invariant(
+      probabilityOfDeleteAtCapacity >= 0 &&
+        probabilityOfDeleteAtCapacity <= 100,
+    );
+    invariant(
+      probabilityOfDeleteNotAtCapacity >= 0 &&
+        probabilityOfDeleteNotAtCapacity <= 100,
+    );
+    static{
+      nbrRounds,
+      numberOfWritesPerRound,
+      probabilityOfHavingRanges,
+      maxRangeWidth,
+      keyRange,
+      numberOfFilesPerKeyRange,
+      probabilityOfFilteredFile,
+      numberOfRepeatitionPerFileRange,
+      filterCapacityRange,
+      probabilityOfDeleteAtCapacity,
+      probabilityOfDeleteNotAtCapacity,
+    }
+  }
+}
+
+fun genBool(rand: mutable Random, prob: Int): Bool {
+  rand.random(0, 100) < prob
+}
+
+/*****************************************************************************/
+// This is the file type used for the test.
+/*****************************************************************************/
+
+class RepeatFile(
+  // True if the filtering method should keep this element
+  shouldKeep: Bool,
+
+  // The number of repetitions does this file represent
+  repeat: Int,
+) extends SKStore.File uses Orderable {
+  fun size(): Int {
+    this.repeat
+  }
+  fun remove(n: Int): this {
+    !this.repeat = this.repeat - n;
+    this
+  }
+}
+
+/*****************************************************************************/
+// We need two separate paths to check if a key is in Range. This just
+// rechecks everything from scratch, as opposed to the logic in
+// EagerFilter that iterates over the ranges (and is therefore much
+// more efficient). Basically we want to keep things dumb to make sure
+// we are checking against something that is correct.
+/*****************************************************************************/
+
+fun isInRange(k: SKStore.Key, ranges: ?Array<SKStore.KeyRange>): Bool {
+  ranges match {
+  | None() -> true
+  | Some(keyRanges) ->
+    for (kr in keyRanges) {
+      if (k >= kr.start && k <= kr.end) return true;
+    };
+    false
+  }
+}
+
+/*****************************************************************************/
+// Recomputes the limit from scratch. This is the baseline to test the
+// incremental behavior. The code is purposefully dumb and inefficient
+// to make sure it's correct.
+/*****************************************************************************/
+
+fun limitFromScratch(
+  context: mutable SKStore.Context,
+  dirName: SKStore.DirName,
+  capacity: Int,
+  ranges: ?Array<SKStore.KeyRange>,
+): (Array<(SKStore.Key, RepeatFile)>, Int) {
+  n = capacity;
+  result = mutable Vector[];
+  for (kv in context.unsafeGetEagerDir(dirName).unsafeGetFileIter(None())) {
+    (k, files) = kv;
+    for (rawFile in files) {
+      file = RepeatFile::type(rawFile);
+      if (!file.shouldKeep) continue;
+      if (!isInRange(k, ranges)) continue;
+      fsize = file.size();
+      if (fsize > n) {
+        !file = file.remove(fsize - n);
+        !fsize = n;
+      };
+      !n = n - fsize;
+      result.push((k, file));
+      if (n == 0) return (result.toArray(), capacity);
+    }
+  };
+  (result.toArray(), capacity - n)
+}
+
+/*****************************************************************************/
+// Writes a random element in the inputDir.
+/*****************************************************************************/
+
+fun randomWrite(
+  config: FilterTestConfig,
+  context: mutable SKStore.Context,
+  rand: mutable Random,
+  inputDir: SKStore.EHandle<SKStore.IID, RepeatFile>,
+  probabilityOfDelete: Int,
+  alwaysInsert: Bool,
+): void {
+  key = SKStore.IID(rand.random(0, config.keyRange));
+  if (!alwaysInsert && genBool(rand, probabilityOfDelete)) {
+    inputDir.writeArray(context, key, Array[])
+  } else {
+    files = mutable Vector[];
+    for (_ in Range(1, rand.random(1, config.numberOfFilesPerKeyRange))) {
+      file = RepeatFile(
+        alwaysInsert || genBool(rand, config.probabilityOfFilteredFile),
+        rand.random(1, config.numberOfRepeatitionPerFileRange),
+      );
+      files.push(file);
+    };
+    inputDir.writeArray(context, key, files.toArray())
+  }
+}
+
+/*****************************************************************************/
+// Performs a write, then updates the context, then checks that the
+// state of filteredDir is exactly the same as a limit that was
+// recomputed from scratch.
+/*****************************************************************************/
+
+fun writeAndUpdate(
+  config: FilterTestConfig,
+  rand: mutable Random,
+  context: mutable SKStore.Context,
+  inputDir: SKStore.EHandle<SKStore.IID, RepeatFile>,
+  filteredDir: SKStore.EHandle<SKStore.IID, RepeatFile>,
+  capacity: Int,
+  ranges: ?Array<SKStore.KeyRange>,
+): Bool {
+  size = 0;
+  for (_ in Range(0, config.numberOfWritesPerRound)) {
+    // If we are at capacity the probability of deleting goes up
+    if (size > capacity) {
+      randomWrite(
+        config,
+        context,
+        rand,
+        inputDir,
+        config.probabilityOfDeleteAtCapacity,
+        size == 0,
+      )
+    } else {
+      randomWrite(
+        config,
+        context,
+        rand,
+        inputDir,
+        config.probabilityOfDeleteNotAtCapacity,
+        size == 0,
+      )
+    };
+    context.update();
+    resultVec = mutable Vector[];
+    for (kv in context
+      .unsafeGetEagerDir(filteredDir.dirName)
+      .unsafeGetFileIter(None())) {
+      (k, files) = kv;
+      for (file in files) {
+        resultVec.push((k, RepeatFile::type(file)))
+      }
+    };
+    result = resultVec.toArray();
+    (fromScratchResult, !size) = limitFromScratch(
+      context,
+      inputDir.dirName,
+      capacity,
+      ranges,
+    );
+    if (result != fromScratchResult) {
+      debug((result, fromScratchResult));
+      invariant_violation("Oh no!");
+    };
+    if (result != fromScratchResult) return false;
+  };
+  true
+}
+
+/*****************************************************************************/
+// Generates ranges, a range is a way to limit the scope of the
+// filter, so a filter on range [12, 12] means that I only want the
+// elements that are in that range, nothing else. This is how indexes
+// are implemented in SKDB. A index lookup is nothing but a map with a
+// range.
+/*****************************************************************************/
+
+fun genRanges(
+  config: FilterTestConfig,
+  rand: mutable Random,
+): Array<SKStore.KeyRange> {
+  ranges = mutable Vector[];
+  rangesSize = rand.random(1, config.maxRangeWidth);
+  for (_ in Range(0, rangesSize)) {
+    start = rand.random(0, config.maxRangeWidth);
+    ranges.push(
+      SKStore.KeyRange(
+        SKStore.IID(start),
+        SKStore.IID(start + rand.random(0, 4)),
+      ),
+    );
+  };
+  ranges.toArray()
+}
+
+/*****************************************************************************/
+// Creates a directory, then generates a filtered version of the
+// directory, then writes and updates, and finally makes sure that the
+// updated state is correct.
+/*****************************************************************************/
+
+fun testFilterRun(
+  context: mutable SKStore.Context,
+  config: FilterTestConfig,
+  round: Int,
+): Bool {
+  rand = Random::mcreate(1 + round);
+  capacity = rand.random(1, config.filterCapacityRange);
+  inDirName = SKStore.DirName::create("/input/" + round + "/");
+  inputDir = context.mkdir(SKStore.IID::keyType, RepeatFile::type, inDirName);
+
+  ranges = if (genBool(rand, config.probabilityOfHavingRanges)) {
+    Some(genRanges(config, rand));
+  } else {
+    None()
+  };
+
+  filteredDir = inputDir.filter(
+    context,
+    SKStore.DirName::create("/filtered/" + round + "/"),
+    capacity,
+    (_context, _key, rFile) ~> rFile.shouldKeep,
+    rFile ~> rFile.size(),
+    (rfile, n) ~> rfile.remove(n),
+    ranges,
+  );
+
+  writeAndUpdate(config, rand, context, inputDir, filteredDir, capacity, ranges)
+}
+
+/*****************************************************************************/
+// The main entry point of the filtering test.
+/*****************************************************************************/
+
+@test
+fun testFilter(): void {
+  config = FilterTestConfig::create();
+  _ = SKStore.run(context ~> {
+    for (round in Range(0, config.nbrRounds)) {
+      result = testFilterRun(context, config, round);
+      T.expectEq(true, result, "Test limit " + round);
+    }
+  })
+}
+
+module end;

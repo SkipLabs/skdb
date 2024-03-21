@@ -1,0 +1,86 @@
+/*****************************************************************************/
+/* Stress testing changes after. */
+/*****************************************************************************/
+
+module alias T = SKTest;
+
+module SKStoreTest;
+
+@test
+fun testChangesAfter(): void {
+  dirName = SKStore.DirName::create("/sinput/");
+  context = SKStore.run(context ~> {
+    _ = context.mkdir(
+      SKStore.IID::keyType,
+      SKStore.StringFile::type,
+      dirName,
+      Array[
+        (SKStore.IID(0), SKStore.StringFile("0")),
+        (SKStore.IID(1), SKStore.StringFile("0")),
+      ],
+    );
+  });
+  tick = context.tick;
+  context.update();
+  (isReset, changedKeys) = context
+    .unsafeGetEagerDir(dirName)
+    .getChangesAfter(tick);
+  invariant(!isReset);
+  T.expectEq(
+    Array<SKStore.Key>[SKStore.IID(0), SKStore.IID(1)],
+    changedKeys.collect(Array).sorted(),
+    "Test getChangesAfter 0",
+  );
+  !tick = context.tick;
+  write(context, dirName, SKStore.IID(1), Array[]);
+  write(context, dirName, SKStore.IID(2), Array[SKStore.StringFile("22")]);
+  context.update();
+  (!isReset, !changedKeys) = context
+    .unsafeGetEagerDir(dirName)
+    .getChangesAfter(tick);
+  invariant(!isReset);
+  T.expectEq(
+    Array<SKStore.Key>[SKStore.IID(1), SKStore.IID(2)],
+    changedKeys.collect(Array).sorted(),
+    "Test getChangesAfter 1",
+  );
+
+  for (i in Range(0, 1000)) {
+    write(context, dirName, SKStore.IID(i), Array[SKStore.StringFile("23")]);
+  };
+  context.update();
+
+  rand = Random::mcreate(23);
+  for (i in Range(0, 100)) {
+    !tick = context.tick;
+    changes = SortedSet<SKStore.Key>[];
+    for (_ in Range(0, rand.random(0, 100))) {
+      dir = context.unsafeGetEagerDir(dirName);
+      key = SKStore.IID(rand.random(0, 1000));
+      current = dir.getArrayRaw(key);
+      value = Array[SKStore.StringFile(rand.random(44, 48).toString())];
+      if (native_eq(current, value) != 0) {
+        !changes = changes.set(key);
+      };
+      write(context, dirName, key, value);
+    };
+    context.update();
+
+    dir = context.unsafeGetEagerDir(dirName);
+    if (rand.random(0, 10) > 5) {
+      !dir = dir.purge(context, SKStore.Tick(context.tick.value - 1000))
+    };
+    (!isReset, !changedKeys) = context
+      .unsafeGetEagerDir(dirName)
+      .getChangesAfter(tick);
+    invariant(!isReset);
+
+    T.expectEq(
+      changes.collect(Array).sorted(),
+      changedKeys.collect(Array).sorted(),
+      "Test getChangesAfter " + (2 + i),
+    );
+  }
+}
+
+module end;

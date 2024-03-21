@@ -1,0 +1,23 @@
+/*****************************************************************************/
+/* Testing the "WithRegion" construct that allows garbage collection. */
+/*****************************************************************************/
+
+module alias T = SKTest;
+
+module SKStoreTest;
+
+@test
+fun testWithRegion(): void {
+  context = mutable SKStore.Context{};
+  l = List[1, 2, 3];
+  l2 = SKStore.withRegion(context, (_, _) ~> {
+    l.map(x -> x + 1);
+  });
+  acc = 0;
+  for (elt in l2) {
+    !acc = acc + elt;
+  };
+  T.expectEq(acc, 9, "Test withRegion")
+}
+
+module end;

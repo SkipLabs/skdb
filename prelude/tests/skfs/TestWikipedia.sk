@@ -1,0 +1,92 @@
+module SKStoreTest;
+
+class WikiPage{content: String} extends SKStore.File
+
+fun testWikipedia(path: String): mutable SKStore.Context {
+  id = 0;
+  files = FileSystem.readFilesRecursive(path)
+    .map(fileName -> FileSystem.readTextFile(fileName))
+    .map(content -> {
+      mcontent = mutable Vector[];
+      lastWasSpace = true;
+      for (x in content) {
+        x match {
+        | '<' | '>' | '!' | '"' | '\'' | '.' | '/' | '\\' | '=' | ';' | '-'
+        | '(' | ')' | ':' | '\n' | '\t' | '[' | ']' ->
+          if (lastWasSpace) continue;
+          !lastWasSpace = true;
+          mcontent.push(' ')
+        | c ->
+          !lastWasSpace = false;
+          mcontent.push(c)
+        }
+      };
+      WikiPage{content => String::fromChars(mcontent.toArray())}
+    })
+    .filter(page -> page.content != "")
+    .map(page -> {
+      !id = id + 1;
+      (SKStore.IID(id), page)
+    })
+    .toArray();
+  debug("Loaded the files");
+  SKStore.run(context ~> {
+    pages = context.mkdir(
+      SKStore.IID::keyType,
+      WikiPage::type,
+      SKStore.DirName::create("/input/"),
+      files,
+    );
+    queries = context.mkdir(
+      SKStore.IID::keyType,
+      SKStore.StringFile::type,
+      SKStore.DirName::create("/queries/"),
+      Array[],
+    );
+    index = pages.map(
+      SKStore.IID::keyType,
+      SKStore.IntFile::type,
+      context,
+      SKStore.DirName::create("/index/"),
+      (_context, writer, id, values) ~> {
+        value = values.first;
+        tokens = mutable Set[];
+        for (token in value.content.split(" ")) {
+          tokens.insert(token.hash());
+        };
+        for (token in tokens) {
+          writer.set(SKStore.IID(token), SKStore.IntFile(id.value));
+        }
+      },
+    );
+    _results = queries.map(
+      SKStore.IID::keyType,
+      QueryResult::type,
+      context,
+      SKStore.DirName::create("/results/"),
+      (context, writer, key, values) ~> {
+        query = values.first;
+        first = true;
+        results = mutable Set[];
+        for (token in query.value.split(" ")) {
+          newResults = index.getArray(context, SKStore.IID(token.hash()));
+          if (first) {
+            !first = false;
+            !results = Set::mcreateFromItems(newResults.map(x -> x.value));
+          } else {
+            newSet = mutable Set[];
+            for (result in newResults) {
+              if (results.contains(result.value)) {
+                newSet.insert(result.value);
+              }
+            };
+            !results = newSet;
+          }
+        };
+        writer.set(key, QueryResult(results.toArray()))
+      },
+    );
+  })
+}
+
+module end;

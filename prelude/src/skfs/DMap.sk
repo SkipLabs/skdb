@@ -1,0 +1,380 @@
+/******************************************************************************
+ * Efficient Map for "diffing". The server will need to be able to quickly
+ * respond when a client reconnects. Typically, we will need to be able to
+ * quickly send the files that have changed in a directory since the last
+ * connection. We achieve this by introducing an AVL tree that also
+ * maintains the youngest element present in the subtree.
+ * This way, we can walk the tree and prune all the parts that are "too old".
+ ******************************************************************************/
+
+module SKStore;
+
+value class TickRange(max: Tick, current: Tick) {
+  static fun create(tick: Tick): this {
+    TickRange(tick, tick)
+  }
+}
+
+mutable class IterHolder<Key, Value>(iter: mutable Iterator<(Key, Value)>) {
+  mutable fun items(): mutable Iterator<(Key, Value)> {
+    this.iter
+  }
+}
+
+base class Boundary<T> {
+  children =
+  | Inclusive(T)
+  | Exclusive(T)
+}
+
+base class DMap<Key: Orderable, Value> {
+  children =
+  | Nil()
+  | Node{
+    tick: TickRange,
+    height: Int,
+    key: Key,
+    value: Value,
+    left: DMap<Key, Value>,
+    right: DMap<Key, Value>,
+  }
+
+  fun isEmpty(): Bool {
+    this is Nil _
+  }
+
+  fun items(): mutable Iterator<(Key, Value)> {
+    this match {
+    | Nil() -> void
+    | Node{key, value, left, right} ->
+      for (x in left.items()) {
+        yield x;
+      };
+      yield (key, value);
+      for (x in right.items()) {
+        yield x;
+      }
+    }
+  }
+
+  fun values(): mutable Iterator<Value> {
+    this.items().map(x -> x.i1)
+  }
+
+  fun map<Value2>(tick: Tick, f: (Key, Value) -> Value2): DMap<Key, Value2> {
+    this match {
+    | Nil() -> Nil()
+    | Node{key, value, left, right, height} ->
+      left2 = left.map(tick, f);
+      value2 = f(key, value);
+      right2 = right.map(tick, f);
+      Node{
+        tick => TickRange(tick, tick),
+        key,
+        value => value2,
+        left => left2,
+        right => right2,
+        height,
+      }
+    }
+  }
+
+  private fun itemsAfterKeyHelper(
+    boundary: Boundary<Key>,
+  ): mutable Iterator<(Key, Value)> {
+    this match {
+    | Nil() -> void
+    | Node{key, value, left, right} ->
+      if (
+        boundary match {
+        | Inclusive(lastSkipped) -> key >= lastSkipped
+        | Exclusive(lastSkipped) -> key > lastSkipped
+        }
+      ) {
+        for (x in left.itemsAfterKeyHelper(boundary)) {
+          yield x;
+        };
+        yield (key, value);
+      };
+      for (x in right.itemsAfterKeyHelper(boundary)) {
+        yield x;
+      }
+    }
+  }
+
+  fun itemsAfterKey(
+    lastSkippedOpt: ?Boundary<Key>,
+  ): mutable IterHolder<Key, Value> {
+    mutable IterHolder(
+      lastSkippedOpt match {
+      | None() -> this.items()
+      | Some(lastSkipped) -> this.itemsAfterKeyHelper(lastSkipped)
+      },
+    )
+  }
+
+  fun itemsWithTick(): mutable Iterator<(Key, Value, TickRange)> {
+    this match {
+    | Nil() -> void
+    | Node{tick, key, value, left, right} ->
+      for (x in left.itemsWithTick()) {
+        yield x;
+      };
+      yield (key, value, tick);
+      for (x in right.itemsWithTick()) {
+        yield x;
+      }
+    }
+  }
+
+  fun eachWithTick(f: (Key, Tick) -> void): void
+  | Nil() -> void
+  | Node{key, tick, left, right} ->
+    left.eachWithTick(f);
+    f(key, tick.current);
+    right.eachWithTick(f)
+
+  fun getMaxTick(): Tick
+  | Nil() -> Tick(0)
+  | Node{tick} -> tick.max
+
+  fun getHeight(): Int
+  | Nil() -> 0
+  | Node{height} -> height
+
+  static fun empty<Key: Orderable, Value>(): DMap<Key, Value> {
+    Nil()
+  }
+
+  fun getChangesAcc(after: Tick, ref: mutable Ref<SortedSet<Key>>): void
+  | Nil() -> void
+  | Node{tick, key, left, right} ->
+    if (tick.max < after) return void;
+    if (tick.current >= after) {
+      ref.set(ref.get().set(key));
+    };
+    left.getChangesAcc(after, ref);
+    right.getChangesAcc(after, ref)
+
+  fun getChangesAfter(tick: Tick): SortedSet<Key> {
+    ref = mutable Ref(SortedSet[]);
+    this.getChangesAcc(tick, ref);
+    ref.get()
+  }
+
+  fun getChangesAfterIter(after: Tick): mutable Iterator<(Tick, Key, Value)> {
+    this match {
+    | Nil() -> void
+    | Node{tick, key, value, left, right} ->
+      if (tick.max < after) void else {
+        for (elt in left.getChangesAfterIter(after)) {
+          yield elt
+        };
+        if (tick.current >= after) {
+          yield ((tick.current, key, value));
+        };
+        for (elt in right.getChangesAfterIter(after)) {
+          yield elt
+        }
+      }
+    }
+  }
+
+  fun getLastTick(): ?Tick
+  | Nil() -> None()
+  | Node{tick} -> Some(tick.max)
+
+  fun getChangesRangeAcc(
+    tickStart: Tick,
+    tickEnd: Tick,
+    acc: mutable Vector<(Key, Value)>,
+  ): void
+  | Nil() -> void
+  | Node{tick, key, value, left, right} ->
+    if (tick.max < tickStart) return void;
+    if (tick.current >= tickStart && tick.current < tickEnd) {
+      acc.push((key, value));
+    };
+    left.getChangesRangeAcc(tickStart, tickEnd, acc);
+    right.getChangesRangeAcc(tickStart, tickEnd, acc)
+
+  fun getChangesRange(tickStart: Tick, tickEnd: Tick): Vector<(Key, Value)> {
+    acc = mutable Vector[];
+    this.getChangesRangeAcc(tickStart, tickEnd, acc);
+    unsafe_chill_trust_me(acc)
+  }
+
+  static fun node(
+    tick: TickRange,
+    key: Key,
+    value: Value,
+    left: DMap<Key, Value>,
+    right: DMap<Key, Value>,
+  ): DMap<Key, Value> {
+    !tick.max = max(tick.max, max(left.getMaxTick(), right.getMaxTick()));
+    height = 1 + max(left.getHeight(), right.getHeight());
+    Node{tick, height, key, value, left, right}
+  }
+
+  fun set(tick: TickRange, key: Key, value: Value): DMap<Key, Value>
+  | Nil() -> static::node(tick, key, value, Nil(), Nil())
+  | Node{tick => t, left => l, right => r, key => k, value => v} ->
+    !t.max = max(tick.max, t.max);
+    !tick.max = t.max;
+    compare(key, this.key) match {
+    | LT() -> static::balance(t, k, v, l.set(tick, key, value), r)
+    | EQ() -> static::node(tick, k, value, l, r)
+    | GT() -> static::balance(t, k, v, l, r.set(tick, key, value))
+    }
+
+  fun containsKey(k: Key): Bool
+  | Nil() -> false
+  | Node{key, left, right} ->
+    k.compare(key) match {
+    | LT() -> left.containsKey(k)
+    | EQ() -> true
+    | GT() -> right.containsKey(k)
+    }
+
+  fun maybeGet(k: Key): ?Value
+  | Nil() -> None()
+  | Node{key, value, left, right} ->
+    k.compare(key) match {
+    | LT() -> left.maybeGet(k)
+    | EQ() -> Some(value)
+    | GT() -> right.maybeGet(k)
+    }
+
+  fun get(k: Key): Value {
+    this.maybeGet(k).fromSome()
+  }
+
+  fun remove(k: Key): DMap<Key, Value>
+  | Nil() -> this
+  | Node{tick, key, value, left, right} ->
+    k.compare(key) match {
+    | LT() -> static::node(tick, key, value, left.remove(k), right)
+    | EQ() -> DMap::merge(left, right)
+    | GT() -> static::node(tick, key, value, left, right.remove(k))
+    }
+
+  fun filterChanged(f: (Key, Value, Tick) -> Bool): (DMap<Key, Value>, Bool)
+  | Nil() -> (this, false)
+  | Node{tick, key, value, left, right} ->
+    (newLeft, leftChanged) = left.filterChanged(f);
+    keep = f(key, value, tick.current);
+    (newRight, rightChanged) = right.filterChanged(f);
+    if (keep) {
+      if (leftChanged || rightChanged) {
+        (static::node(tick, key, value, newLeft, newRight), true)
+      } else {
+        (this, false)
+      }
+    } else {
+      (DMap::merge(left, right), true)
+    }
+
+  fun filter(f: (Key, Value, Tick) -> Bool): DMap<Key, Value> {
+    this.filterChanged(f).i0
+  }
+
+  fun removeMinBinding(): ((TickRange, Key, Value), DMap<Key, Value>) {
+    this match {
+    | Nil() -> invariant_violation("Remove min binding on empty DMap")
+    | Node{tick, left => Nil(), key, value, right} ->
+      ((tick, key, value), right)
+    | Node{tick, left, key, value, right} ->
+      (binding, !left) = left.removeMinBinding();
+      (binding, static::balance(tick, key, value, left, right))
+    }
+  }
+
+  fun maxBinding(): ?(Key, Value) {
+    this match {
+    | Nil() -> None()
+    | Node{key, value, right => Nil()} -> Some((key, value))
+    | Node{right} -> right.maxBinding()
+    }
+  }
+
+  static fun merge(
+    t1: DMap<Key, Value>,
+    t2: DMap<Key, Value>,
+  ): DMap<Key, Value> {
+    (t1, t2) match {
+    | (Nil(), t) -> t
+    | (t, Nil()) -> t
+    | (_, _) ->
+      ((t, k, v), !t2) = t2.removeMinBinding();
+      static::balance(t, k, v, t1, t2)
+    }
+  }
+
+  protected static fun balance(
+    t: TickRange,
+    k: Key,
+    v: Value,
+    l: DMap<Key, Value>,
+    r: DMap<Key, Value>,
+  ): DMap<Key, Value> {
+    hl = l.getHeight();
+    hr = r.getHeight();
+    if (hl > hr + 2) {
+      l match {
+      | Nil() -> invariant_violation("DMap: empty left tree")
+      | Node{tick => lt, left => ll, right => lr, key => lk, value => lv} ->
+        if (ll.getHeight() >= lr.getHeight()) {
+          static::node(lt, lk, lv, ll, static::node(t, k, v, lr, r))
+        } else {
+          lr match {
+          | Nil() -> invariant_violation("DMap: empty l.right tree")
+          | Node{
+            tick => lrt,
+            left => lrl,
+            right => lrr,
+            key => lrk,
+            value => lrv,
+          } ->
+            static::node(
+              lrt,
+              lrk,
+              lrv,
+              static::node(lt, lk, lv, ll, lrl),
+              static::node(t, k, v, lrr, r),
+            )
+          }
+        }
+      }
+    } else if (hr > hl + 2) {
+      r match {
+      | Nil() -> invariant_violation("DMap empty right tree")
+      | Node{tick => rt, left => rl, right => rr, key => rk, value => rv} ->
+        if (rr.getHeight() >= rl.getHeight()) {
+          static::node(rt, rk, rv, static::node(t, k, v, l, rl), rr)
+        } else {
+          rl match {
+          | Nil() -> invariant_violation("DMap empty r.left tree")
+          | Node{
+            tick => rlt,
+            left => rll,
+            right => rlr,
+            key => rlk,
+            value => rlv,
+          } ->
+            static::node(
+              rlt,
+              rlk,
+              rlv,
+              static::node(t, k, v, l, rll),
+              static::node(rt, rk, rv, rlr, rr),
+            )
+          }
+        }
+      }
+    } else {
+      static::node(t, k, v, l, r)
+    }
+  }
+}
+
+module end;

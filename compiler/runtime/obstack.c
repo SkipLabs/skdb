@@ -37,6 +37,8 @@
 // head: The current position in the page.
 // end: The end of the page.
 
+#define NUMBER_OF_PAGES 20
+
 #ifdef SKIP32
 
 // In 32bits mode there are no threads, so the obstack does not have to be
@@ -47,11 +49,14 @@ struct sk_obstack* page = NULL;
 char* head = NULL;
 char* end = NULL;
 
+sk_cell_t pages[NUMBER_OF_PAGES];
+
 #else
 
 __thread struct sk_obstack* page = NULL;
 __thread char* head = NULL;
 __thread char* end = NULL;
+__thread sk_cell_t pages[NUMBER_OF_PAGES];
 
 #endif
 
@@ -227,7 +232,7 @@ void* SKIP_copy_value_to_Obstack(sk_obstack_t* from_page, void* toCopy) {
   size_t nbr_pages = sk_get_nbr_pages(from_page, page);
   sk_cell_t* pages = sk_get_pages(from_page, nbr_pages);
   void* result = SKIP_copy_with_pages(toCopy, nbr_pages, pages);
-  sk_free_size(pages, sizeof(sk_cell_t) * nbr_pages);
+  sk_free_pages(pages, nbr_pages);
   return result;
 }
 
@@ -254,7 +259,7 @@ void* SKIP_destroy_Obstack_with_value(sk_saved_obstack_t* saved, void* toCopy) {
     }
   }
 
-  sk_free_size(pages, sizeof(sk_cell_t) * nbr_pages);
+  sk_free_pages(pages, nbr_pages);
 
   return result;
 }
@@ -265,7 +270,7 @@ sk_obstack_t* SKIP_switch_to_parent(sk_saved_obstack_t* saved) {
   while (first != NULL && first->previous != saved->page) {
     first = first->previous;
   }
-  
+
   sk_obstack_t* saved_page = page;
   char* saved_head = head;
   char* saved_end = end;
@@ -283,7 +288,8 @@ sk_obstack_t* SKIP_switch_to_parent(sk_saved_obstack_t* saved) {
   return saved_page;
 }
 
-void SKIP_restore_from_parent(sk_saved_obstack_t* saved, sk_obstack_t* leading) {
+void SKIP_restore_from_parent(sk_saved_obstack_t* saved,
+                              sk_obstack_t* leading) {
   // Save the obstack restauration data
   sk_obstack_t* first_page = saved->page;
   char* saved_head = saved->head;
@@ -391,7 +397,12 @@ size_t sk_get_nbr_pages(sk_obstack_t* from_page, sk_obstack_t* to_page) {
 }
 
 sk_cell_t* sk_get_pages(sk_obstack_t* from_page, size_t nbr_pages) {
-  sk_cell_t* result = (sk_cell_t*)sk_malloc(sizeof(sk_cell_t) * nbr_pages);
+  sk_cell_t* result;
+  if (nbr_pages < NUMBER_OF_PAGES) {
+    result = pages;
+  } else {
+    result = (sk_cell_t*)sk_malloc(sizeof(sk_cell_t) * nbr_pages);
+  }
   unsigned int i = 0;
   sk_obstack_t* cursor = from_page != NULL ? from_page : page;
   sk_obstack_t* next = NULL;
@@ -404,6 +415,12 @@ sk_cell_t* sk_get_pages(sk_obstack_t* from_page, size_t nbr_pages) {
   }
   sk_heap_sort(result, nbr_pages);
   return result;
+}
+
+void sk_free_pages(sk_cell_t* pages, size_t nbr_pages) {
+  if (nbr_pages >= NUMBER_OF_PAGES) {
+    sk_free_size(pages, sizeof(sk_cell_t) * nbr_pages);
+  }
 }
 
 size_t binarySearch(sk_cell_t* arr, size_t l, size_t r, char* x) {

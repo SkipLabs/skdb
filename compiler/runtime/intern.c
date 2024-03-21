@@ -232,8 +232,7 @@ void* SKIP_intern_shared(void* obj) {
       str->size = (uint32_t)(uintptr_t)cell.value3;
     }
   }
-
-  sk_free_size(pages, sizeof(sk_cell_t) * nbr_pages);
+  sk_free_pages(pages, nbr_pages);
   sk_stack_free(st);
   sk_stack3_free(st3);
 

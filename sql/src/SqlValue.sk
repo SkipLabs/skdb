@@ -245,7 +245,12 @@ extension class RowValues extends Row {
     if (format is SKStore.OJSON _) {
       result.push("{");
     };
-    for (i in Range(0, size - 1)) {
+    indices = format match {
+    | SKStore.OCSV(Some(permutation)) -> permutation
+    | _ -> Range(0, size - 1)
+    };
+
+    for (i in indices) {
       format match {
       | SKStore.OJSON(fieldNames) -> result.push("\"" + fieldNames[i] + "\":")
       | _ -> void

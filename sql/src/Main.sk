@@ -576,7 +576,12 @@ fun execTail(args: Cli.ParseResults, options: SKDB.Options): void {
     name -> lookup.get(name)
   } else {
     _ -> {
-      TailSpec{since => defaultSince, filter => None(), params => Map[]}
+      TailSpec{
+        since => defaultSince,
+        filter => None(),
+        params => Map[],
+        columns => None(),
+      }
     }
   };
 

@@ -426,7 +426,7 @@ fun getSubsDirs(
         };
 
         format = request.format match {
-        | SKDB.OFK_CSV() -> SKStore.OCSV()
+        | SKDB.OFK_CSV() -> SKStore.OCSV(None())
         | SKDB.OFK_JSON() -> SKStore.OJSON(getFieldNames(context, edir.dirName))
         | SKDB.OFK_SQL() -> SKStore.OSQL()
         | SKDB.OFK_JS() -> SKStore.OJS(getFieldNames(context, edir.dirName))
@@ -597,14 +597,13 @@ fun getIndexByName(
 /* Tables. */
 /*****************************************************************************/
 
-fun getTables(origContext: readonly SKStore.Context): Array<DirDescr> {
+fun getDirDescrs(origContext: readonly SKStore.Context): Array<DirDescr> {
   context = SKStore.Context::fromSaved(origContext.clone());
-  handle = getTableDir(context);
-  handle
-    .items(context)
-    .flatMap(x -> x.i1)
-    .filter(x -> x.isInput)
-    .collect(Array);
+  getTableDir(context).items(context).flatMap(x -> x.i1).collect(Array);
+}
+
+fun getTables(origContext: readonly SKStore.Context): Array<DirDescr> {
+  getDirDescrs(origContext).filter(x -> x.isInput)
 }
 
 fun getTable(

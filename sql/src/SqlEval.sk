@@ -80,6 +80,20 @@ fun decodeTailSpec(input: String, defaultSince: Int): Map<P.Name, TailSpec> {
                 .maybeGetObject("filterParams")
                 .map(o -> decodeParams(o))
                 .default(Map[]),
+              columns => obj.maybeGetString("expectedSchema") match {
+              | None() ->
+                print_error(
+                  "Tailer must specify an expected schema for each table",
+                );
+                skipExit(2)
+              | Some(schemaString) ->
+                if (schemaString == "*") None() else {
+                  Some(
+                    P.Parser::create(schemaString).parseCreateTableSchema()
+                      .columns,
+                  )
+                }
+              },
             },
           )
         | _ ->

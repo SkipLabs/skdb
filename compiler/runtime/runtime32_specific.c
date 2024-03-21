@@ -24,8 +24,6 @@ void* SKIP_getExn() {
 char* end_of_static;
 extern unsigned char* bump_pointer;
 unsigned char* heap_end;
-void* sk_ftable_holder[SK_FTABLE_SIZE];
-extern void** sk_ftable;
 extern SKIP_gc_type_t* epointer_ty;
 
 unsigned char* decr_heap_end(size_t size) {
@@ -36,7 +34,6 @@ unsigned char* decr_heap_end(size_t size) {
 void SKIP_skfs_init(uint32_t size) {
   heap_end = bump_pointer + size;
   end_of_static = (char*)bump_pointer;
-  sk_ftable = sk_ftable_holder;
   char* obj = sk_get_external_pointer();
   epointer_ty = get_gc_type(obj);
 }

@@ -9,7 +9,6 @@ SKIP_gc_type_t* epointer_ty = NULL;
 #ifdef SKIP32
 char sk_dirty_pages[PERSISTENT_TABLE_SIZE];
 extern unsigned char* bump_pointer;
-extern void** sk_ftable;
 
 int32_t sk_dirty_pages_stack[PERSISTENT_TABLE_SIZE];
 int32_t sk_dirty_pages_stack_idx = 0;

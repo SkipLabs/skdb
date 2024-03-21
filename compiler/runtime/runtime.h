@@ -80,6 +80,9 @@ void sk_print_ctx_table();
 /* Types used for the Obstack pages. */
 /*****************************************************************************/
 
+#ifdef SKIP32
+typedef struct sk_size_info sk_size_info_t;
+#endif
 typedef struct sk_obstack sk_obstack_t;
 
 /*****************************************************************************/
@@ -276,7 +279,6 @@ void SKIP_call_after_unlock(char*, char*);
 void SKIP_throw(void*);
 __attribute__((noreturn)) void SKIP_throw_cruntime(int32_t);
 
-void sk_add_ftable(void* ptr, size_t size);
 void sk_commit(char*, uint32_t);
 char* SKIP_context_get_unsafe();
 void sk_context_set(char* obj);
@@ -284,7 +286,13 @@ void sk_context_set_unsafe(char* obj);
 uintptr_t sk_decr_ref_count(void*);
 void sk_free_size(void*, size_t);
 void sk_free_root(char* obj);
+#ifdef SKIP32
+void sk_add_ftable(void*, sk_size_info_t*);
+void* sk_get_ftable(sk_size_info_t*);
+# else
+void sk_add_ftable(void* ptr, size_t size);
 void* sk_get_ftable(size_t size);
+#endif
 void sk_global_lock();
 void sk_global_unlock();
 void sk_incr_ref_count(void*);

@@ -100,16 +100,16 @@ void sk_obstack_attach_page(sk_obstack_t* lpage, sk_obstack_t* next) {
 
 char* sk_large_page(size_t size) {
   size_t block_size = size + sizeof(sk_obstack_t);
-  // This space is needed in case the page gets interned (TO CHECK)
-  block_size += 64;
+  // large pages are create directly on persistance sized to prevent persitence copy
   sk_obstack_t* lpage = (sk_obstack_t*)sk_malloc(block_size);
   sk_obstack_attach_page(lpage, NULL);
+
   lpage->size = block_size;
   sk_saved_obstack_t* saved = &lpage->saved;
   saved->head = NULL;
   saved->end = NULL;
   saved->page = NULL;
-  return lpage->user_data + 64;
+  return lpage->user_data;
 }
 
 void sk_new_page() {

@@ -114,17 +114,6 @@ void* sk_malloc(size_t size) {
   return result;
 }
 
-void* sk_malloc_end(size_t size) {
-  sk_size_info_t info;
-  size = sk_obj_size(size, &info);
-  total_size += size;
-  void* res = sk_get_ftable(&info);
-  if (res != NULL) {
-    return res;
-  }
-  return decr_heap_end(size);
-}
-
 void sk_free_size(void* ptr, size_t size) {
   sk_size_info_t info;
   size = sk_obj_size(size, &info);

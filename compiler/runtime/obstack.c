@@ -48,8 +48,11 @@
 struct sk_obstack* page = NULL;
 char* head = NULL;
 char* end = NULL;
+struct sk_obstack* free_list = NULL;
 
 sk_cell_t pages[NUMBER_OF_PAGES];
+
+unsigned char* decr_heap_end(size_t size);
 
 #else
 
@@ -90,6 +93,32 @@ int sk_is_large_page(sk_obstack_t* page) {
   return sk_page_size(page) > PAGE_SIZE;
 }
 
+void sk_free_page(sk_obstack_t* page) {
+#ifdef SKIP32
+  if (sk_is_large_page(page)) {
+    sk_free_size(page, page->size);
+  } else {
+    page->previous = free_list;
+    free_list = page;
+  }
+#else
+  sk_free_size(page, page->size);
+#endif
+}
+
+sk_obstack_t* sk_malloc_page(size_t block_size) {
+#ifdef SKIP32
+  if (free_list != NULL) {
+    sk_obstack_t* newpage = free_list;
+    free_list = newpage->previous;
+    return newpage;
+  }
+  return (sk_obstack_t*)decr_heap_end(block_size);
+#else
+  return (sk_obstack_t*)sk_malloc(block_size);
+#endif
+}
+
 void sk_obstack_attach_page(sk_obstack_t* lpage, sk_obstack_t* next) {
   if (next != NULL) {
     next->previous = lpage->previous;
@@ -100,7 +129,8 @@ void sk_obstack_attach_page(sk_obstack_t* lpage, sk_obstack_t* next) {
 
 char* sk_large_page(size_t size) {
   size_t block_size = size + sizeof(sk_obstack_t);
-  // large pages are create directly on persistance sized to prevent persitence copy
+  // large pages are create directly on persistance sized to prevent persitence
+  // copy
   sk_obstack_t* lpage = (sk_obstack_t*)sk_malloc(block_size);
   sk_obstack_attach_page(lpage, NULL);
 
@@ -115,12 +145,7 @@ char* sk_large_page(size_t size) {
 void sk_new_page() {
   size_t block_size = PAGE_SIZE;
   sk_obstack_t* previous_page = page;
-#ifdef SKIP32
-  page = (sk_obstack_t*)sk_malloc_end(block_size);
-#endif
-#ifdef SKIP64
-  page = (sk_obstack_t*)sk_malloc(block_size);
-#endif
+  page = sk_malloc_page(block_size);
   page->previous = previous_page;
   page->size = block_size;
   sk_saved_obstack_t* saved = &page->saved;
@@ -215,7 +240,7 @@ void SKIP_destroy_Obstack(sk_saved_obstack_t* saved) {
   while (current != NULL && current != saved_page) {
     tofree = current;
     current = current->previous;
-    sk_free_size(tofree, tofree->size);
+    sk_free_page(tofree);
   }
   head = saved_head;
   page = saved_page;
@@ -254,8 +279,7 @@ void* SKIP_destroy_Obstack_with_value(sk_saved_obstack_t* saved, void* toCopy) {
   for (i = 0; i < nbr_pages; i++) {
     if ((uint64_t)pages[i].key != pages[i].value) {
       sk_obstack_t* fpage = (sk_obstack_t*)(pages[i].key);
-      size_t fpage_size = fpage->size;
-      sk_free_size(fpage, fpage_size);
+      sk_free_page(fpage);
     }
   }
 

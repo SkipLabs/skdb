@@ -300,7 +300,6 @@ int sk_is_const(void*);
 int sk_is_large_page(sk_obstack_t* page);
 int sk_is_static(void*);
 void* sk_malloc(size_t size);
-void* sk_malloc_end(size_t);
 char* sk_new_const(char* cst);
 void sk_obstack_attach_page(sk_obstack_t* lpage, sk_obstack_t* next);
 size_t sk_page_size(sk_obstack_t* page);

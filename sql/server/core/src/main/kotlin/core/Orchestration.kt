@@ -46,7 +46,7 @@ data class ProtoSchemaQuery(
     val suffix: String? = null,
 ) : ProtoMessage()
 
-class ProtoPushPromise() : ProtoMessage()
+class ProtoPushPromise(val schemas: String) : ProtoMessage()
 
 data class ProtoCreateDb(val name: String) : ProtoMessage()
 
@@ -114,7 +114,11 @@ fun decodeProtoMsg(data: ByteBuffer): ProtoMessage {
           params)
     }
     3u -> {
-      ProtoPushPromise()
+      data.position(data.position() + 3) // skip over reserved
+      val schemasLength = data.getShort()
+      val schemasBytes = ByteArray(schemasLength.toInt())
+      data.get(schemasBytes)
+      ProtoPushPromise(String(schemasBytes, StandardCharsets.UTF_8))
     }
     4u -> {
       val scope = SchemaScope.values()[(data.get().toUInt() and 0x0Fu).toInt()]
@@ -285,9 +289,24 @@ fun encodeProtoMsg(msg: ProtoMessage): ByteBuffer {
       buf.flip()
     }
     is ProtoPushPromise -> {
-      val buf = ByteBuffer.allocate(4)
+      val buf = ByteBuffer.allocate(6 + msg.schemas.length * 4)
+
       buf.putInt(0x0)
       buf.put(0, 0x03.toByte())
+
+      val pos = buf.position()
+      buf.putInt(0x0)
+      val encoder = StandardCharsets.UTF_8.newEncoder()
+      var res = encoder.encode(CharBuffer.wrap(msg.schemas), buf, true)
+      if (!res.isUnderflow()) {
+        res.throwException()
+      }
+      res = encoder.flush(buf)
+      if (!res.isUnderflow()) {
+        res.throwException()
+      }
+      buf.putInt(pos, (buf.position() - pos - 4))
+
       buf.flip()
     }
     else -> throw RuntimeException("We don't support encoding ${msg}")

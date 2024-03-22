@@ -233,6 +233,7 @@ class RequestHandler(
             skdb.writeCsv(
                 accessKey,
                 replicationId,
+                request.schemas,
                 { data, shouldFlush -> stream.send(encodeProtoMsg(ProtoData(data, shouldFlush))) },
                 { stream.error(2000u, "Unexpected EOF") })
         return ProcessPipe(proc)

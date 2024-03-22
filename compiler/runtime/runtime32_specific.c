@@ -23,8 +23,13 @@ void* SKIP_getExn() {
 
 char* end_of_static;
 extern unsigned char* bump_pointer;
+unsigned char* real_heap_end;
 unsigned char* heap_end;
 extern SKIP_gc_type_t* epointer_ty;
+
+void reset_heap_end() {
+  heap_end = real_heap_end;
+}
 
 unsigned char* decr_heap_end(size_t size) {
   heap_end -= size;
@@ -32,7 +37,8 @@ unsigned char* decr_heap_end(size_t size) {
 }
 
 void SKIP_skfs_init(uint32_t size) {
-  heap_end = bump_pointer + size;
+  real_heap_end = bump_pointer + size;
+  heap_end = real_heap_end;
   end_of_static = (char*)bump_pointer;
   char* obj = sk_get_external_pointer();
   epointer_ty = get_gc_type(obj);

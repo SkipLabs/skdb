@@ -53,6 +53,7 @@ struct sk_obstack* free_list = NULL;
 sk_cell_t pages[NUMBER_OF_PAGES];
 
 unsigned char* decr_heap_end(size_t size);
+void reset_heap_end();
 
 #else
 
@@ -251,6 +252,12 @@ void SKIP_destroy_Obstack(sk_saved_obstack_t* saved) {
     saved->head = NULL;
     saved->end = NULL;
   }
+  #ifdef SKIP32
+  if (page == NULL && head == NULL && end == NULL) {
+    free_list = NULL;
+    reset_heap_end();
+  }
+  #endif
 }
 
 void* SKIP_copy_value_to_Obstack(sk_obstack_t* from_page, void* toCopy) {

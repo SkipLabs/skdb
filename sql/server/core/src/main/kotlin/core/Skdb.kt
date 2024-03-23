@@ -159,8 +159,7 @@ class Skdb(val name: String, private val dbPath: String) {
     val proc = pb.start()
 
     val stdin = proc.outputStream.buffered()
-    jsonMapper.writeValue(stdin, schemas)
-    stdin.write("\n".toByteArray(StandardCharsets.UTF_8))
+    stdin.write((schemas + "\n").toByteArray(StandardCharsets.UTF_8))
     stdin.close()
 
     // we work with text lines as it is convenient. there's a trivial

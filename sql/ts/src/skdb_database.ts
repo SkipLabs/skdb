@@ -188,14 +188,14 @@ export class SKDBSyncImpl implements SKDBSync {
           "(userID TEXT PRIMARY KEY, permissions INTEGER NOT NULL, skdb_access TEXT NOT NULL)",
       },
       {
-        table: "skdb_groups",
-        expectedColumns:
-          "(groupID TEXT PRIMARY KEY, skdb_author TEXT, adminID TEXT NOT NULL, skdb_access TEXT NOT NULL)",
-      },
-      {
         table: "skdb_group_permissions",
         expectedColumns:
           "(groupID TEXT NOT NULL, userID TEXT, permissions INTEGER NOT NULL, skdb_access TEXT NOT NULL)",
+      },
+      {
+        table: "skdb_groups",
+        expectedColumns:
+          "(groupID TEXT PRIMARY KEY, skdb_author TEXT, adminID TEXT NOT NULL, skdb_access TEXT NOT NULL)",
       },
     );
     this.exec(
@@ -363,6 +363,8 @@ export class SKDBSyncImpl implements SKDBSync {
   async mirror(...tables: MirrorDefn[]) {
     const is_mirror_def_of = (table: any) => (mirror_def: any) =>
       mirror_def.table === table;
+    // order matters. we want to mirror up group permission changes
+    // before group changes to handle cyclic dependencies
     for (const metatable of [
       {
         table: "skdb_user_permissions",
@@ -370,14 +372,14 @@ export class SKDBSyncImpl implements SKDBSync {
           "(userID TEXT PRIMARY KEY, permissions INTEGER NOT NULL, skdb_access TEXT NOT NULL)",
       },
       {
-        table: "skdb_groups",
-        expectedColumns:
-          "(groupID TEXT PRIMARY KEY, skdb_author TEXT, adminID TEXT NOT NULL, skdb_access TEXT NOT NULL)",
-      },
-      {
         table: "skdb_group_permissions",
         expectedColumns:
           "(groupID TEXT NOT NULL, userID TEXT, permissions INTEGER NOT NULL, skdb_access TEXT NOT NULL)",
+      },
+      {
+        table: "skdb_groups",
+        expectedColumns:
+          "(groupID TEXT PRIMARY KEY, skdb_author TEXT, adminID TEXT NOT NULL, skdb_access TEXT NOT NULL)",
       },
     ]) {
       if (!tables.some(is_mirror_def_of(metatable.table)))

@@ -485,7 +485,11 @@ fun checkUserCanReadRow(
         groupIndex = skdbGroups.getIndex(context);
         adminID = groupIndex.get(skdbGroups.makeKey(groupID)) match {
         | Some(r) -> r.getString(adminIDColName)
-        | None() -> throw SqlError(0, "malformed predefined table skdb_groups")
+        | None() ->
+          throw SqlError(
+            0,
+            "malformed predefined table skdb_groups while checking read",
+          )
         };
         if (access.canRead(context, adminID)) {
           return AROK();
@@ -549,13 +553,13 @@ fun checkUserCanWriteRow(
     };
     hasAdminPrivileges = {
       groupIndex = skdbGroups.getIndex(context);
-      adminID = groupIndex.get(skdbGroups.makeKey(groupID)) match {
-      | Some(r) -> r.getString(adminIDColName)
-      | None() -> throw SqlError(0, "malformed predefined table skdb_groups")
+      groupIndex.get(skdbGroups.makeKey(groupID)) match {
+      | Some(r) ->
+        adminID = r.getString(adminIDColName);
+        (row.repeat == 0 && access.canDelete(context, adminID)) ||
+          access.canInsert(context, adminID)
+      | None() -> return AROK()
       };
-
-      (row.repeat == 0 && access.canDelete(context, adminID)) ||
-        access.canInsert(context, adminID)
     };
     if (!hasAdminPrivileges) {
       return ARError(ARENotAdmin{userID => access.userID, groupID => groupID})
@@ -595,6 +599,12 @@ fun checkUserCanWriteRow(
           return ARError(ARECannotDelete{userID => access.userID, groupID});
         }
       } else {
+        if (tableName.lowercase() == SKDBGroups::name.lower) {
+          row.getString(skdbGroups.getColNbr(groupIDColName)) match {
+          | Some(groupName) if (groupName == groupID) -> return AROK()
+          | _ -> void
+          }
+        };
         if (!access.canInsert(context, groupID)) {
           return ARError(ARECannotInsert{userID => access.userID, groupID});
         }

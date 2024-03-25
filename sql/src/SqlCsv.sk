@@ -298,6 +298,25 @@ fun applyDiffStrategy(
   };
 
   checkpointAndAck = (context, delta) ~> {
+    // the feedback table tracks the local writes that have been
+    // acknowledged - and as a result controls purging for clients.
+    // seed this if it hasn't already been done. this prevents a large
+    // initial mirror from purging and then wrongly triggering a
+    // rebuild.
+    SKDB.getWatermark(
+      context,
+      SKDB.feedbackTable(table.name.lower),
+      Some(identity),
+    ) match {
+    | None() ->
+      SKDB.setWatermark(
+        context,
+        SKDB.feedbackTable(table.name.lower),
+        identity,
+        delta.tick,
+      )
+    | _ -> void
+    };
     checkpoint match {
     // we do not checkpoint 0. this value communicates that you
     // haven't received a full snapshot yet. it's used for e.g.

@@ -597,13 +597,23 @@ fun getIndexByName(
 /* Tables. */
 /*****************************************************************************/
 
-fun getDirDescrs(origContext: readonly SKStore.Context): Array<DirDescr> {
+fun getDirDescrs(
+  origContext: readonly SKStore.Context,
+): SortedMap<P.Name, SKDB.DirDescr> {
   context = SKStore.Context::fromSaved(origContext.clone());
-  getTableDir(context).items(context).flatMap(x -> x.i1).collect(Array);
+  getTableDir(context)
+    .items(context)
+    .flatMap(x -> x.i1)
+    .reduce((acc, curr) -> acc.set(curr.name, curr), SortedMap::create())
 }
 
 fun getTables(origContext: readonly SKStore.Context): Array<DirDescr> {
-  getDirDescrs(origContext).filter(x -> x.isInput)
+  context = SKStore.Context::fromSaved(origContext.clone());
+  getTableDir(context)
+    .items(context)
+    .flatMap(x -> x.i1)
+    .filter(x -> x.isInput)
+    .collect(Array);
 }
 
 fun getTable(

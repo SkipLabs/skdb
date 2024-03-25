@@ -82,10 +82,16 @@ fun buildTailFilter(
   };
 }
 
-fun buildSchemaTransform(
-  source: Array<P.ColumnDefinition>,
-  target: Array<P.ColumnDefinition>,
-): Array<Int> {
+fun buildCSVSchemaTransform(
+  dirDescr: SKDB.DirDescr,
+  tailSpec: TailSpec,
+): SKStore.OutputFormat {
+  source = dirDescr.schema;
+  target = tailSpec.columns match {
+  | None() -> return SKStore.OCSV(None())
+  | Some(targetSchema) -> targetSchema
+  };
+
   for (sourceCol in source) {
     if (
       sourceCol.notNull is Some _ &&
@@ -99,14 +105,16 @@ fun buildSchemaTransform(
     };
   };
 
-  target.map(targetCol -> {
+  schemaTransformation = target.map(targetCol -> {
     source.indexOf(targetCol) match {
     | None() ->
       print_error(`Incompatible schema: unknown column ${targetCol.name}`);
       skipExit(2)
     | Some(idx) -> idx
     }
-  })
+  });
+
+  SKStore.OCSV(Some(schemaTransformation));
 }
 
 fun tailShouldWake(
@@ -162,13 +170,7 @@ fun tailSub(
       print_error("Error: session not found");
       skipExit(2)
     | Some(sub) ->
-      dirDescrs: SortedMap<P.Name, SKDB.DirDescr> = {
-        dirsArray = getDirDescrs(gContext);
-        dirsArray.foldl(
-          (acc, curr) -> acc.set(curr.name, curr),
-          SortedMap::create(),
-        )
-      };
+      dirDescrs = getDirDescrs(gContext);
       sub with {
         dirSubs => sub.dirSubs.map(dirSub -> {
           table = dirSub.dirName.toString().stripPrefix("/").stripSuffix("/");
@@ -190,14 +192,7 @@ fun tailSub(
               dirDescr,
             ),
             format => options.format match {
-            | SKDB.OFK_CSV() ->
-              tailSpec.columns match {
-              | None() -> SKStore.OCSV(None())
-              | Some(targetSchema) ->
-                SKStore.OCSV(
-                  Some(buildSchemaTransform(dirDescr.schema, targetSchema)),
-                )
-              }
+            | SKDB.OFK_CSV() -> buildCSVSchemaTransform(dirDescr, tailSpec)
             | _ -> dirSub.format
             },
           }
@@ -234,7 +229,9 @@ fun tailSub(
         dirName = dirSub.dirName;
         edir = context.unsafeGetEagerDir(dirName);
         format = options.format match {
-        | SKDB.OFK_CSV() -> dirSub.format
+        | SKDB.OFK_CSV() ->
+          assert(dirSub.format is SKStore.OCSV(_));
+          dirSub.format
         | SKDB.OFK_JSON() -> SKStore.OJSON(getFieldNames(context, dirName))
         | SKDB.OFK_SQL() -> SKStore.OSQL()
         | SKDB.OFK_JS() -> SKStore.OJS(getFieldNames(context, dirName))

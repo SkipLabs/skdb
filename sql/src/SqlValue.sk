@@ -245,12 +245,16 @@ extension class RowValues extends Row {
     if (format is SKStore.OJSON _) {
       result.push("{");
     };
+
+    // This layer of indirection over indices is to support client-specified
+    // schemas which permute and/or elide columns
     indices = format match {
     | SKStore.OCSV(Some(permutation)) -> permutation
-    | _ -> Range(0, size - 1)
+    | _ -> Range(0, size).collect(Array)
     };
 
-    for (i in indices) {
+    for (index in Range(0, size - 1)) {
+      i = indices[index];
       format match {
       | SKStore.OJSON(fieldNames) -> result.push("\"" + fieldNames[i] + "\":")
       | _ -> void
@@ -266,7 +270,7 @@ extension class RowValues extends Row {
       result.push("\"" + fieldNames[size - 1] + "\":")
     | _ -> void
     };
-    values[size - 1] match {
+    values[indices[size - 1]] match {
     | None() -> if (format is SKStore.OJSON _) result.push("null") else void
     | Some(v) -> result.push(v.toStringWithFormat(format))
     };

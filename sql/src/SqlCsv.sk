@@ -277,6 +277,7 @@ fun applyDiffStrategy(
   rows: Array<SKDB.RowValues>,
   checkpoint: ?Int,
   snapshot: ?Int,
+  userFileOpt: ?SKDB.UserFile,
 ): ?((
   mutable SKStore.Context,
   mutable SKStore.Context,
@@ -325,6 +326,34 @@ fun applyDiffStrategy(
     None()
   };
 
+  privacyIsOk = (context) ~> {
+    userFileOpt match {
+    | None() -> true
+    | Some(userFile) ->
+      accessSolver = SKDB.AccessSolver::create(context, userFile.name);
+      tableName = table.name.origName;
+      authorCol = SKDB.getAuthorIdx(table);
+      accessCol = SKDB.getAccessIdx(table);
+      for (row in rows) {
+        SKDB.checkUserCanWriteRow(
+          context,
+          accessSolver,
+          tableName,
+          authorCol,
+          accessCol,
+          row,
+        ) match {
+        | SKDB.AROK() -> void
+        | SKDB.ARError(err) ->
+          print_error("Error: " + err.toString());
+          break false
+        }
+      } else {
+        true
+      }
+    }
+  };
+
   // we have several update strategies:
 
   // assignRows - if there are no constraints on the table then we
@@ -334,6 +363,10 @@ fun applyDiffStrategy(
     if (shouldShortCircuitUpdate(root)) {
       checkpointAndAck(newRoot, delta);
       return void;
+    };
+
+    if (!privacyIsOk(newRoot)) {
+      invariant_violation("trying to write rows that do not privacy check");
     };
 
     dir = newRoot.unsafeGetEagerDir(table.dirName);
@@ -391,6 +424,10 @@ fun applyDiffStrategy(
     if (shouldShortCircuitUpdate(root)) {
       checkpointAndAck(newRoot, delta);
       return void;
+    };
+
+    if (!privacyIsOk(newRoot)) {
+      invariant_violation("trying to write rows that do not privacy check");
     };
 
     dir = newRoot.unsafeGetEagerDir(table.dirName);
@@ -580,6 +617,7 @@ mutable class TableDiff(
 }
 
 fun buildDiffChain(
+  userFileOpt: ?SKDB.UserFile,
   tableDiffs: readonly Vector<mutable TableDiff>,
   identity: Int,
   checkpoint: Int,
@@ -596,6 +634,7 @@ fun buildDiffChain(
       td.rows.toArray(),
       Some(checkpoint),
       td.snapshot,
+      userFileOpt,
     );
   });
   Some((newRoot, delta, root) ~> {
@@ -634,8 +673,8 @@ fun replayDiff(
   | _ -> void
   };
 
-  immContext = context.clone();
   userFileOpt = user.map(x -> SKDB.UserFile::create(context, x));
+  immContext = context.clone();
   state: ?(mutable DiffParsingState) = None();
   try {
     loop {
@@ -676,51 +715,9 @@ fun replayDiff(
         tableDiffs.push(currentDiff);
         checkpoint = parseCheckpoint(line);
 
-        rejectedAnyDiff = false;
-        userFileOpt.each(userFile ->
-          SKStore.withContext(privacyContext -> {
-            accessSolver = SKDB.AccessSolver::create(
-              privacyContext,
-              userFile.name,
-            );
-            for (diff in tableDiffs) {
-              if (rejectedAnyDiff) {
-                break void
-              };
-              tableName = diff.table.name.origName;
-              authorCol = SKDB.getAuthorIdx(diff.table);
-              accessCol = SKDB.getAccessIdx(diff.table);
-              for (row in diff.rows) {
-                SKDB.checkUserCanWriteRow(
-                  privacyContext,
-                  accessSolver,
-                  tableName,
-                  authorCol,
-                  accessCol,
-                  row,
-                ) match {
-                | SKDB.AROK() -> void
-                | SKDB.ARError(err) ->
-                  print_error("Error: " + err.toString());
-                  !rejectedAnyDiff = true;
-                  break void
-                }
-              };
-            };
-          })
-        );
-        if (rejectedAnyDiff) {
-          writer = mutable Debug.BufferedWriter(print_raw, 4096);
-          for (tdiff in tableDiffs) {
-            nack(writer, tdiff)
-          };
-          writer.flush();
-          break SKStore.CContinue(None())
-        } else {
-          break SKStore.CContinue(
-            buildDiffChain(tableDiffs, identity, checkpoint),
-          )
-        }
+        break SKStore.CContinue(
+          buildDiffChain(userFileOpt, tableDiffs, identity, checkpoint),
+        )
 
       | current @ Some(DiffParsingState(_, currentDiff)) if (
         line == "!rebuild"

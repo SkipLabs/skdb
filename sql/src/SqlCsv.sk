@@ -824,16 +824,18 @@ fun replayStdin(): Map<String, (Int, Int)> {
     };
     chars: mutable Vector<Char> = mutable Vector[];
     iter = line.getIter();
-    header = false;
+    skip = false;
     checkpoint = false;
-    rebuild = false;
     loop {
       c = iter.next() match {
       | None() ->
         print_error("Error, line " + lineNbr + ": unexpected end of line");
         skipExit(23)
       | Some('^') ->
-        !header = true;
+        !skip = true;
+        break void
+      | Some('!') ->
+        !skip = true;
         break void
       | Some(':') ->
         !checkpoint = true;
@@ -842,7 +844,6 @@ fun replayStdin(): Map<String, (Int, Int)> {
       };
       if (c == '\t') {
         if (chars.size() == 0 || chars[0] == '\t') {
-          !rebuild = true;
           break void
         } else {
           break void
@@ -854,12 +855,7 @@ fun replayStdin(): Map<String, (Int, Int)> {
       };
       chars.push(c);
     };
-    if (header) {
-      continue;
-    };
-    if (rebuild) {
-      all.clear();
-      commit();
+    if (skip) {
       continue;
     };
     if (checkpoint) {

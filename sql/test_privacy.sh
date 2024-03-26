@@ -3,8 +3,6 @@
 pass() { printf "%-32s OK\n" "TEST $1:"; }
 fail() { printf "%-32s FAILED\n" "TEST $1:"; }
 
-trap "trap - SIGTERM && kill -- -$$ 2> /dev/null" SIGINT SIGTERM EXIT
-
 DBFILE=/tmp/test.db
 DBCOPYFILE=/tmp/test_copy.db
 
@@ -280,11 +278,8 @@ fi
 # PERMISSION CHANGES WHILE TAILING
 ###############################################################################
 
-tail -f /dev/null |
-  $SKDB tail $subt1 --format=csv --user ID3 --follow |
-  $SKDB_COPY write-csv > /dev/null &
-
-tailerID=$!
+$SKDB tail $subt1 --format=csv --user ID3 --follow |
+  $SKDB_COPY write-csv --enable-rebuilds > /dev/null &
 
 # Just leaving enough time for the tailer to fill up with data. The
 # test is less interesting if it doesn't.
@@ -323,9 +318,12 @@ pass "GROUP PERMISSION UPDATE2"
  echo "commit;"
 )| $SKDB
 
-sleep 1
+# restart tail. it will have exited after sending a rebuild
+$SKDB tail $subt1 --format=csv --user ID3 --follow |
+  $SKDB_COPY write-csv --enable-rebuilds > /dev/null &
+tailerID=$!
 
-echo "select * from t1" | $SKDB_COPY
+sleep 1
 
 # wait for the data to arrive
 until echo "select * from t1" | $SKDB_COPY | grep -q "240"; do
@@ -338,3 +336,6 @@ done
 
 # The reset was successful
 pass "GROUP PERMISSION UPDATE3"
+
+kill "$tailerID"
+wait

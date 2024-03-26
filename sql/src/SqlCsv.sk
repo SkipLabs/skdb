@@ -2,6 +2,8 @@ module alias P = SQLParser;
 
 module SKCSV;
 
+class PrivacyWriteViolation() extends Exception {}
+
 fun requiresEscape(ch: Char): .Bool {
   !Chars.isPrintableAscii(ch) || (ch == '"') || (ch == '\\');
 }
@@ -385,7 +387,7 @@ fun applyDiffStrategy(
     };
 
     if (!privacyIsOk(newRoot)) {
-      invariant_violation("trying to write rows that do not privacy check");
+      throw PrivacyWriteViolation()
     };
 
     dir = newRoot.unsafeGetEagerDir(table.dirName);
@@ -446,7 +448,7 @@ fun applyDiffStrategy(
     };
 
     if (!privacyIsOk(newRoot)) {
-      invariant_violation("trying to write rows that do not privacy check");
+      throw PrivacyWriteViolation()
     };
 
     dir = newRoot.unsafeGetEagerDir(table.dirName);
@@ -623,6 +625,14 @@ fun parseTableChange(
   })
 }
 
+class FinalTableDiff(
+  table: SKDB.DirDescr,
+  snapshot: ?Int,
+  rebuild: Bool,
+  rows: Array<SKDB.RowValues>,
+  lines: Array<String>,
+) {}
+
 mutable class TableDiff(
   table: SKDB.DirDescr,
   snapshot: ?Int,
@@ -633,11 +643,21 @@ mutable class TableDiff(
   static fun create(table: SKDB.DirDescr, snapshot: ?Int): mutable this {
     mutable static(table, snapshot, false, mutable Vector[], mutable Vector[])
   }
+
+  readonly fun freeze(): FinalTableDiff {
+    FinalTableDiff(
+      this.table,
+      this.snapshot,
+      this.rebuild,
+      this.rows.toArray(),
+      this.lines.toArray(),
+    )
+  }
 }
 
 fun buildDiffChain(
   userFileOpt: ?SKDB.UserFile,
-  tableDiffs: readonly Vector<mutable TableDiff>,
+  tableDiffs: Array<FinalTableDiff>,
   identity: Int,
   checkpoint: Int,
 ): ?((
@@ -650,17 +670,27 @@ fun buildDiffChain(
       td.table,
       identity,
       td.rebuild,
-      td.rows.toArray(),
+      td.rows,
       Some(checkpoint),
       td.snapshot,
       userFileOpt,
     );
   });
   Some((newRoot, delta, root) ~> {
-    for (strategy in strategies) {
-      if (strategy is Some _) {
-        strategy.fromSome()(newRoot, delta, root)
+    try {
+      for (strategy in strategies) {
+        if (strategy is Some _) {
+          strategy.fromSome()(newRoot, delta, root)
+        }
       }
+    } catch {
+    | PrivacyWriteViolation _ ->
+      writer = mutable Debug.BufferedWriter(print_raw, 4096);
+      for (tdiff in tableDiffs) {
+        nack(writer, tdiff)
+      };
+      writer.flush()
+    | exn -> throw exn
     }
   })
 }
@@ -670,7 +700,7 @@ mutable class DiffParsingState(
   currentDiff: mutable TableDiff,
 )
 
-fun nack(writer: mutable Debug.BufferedWriter, diff: readonly TableDiff): void {
+fun nack(writer: mutable Debug.BufferedWriter, diff: FinalTableDiff): void {
   writer.write("^" + SKDB.feedbackTable(diff.table.name.origName) + "\n");
   for (line in diff.lines) {
     writer.write(line);
@@ -735,7 +765,12 @@ fun replayDiff(
         checkpoint = parseCheckpoint(line);
 
         break SKStore.CContinue(
-          buildDiffChain(userFileOpt, tableDiffs, identity, checkpoint),
+          buildDiffChain(
+            userFileOpt,
+            tableDiffs.map(td -> td.freeze()).toArray(),
+            identity,
+            checkpoint,
+          ),
         )
 
       | current @ Some(DiffParsingState(_, currentDiff)) if (

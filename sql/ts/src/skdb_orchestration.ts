@@ -42,6 +42,7 @@ type ProtoRequestTailBatch = {
 
 type ProtoPushPromise = {
   type: "pushPromise";
+  schemas: Record<string,string>;
 };
 
 type ProtoRequestCreateDb = {
@@ -193,10 +194,15 @@ function encodeProtoMsg(msg: ProtoMsg): ArrayBuffer {
       return buf;
     }
     case "pushPromise": {
-      const buf = new ArrayBuffer(4);
+      const serializedSchemas = JSON.stringify(msg.schemas)
+      const buf = new ArrayBuffer(4 + serializedSchemas.length * 4);
       const dataView = new DataView(buf);
+      const uint8View = new Uint8Array(buf);
+      const textEncoder = new TextEncoder();
+      const encodeResult = textEncoder.encodeInto(serializedSchemas, uint8View.subarray(6));
       dataView.setUint8(0, 0x3); // type
-      return buf.slice(0, 4);
+      dataView.setUint16(4, encodeResult.written || 0, false);
+      return buf.slice(0, 6 + (encodeResult.written || 0));
     }
     case "createDatabase": {
       const buf = new ArrayBuffer(3 + msg.name.length * 4);
@@ -1397,7 +1403,7 @@ class SKDBServer implements RemoteSKDB {
   private creds: Creds;
   private replicationUid: string = "";
   private localTailSession: string | undefined = undefined;
-  private mirroredTables: Set<string> = new Set();
+  private mirroredTables: Map<string, string> = new Map();
   private mirrorStreams: Set<ResilientStream> = new Set();
   private onRebootFn?: () => void;
 
@@ -1574,7 +1580,8 @@ class SKDBServer implements RemoteSKDB {
     });
   }
 
-  private async establishLocalTail(tables: string[]): Promise<string> {
+  private async establishLocalTail(schemas: Map<string, string>): Promise<string> {
+    const tables = [...schemas.keys()];
     const stream = await this.connection.openResilientStream();
     this.mirrorStreams.add(stream);
     const client = this.client;
@@ -1640,6 +1647,7 @@ class SKDBServer implements RemoteSKDB {
 
     const request: ProtoPushPromise = {
       type: "pushPromise",
+      schemas: Object.fromEntries(schemas)
     };
     stream.send(encodeProtoMsg(request));
 
@@ -1689,7 +1697,7 @@ class SKDBServer implements RemoteSKDB {
 
   async tablesAwaitingSync() {
     const acc = new Set<string>();
-    for (const table of this.mirroredTables) {
+    for (const [table, _schema] of this.mirroredTables) {
       // TODO: if we parse the diff output we can provide an object
       // model representing the rows not yet ack'd.
       if (this.localTailSession === undefined) continue;
@@ -1739,7 +1747,7 @@ class SKDBServer implements RemoteSKDB {
           this.client.exec(createResponseTable);
         }
         this.client.assertCanBeMirrored(tableName, expectedSchema);
-        this.mirroredTables.add(tableName);
+        this.mirroredTables.set(tableName, expectedSchema);
       }
     };
     // mirror has replace semantics. start by tearing down any current
@@ -1758,7 +1766,7 @@ class SKDBServer implements RemoteSKDB {
 
     if (this.mirroredTables.size > 0) {
       this.localTailSession = await this.establishLocalTail(
-        Array.from(this.mirroredTables),
+        this.mirroredTables
       );
     }
 

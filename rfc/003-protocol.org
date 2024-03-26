@@ -321,6 +321,8 @@ Where not specified, strings are UTF-8.
 - push promise
   - type = 0x3
   - reserved (24) - padding - must be zeroed
+  - schemas_length (16) - in bytes
+  - schemas (schema_length * 8) - JSON-encoded map from table names to schemas
 
 - schema
   - type = 0x4

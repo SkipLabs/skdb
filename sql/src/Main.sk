@@ -54,6 +54,47 @@ fun queryParams(options: SKDB.Options): Map<String, P.Value> {
   }
 }
 
+// Read a single line from stdin, decode it to a JSON Object, expected
+// to be a map from table names to corresponding schemas (both strings)
+fun readSchemas(): Map<String, Array<P.ColumnDefinition>> {
+  read_line() match {
+  | Some(line) ->
+    try {
+      JSON.decode(line)
+    } catch {
+    | exn ->
+      print_error(
+        "JSON decoding of schema expectations failed: \"" +
+          line +
+          "\"\n" +
+          exn.getMessage(),
+      );
+      skipExit(2)
+    } match {
+    | JSON.Object(obj) ->
+      obj
+        .map((_key, val) ->
+          val match {
+          | JSON.String("*") -> None()
+          | JSON.String(s) ->
+            schema = P.Parser::create(s).parseCreateTableSchema().columns;
+            Some(schema)
+          | _ ->
+            print_error("Malformed --expect-schemas JSON object\n");
+            skipExit(2)
+          }
+        )
+        .filterNone()
+    | _ ->
+      print_error("Non-object --expect-schemas JSON\n");
+      skipExit(2)
+    }
+  | None() ->
+    print_error("Reading stdin for expected schemas failed\n");
+    skipExit(2)
+  }
+}
+
 fun slurpStdin(): String {
   lines = mutable Vector[];
   try {
@@ -203,7 +244,12 @@ untracked fun main(): void {
             "Globally unique identity of this write stream",
           ),
         )
-        .arg(Cli.StringArg("user").about("Name of the user")),
+        .arg(Cli.StringArg("user").about("Name of the user"))
+        .arg(
+          Cli.BoolArg("expect-schemas").about(
+            "Read source-specified schemas from stdin.  They must be JSON-encoded in a map from table name to schema and written on one line before any CSV data.",
+          ),
+        ),
     )
     .subcommand(
       Cli.Command("tail")
@@ -576,7 +622,12 @@ fun execTail(args: Cli.ParseResults, options: SKDB.Options): void {
     name -> lookup.get(name)
   } else {
     _ -> {
-      TailSpec{since => defaultSince, filter => None(), params => Map[]}
+      TailSpec{
+        since => defaultSince,
+        filter => None(),
+        params => Map[],
+        columns => None(),
+      }
     }
   };
 
@@ -632,10 +683,14 @@ fun execWriteCsv(args: Cli.ParseResults, options: SKDB.Options): void {
   | Some(src) -> src.toInt()
   | None() -> SKStore.genSym(0)
   };
-
+  schemas = if (args.getBool("expect-schemas")) {
+    readSchemas()
+  } else {
+    Map::createFromItems(Array[])
+  };
   SKDB.runSql(options, context ~> {
     user = args.maybeGetString("user");
-    SKCSV.replayDiff(context, read_line, user, source)
+    SKCSV.replayDiff(context, read_line, user, source, schemas)
   })
 }
 

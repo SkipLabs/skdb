@@ -2,7 +2,12 @@ module alias P = SQLParser;
 
 module SKDB;
 
-class TailSpec{since: Int, filter: ?String, params: Map<String, P.Value>}
+class TailSpec{
+  since: Int,
+  filter: ?String,
+  columns: ?Array<P.ColumnDefinition>,
+  params: Map<String, P.Value>,
+}
 
 fun buildTailFilter(
   context: readonly SKStore.Context,
@@ -10,7 +15,7 @@ fun buildTailFilter(
   dirSub: SKStore.DirSub,
   userId: ?String,
   tailSpec: TailSpec,
-  tableName: P.Name,
+  sqlTable: SKDB.DirDescr,
 ): (SKStore.Context, Bool) ~> (SKStore.Key -> Bool) {
   filter = tailSpec.filter match {
   | None() -> dirSub.filter
@@ -20,7 +25,7 @@ fun buildTailFilter(
     compilerContext = context.mclone();
     _ = compiler.compileFrom(
       compilerContext,
-      Array[P.FromTable{name => tableName, asName => None()}],
+      Array[P.FromTable{name => sqlTable.name, asName => None()}],
     );
     e = compiler.compileExpr(compilerContext, ast) match {
     | SKDB.CIExpr(x) -> x
@@ -57,8 +62,6 @@ fun buildTailFilter(
   | Some(userID) ->
     (context, isReset) ~> {
       user = SKDB.UserFile::create(context, userID);
-      sqlTable = getSqlTableFromDirName(context, dirSub.dirName);
-
       oldFilter = filter(context, isReset);
 
       baseName -> {
@@ -77,6 +80,41 @@ fun buildTailFilter(
       }
     }
   };
+}
+
+fun buildCSVSchemaTransform(
+  dirDescr: SKDB.DirDescr,
+  tailSpec: TailSpec,
+): SKStore.OutputFormat {
+  source = dirDescr.schema;
+  target = tailSpec.columns match {
+  | None() -> return SKStore.OCSV(None())
+  | Some(targetSchema) -> targetSchema
+  };
+
+  for (sourceCol in source) {
+    if (
+      sourceCol.notNull is Some _ &&
+      sourceCol.default is None _ &&
+      !target.contains(sourceCol)
+    ) {
+      print_error(
+        `Incompatible schema: missing required column ${sourceCol.name}`,
+      );
+      skipExit(2)
+    };
+  };
+
+  schemaTransformation = target.map(targetCol -> {
+    source.indexOf(targetCol) match {
+    | None() ->
+      print_error(`Incompatible schema: unknown column ${targetCol.name}`);
+      skipExit(2)
+    | Some(idx) -> idx
+    }
+  });
+
+  SKStore.OCSV(Some(schemaTransformation));
 }
 
 fun tailShouldWake(
@@ -132,20 +170,31 @@ fun tailSub(
       print_error("Error: session not found");
       skipExit(2)
     | Some(sub) ->
+      dirDescrs = getDirDescrs(gContext);
       sub with {
         dirSubs => sub.dirSubs.map(dirSub -> {
-          tableName = P.Name::create(
-            dirSub.dirName.toString().stripPrefix("/").stripSuffix("/"),
-          );
+          table = dirSub.dirName.toString().stripPrefix("/").stripSuffix("/");
+          tableName = P.Name::create(table);
+          dirDescr = dirDescrs.maybeGet(tableName) match {
+          | Some(descr) -> descr
+          | None _ ->
+            print_error(`Error: '${tableName}' not found`);
+            skipExit(2)
+          };
+          tailSpec = spec(tableName);
           dirSub with {
             filter => buildTailFilter(
               gContext,
               options,
               dirSub,
               userIDOpt,
-              spec(tableName),
-              tableName,
+              tailSpec,
+              dirDescr,
             ),
+            format => options.format match {
+            | SKDB.OFK_CSV() -> buildCSVSchemaTransform(dirDescr, tailSpec)
+            | _ -> dirSub.format
+            },
           }
         }),
       }
@@ -180,7 +229,9 @@ fun tailSub(
         dirName = dirSub.dirName;
         edir = context.unsafeGetEagerDir(dirName);
         format = options.format match {
-        | SKDB.OFK_CSV() -> SKStore.OCSV()
+        | SKDB.OFK_CSV() ->
+          assert(dirSub.format is SKStore.OCSV(_));
+          dirSub.format
         | SKDB.OFK_JSON() -> SKStore.OJSON(getFieldNames(context, dirName))
         | SKDB.OFK_SQL() -> SKStore.OSQL()
         | SKDB.OFK_JS() -> SKStore.OJS(getFieldNames(context, dirName))

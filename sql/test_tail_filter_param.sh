@@ -27,7 +27,7 @@ echo "create table t1 (a INTEGER);" | $skdb_copy
 
 sessionID=`$skdb subscribe t1 --connect`
 
-echo '{"t1": {"filterExpr": "a > @bound", "filterParams": { "bound": 500 }}}' \
+echo '{"t1": {"filterExpr": "a > @bound", "filterParams": { "bound": 500 }, "expectedSchema": "(a INTEGER)"}}' \
 | $skdb tail $sessionID --follow --read-spec > $tailfile &
 tailerID=$!
 

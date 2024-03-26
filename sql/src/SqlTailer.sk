@@ -111,9 +111,7 @@ fun tailFrom(
   | Some(tick) -> SKStore.Tick(tick)
   | None() ->
     // we haven't caught up yet so honour the requested since value per table
-    tableName = P.Name::create(
-      getSqlTableName(dirSub.dirName),
-    );
+    tableName = P.Name::create(getSqlTableName(dirSub.dirName));
     SKStore.Tick(spec(tableName).since)
   }
 }
@@ -210,7 +208,9 @@ fun tailSub(
         // initialization, so that the client can start processing without waiting
         // for the full changeset.
         // this value is chosen based on some unscientific local testing
-        checkpointInterval = if (since.value == 0 && !chunkingDisabled) 512 else {
+        checkpointInterval = if (since.value == 0 && !chunkingDisabled) {
+          512
+        } else {
           Int::max
         };
 
@@ -224,7 +224,7 @@ fun tailSub(
           dirSub.filter,
           dirSub.getDestinationWatermark(context),
           checkpointInterval,
-          since.value < 1,      // the client has nothing, so send everything
+          since.value < 1, // the client has nothing, so send everything
         );
         !producedAnyOutput = producedAnyOutput || producedOutput;
         !couldFollowChanges = couldFollowChanges && !shouldRebuild;
@@ -287,6 +287,7 @@ fun tailSub(
             privacyContext,
             userIDOpt,
             SKStore.Tick(tailWatermark.fromSome()),
+            sub.destinationSource,
           )
         })
       ) {

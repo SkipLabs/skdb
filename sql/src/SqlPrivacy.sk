@@ -150,6 +150,7 @@ base class PredefinedTable private final {
     context: readonly SKStore.Context,
     user: UserFile,
     tick: SKStore.Tick,
+    destination: ?Int,
   ): Bool {
     colNbr = this.columns.maybeGet(userIDColName.lower) match {
     | None() -> return false
@@ -171,14 +172,24 @@ base class PredefinedTable private final {
       change match {
       | rowKey @ RowKey _ ->
         row = rowKey.getRowValues();
-        row.getString(colNbr) match {
+
+        affectedThisUser = row.getString(colNbr) match {
         | None() ->
-          // The change affected every user
-          return true
-        | Some(x) if (user.name == x) ->
-          // The change affected this specific user
-          return true
-        | _ -> void
+          true // the change affected every user
+        | Some(x) if (user.name == x) -> true
+        | _ -> false
+        };
+
+        if (affectedThisUser) {
+          destination match {
+          | Some(dest) ->
+            writer = (SKStore.Path(dir.dirName, SKStore.IID(dest)));
+            rows = dir.getAllDataIter(context.mclone(), rowKey).collect(Array);
+            if (!updateIsFromIgnoredSource(writer, rows)) {
+              return true;
+            }
+          | None() -> return true
+          };
         }
       | _ -> invariant_violation("Unexpected key type")
       }
@@ -780,6 +791,7 @@ fun userPrivacyChanged(
   context: readonly SKStore.Context,
   userIDOpt: ?String,
   tick: SKStore.Tick,
+  destination: ?Int,
 ): Bool {
   userID = userIDOpt match {
   | None()
@@ -788,8 +800,8 @@ fun userPrivacyChanged(
   | Some(x) -> x
   };
   user = UserFile::create(context, userID);
-  skdbGroupPermissions.hasChangedForUser(context, user, tick) ||
-    skdbUserPermissions.hasChangedForUser(context, user, tick)
+  skdbGroupPermissions.hasChangedForUser(context, user, tick, destination) ||
+    skdbUserPermissions.hasChangedForUser(context, user, tick, destination)
 }
 
 module end;

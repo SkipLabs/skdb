@@ -12,8 +12,8 @@
 
 #include "runtime.h"
 
-int64_t SKIP_posix_open(char *path_obj, int64_t oflag, int64_t mode) {
-  char *path = sk2c_string(path_obj);
+int64_t SKIP_posix_open(char* path_obj, int64_t oflag, int64_t mode) {
+  char* path = sk2c_string(path_obj);
   int fd = open(path, oflag, mode);
 
   if (fd == -1) {
@@ -64,7 +64,7 @@ void SKIP_posix_close(int64_t fd) {
   }
 }
 
-int64_t SKIP_posix_write(int64_t fd, char *buf, int64_t len) {
+int64_t SKIP_posix_write(int64_t fd, char* buf, int64_t len) {
   int rv = write((int)fd, buf, (size_t)len);
   if (rv == -1) {
     return (int64_t)(-errno);
@@ -89,9 +89,9 @@ int64_t SKIP_posix_lseek(int64_t fd, int64_t offset, int64_t whence) {
   return rv;
 }
 
-char *sk_create_posix_pipe(int64_t output_fd, int64_t input_fd);
+char* sk_create_posix_pipe(int64_t output_fd, int64_t input_fd);
 
-char *SKIP_posix_pipe() {
+char* SKIP_posix_pipe() {
   int fds[] = {-1, -1};
   if (pipe(fds) == -1) {
     perror("pipe");
@@ -168,11 +168,11 @@ int64_t SKIP_posix_wstopsig(int64_t stat_loc) {
   return (int64_t)WSTOPSIG(stat_loc);
 }
 
-int64_t SKIP_posix_poll(char *pollfds) {
+int64_t SKIP_posix_poll(char* pollfds) {
   unsigned int nfds = skip_array_len(pollfds);
 
   for (;;) {
-    int rv = poll((struct pollfd *)pollfds, nfds, -1);
+    int rv = poll((struct pollfd*)pollfds, nfds, -1);
     if (rv == -1) {
       if (errno == EINTR) {
         continue;
@@ -185,8 +185,8 @@ int64_t SKIP_posix_poll(char *pollfds) {
   }
 }
 
-void *SKIP_posix_spawn_file_actions_init() {
-  posix_spawn_file_actions_t *file_actionsp =
+void* SKIP_posix_spawn_file_actions_init() {
+  posix_spawn_file_actions_t* file_actionsp =
       malloc(sizeof(posix_spawn_file_actions_t));
   if (file_actionsp == NULL) {
     perror("malloc");
@@ -202,10 +202,10 @@ void *SKIP_posix_spawn_file_actions_init() {
   return file_actionsp;
 }
 
-void SKIP_posix_spawn_file_actions_adddup2(void *file_actionsp, int64_t oldfd,
+void SKIP_posix_spawn_file_actions_adddup2(void* file_actionsp, int64_t oldfd,
                                            int64_t newfd) {
   int rv = (int)posix_spawn_file_actions_adddup2(
-      (posix_spawn_file_actions_t *)file_actionsp, (int)oldfd, (int)newfd);
+      (posix_spawn_file_actions_t*)file_actionsp, (int)oldfd, (int)newfd);
   if (rv != 0) {
     errno = rv;
     perror("posix_spawn_file_actions_adddup2");
@@ -213,9 +213,9 @@ void SKIP_posix_spawn_file_actions_adddup2(void *file_actionsp, int64_t oldfd,
   }
 }
 
-void SKIP_posix_spawn_file_actions_addclose(void *file_actionsp, int64_t fd) {
+void SKIP_posix_spawn_file_actions_addclose(void* file_actionsp, int64_t fd) {
   int rv = (int)posix_spawn_file_actions_addclose(
-      (posix_spawn_file_actions_t *)file_actionsp, (int)fd);
+      (posix_spawn_file_actions_t*)file_actionsp, (int)fd);
   if (rv != 0) {
     errno = rv;
     perror("posix_spawn_file_actions_addclose");
@@ -223,9 +223,9 @@ void SKIP_posix_spawn_file_actions_addclose(void *file_actionsp, int64_t fd) {
   }
 }
 
-void SKIP_posix_spawn_file_actions_destroy(void *file_actionsp) {
+void SKIP_posix_spawn_file_actions_destroy(void* file_actionsp) {
   int rv = (int)posix_spawn_file_actions_destroy(
-      (posix_spawn_file_actions_t *)file_actionsp);
+      (posix_spawn_file_actions_t*)file_actionsp);
   if (rv != 0) {
     errno = rv;
     perror("posix_spawn_file_actions_destroy");
@@ -235,14 +235,14 @@ void SKIP_posix_spawn_file_actions_destroy(void *file_actionsp) {
   free(file_actionsp);
 }
 
-int64_t SKIP_posix_spawnp(char *skargv, char *skenvp, char *file_actionsp) {
-  char **argv = sk2c_string_array(skargv);
-  char **envp = sk2c_string_array(skenvp);
+int64_t SKIP_posix_spawnp(char* skargv, char* skenvp, char* file_actionsp) {
+  char** argv = sk2c_string_array(skargv);
+  char** envp = sk2c_string_array(skenvp);
 
   pid_t pid = -1;
 
   int rv =
-      posix_spawnp(&pid, argv[0], (posix_spawn_file_actions_t *)file_actionsp,
+      posix_spawnp(&pid, argv[0], (posix_spawn_file_actions_t*)file_actionsp,
                    NULL, argv, envp);
   if (rv != 0) {
     errno = rv;
@@ -251,17 +251,17 @@ int64_t SKIP_posix_spawnp(char *skargv, char *skenvp, char *file_actionsp) {
     exit(EXIT_FAILURE);
   }
 
-  char **argv_cursor = argv;
+  char** argv_cursor = argv;
   for (int i = 0; *argv_cursor != NULL; ++argv_cursor, ++i) {
-    if (*argv_cursor != *(char **)skargv + i) {
+    if (*argv_cursor != *(char**)skargv + i) {
       free(*argv_cursor);
     }
   }
   free(argv);
 
-  char **envp_cursor = envp;
+  char** envp_cursor = envp;
   for (int i = 0; *envp_cursor != NULL; ++envp_cursor, ++i) {
-    if (*envp_cursor != *(char **)skenvp + i) {
+    if (*envp_cursor != *(char**)skenvp + i) {
       free(*envp_cursor);
     }
   }
@@ -270,15 +270,15 @@ int64_t SKIP_posix_spawnp(char *skargv, char *skenvp, char *file_actionsp) {
   return (int64_t)pid;
 }
 
-void SKIP_posix_execvp(char *args_obj) {
+void SKIP_posix_execvp(char* args_obj) {
   size_t num_args = skip_array_len(args_obj);
-  char **args = (char **)malloc(sizeof(char *) * (num_args + 1));
+  char** args = (char**)malloc(sizeof(char*) * (num_args + 1));
   if (args == NULL) {
     perror("malloc");
     exit(EXIT_FAILURE);
   }
   for (size_t i = 0; i < num_args; ++i) {
-    char *arg_obj = *((char **)args_obj + i);
+    char* arg_obj = *((char**)args_obj + i);
     args[i] = sk2c_string(arg_obj);
   }
   args[num_args] = 0;
@@ -297,8 +297,8 @@ int64_t SKIP_posix_isatty(int64_t fd) {
   return (char)rv;
 }
 
-int64_t SKIP_posix_mkstemp(char *template_obj) {
-  char *template = sk2c_string(template_obj);
+int64_t SKIP_posix_mkstemp(char* template_obj) {
+  char* template = sk2c_string(template_obj);
 
   int rv = mkstemp(template);
   if (rv == -1) {

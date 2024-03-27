@@ -326,10 +326,17 @@ export const onWorkerMessage = <T>(
             ),
           );
         } else {
-          apply(post, data!.id, creator, creator.create, parameters, created => {
-            runner = created as object;
-            return null;
-          });
+          apply(
+            post,
+            data!.id,
+            creator,
+            creator.create,
+            parameters,
+            (created) => {
+              runner = created as object;
+              return null;
+            },
+          );
         }
       } else if (!runner) {
         post(

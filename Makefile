@@ -136,8 +136,6 @@ test-tpc: test
 	@echo ""
 	@cd sql/test/TPC-h/ && ./test_tpch.sh
 
-
-
 .PHONY: test-soak-priv
 test-soak-priv: $(SKNPM_BIN) build/skdb build/init.sql npm
 	./sql/server/test/test_soak.sh
@@ -169,7 +167,6 @@ check-vite: npm
 	cd build/vitejs && npm run build
 	cd build/vitejs && node server.js
 	cd build/vitejs && npm run dev
-
 
 .PHONY: test-bun
 test-bun: npm

@@ -199,7 +199,8 @@ void SKIP_cond_wait(pthread_cond_t* x, pthread_mutex_t* y) {
   pthread_cond_wait(x, y);
 }
 
-int32_t SKIP_cond_timedwait(pthread_cond_t* x, pthread_mutex_t* y, uint32_t secs) {
+int32_t SKIP_cond_timedwait(pthread_cond_t* x, pthread_mutex_t* y,
+                            uint32_t secs) {
   struct timeval tv;
   struct timespec ts;
   gettimeofday(&tv, NULL);

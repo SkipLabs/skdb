@@ -415,6 +415,12 @@ class Client(SkdbPeer):
     if ("rebuild" in output):
       raise AssertionError(f"Found rebuild coming from client")
 
+  def purgeAllAtSomePointFromNow(self):
+    # we do not allow purging the client as the purge logic is defined
+    # to ensure that we never go past a point to trigger a rebuild. it
+    # doesn't make sense to model this behaviour
+    raise RuntimeError("Trying to purge a client")
+
 class Topology:
 
   def __init__(self, scheduler):

@@ -150,7 +150,7 @@ def test_two_clients_single_server_multiple_inserts_on_client1_insert_on_client2
   return scheduler
 
 
-def test_two_clients_single_server_repeat_inserts_on_client1_purge_on_1():
+def test_two_clients_single_server_repeat_inserts_on_client1_purge_on_server():
   scheduler = sched.ReservoirSample(sched.AllTopoSortsScheduler(runAll=True), 9000)
   cluster = create_cluster(scheduler)
 
@@ -161,7 +161,7 @@ def test_two_clients_single_server_repeat_inserts_on_client1_purge_on_1():
   cluster.mirror("test_with_pk", client1, server)
   cluster.mirror("test_with_pk", client2, server)
 
-  client1.purgeAllAtSomePointFromNow()
+  server.purgeAllAtSomePointFromNow()
 
   client1.insertOrReplace("test_with_pk", [0, 'foo'])
   client1.insertOrReplace("test_with_pk", [0, 'foo'])

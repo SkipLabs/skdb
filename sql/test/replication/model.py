@@ -351,7 +351,7 @@ class SkdbPeer:
         spec = { table: { "since": since } }
         payload, log, exitcode = await tail(db, session, peerId, spec)
         schedule.debug(log.decode().rstrip())
-        self.checkTailOutputExpectations(payload.decode())
+        self.checkTailOutputExpectations(payload.decode(), since)
         stream.send(schedule, payload)
         schedule.storeScheduleLocal(sinceKey, getOurLastCheckpoint(since, payload.decode()))
 
@@ -360,7 +360,7 @@ class SkdbPeer:
         if exitcode > 0:
           payload, log, exitcode = await tail(db, session, peerId, { table: { "since": 0 } })
           schedule.debug(log.decode().rstrip())
-          self.checkTailOutputExpectations(payload.decode())
+          self.checkTailOutputExpectations(payload.decode(), since)
           stream.send(schedule, payload)
           schedule.storeScheduleLocal(sinceKey, getOurLastCheckpoint(since, payload.decode()))
 
@@ -408,8 +408,9 @@ class Server(SkdbPeer):
   def startWriteCsv(self, *args):
     return startStreamingWriteCsv(*args, enableRebuilds=False)
 
-  def checkTailOutputExpectations(self, output):
-    pass
+  def checkTailOutputExpectations(self, output, since):
+    if since == 0 and "rebuild" in output:
+      raise AssertionError(f"Found rebuild when tailing from 0")
 
 class Client(SkdbPeer):
   def initTask(self) -> Task:
@@ -420,8 +421,8 @@ class Client(SkdbPeer):
   def startWriteCsv(self, *args):
     return startStreamingWriteCsv(*args, enableRebuilds=True)
 
-  def checkTailOutputExpectations(self, output):
-    if ("rebuild" in output):
+  def checkTailOutputExpectations(self, output, _since):
+    if "rebuild" in output:
       raise AssertionError(f"Found rebuild coming from client")
 
   def purgeAllAtSomePointFromNow(self):

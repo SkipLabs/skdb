@@ -342,7 +342,7 @@ class SkdbPeer:
         sinceKey = (self, stream, 'since')
         db = schedule.getScheduleLocal(self)
         session = schedule.getScheduleLocal(subkey)
-        since = schedule.getScheduleLocal(sinceKey) or 0
+        since = schedule.getScheduleLocal(sinceKey) or 1
         spec = { table: { "since": since } }
         payload, log = await tail(db, session, peerId, spec)
         schedule.debug(log.decode().rstrip())

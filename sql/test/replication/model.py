@@ -123,7 +123,7 @@ async def tail(db, session, peerId, spec):
                                               stdout=asyncio.subprocess.PIPE,
                                               stderr=asyncio.subprocess.PIPE)
   (out, err) = await proc.communicate(json.dumps(spec).encode())
-  return out, err
+  return out, err, proc.returncode
 
 def startStreamingWriteCsv(dbkey, writecsvKey, user, source, peerId, log, enableRebuilds=False):
   async def f(schedule):
@@ -349,11 +349,20 @@ class SkdbPeer:
         session = schedule.getScheduleLocal(subkey)
         since = schedule.getScheduleLocal(sinceKey) or 1
         spec = { table: { "since": since } }
-        payload, log = await tail(db, session, peerId, spec)
+        payload, log, exitcode = await tail(db, session, peerId, spec)
         schedule.debug(log.decode().rstrip())
         self.checkTailOutputExpectations(payload.decode())
         stream.send(schedule, payload)
         schedule.storeScheduleLocal(sinceKey, getOurLastCheckpoint(since, payload.decode()))
+
+        # if tail fails then we've triggered a rebuild. trigger tail
+        # again with a since of 0.
+        if exitcode > 0:
+          payload, log, exitcode = await tail(db, session, peerId, { table: { "since": 0 } })
+          schedule.debug(log.decode().rstrip())
+          self.checkTailOutputExpectations(payload.decode())
+          stream.send(schedule, payload)
+          schedule.storeScheduleLocal(sinceKey, getOurLastCheckpoint(since, payload.decode()))
 
       if init:
         return Task(f"create subscription for {self} {table} {stream}", start)

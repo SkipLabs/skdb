@@ -358,6 +358,7 @@ class SkdbPeer:
         # if tail fails then we've triggered a rebuild. trigger tail
         # again with a since of 0.
         if exitcode > 0:
+          schedule.debug(payload.decode().rstrip())
           payload, log, exitcode = await tail(db, session, peerId, { table: { "since": 0 } })
           schedule.debug(log.decode().rstrip())
           self.checkTailOutputExpectations(payload.decode(), since)

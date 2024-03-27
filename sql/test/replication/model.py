@@ -351,6 +351,7 @@ class SkdbPeer:
         spec = { table: { "since": since } }
         payload, log = await tail(db, session, peerId, spec)
         schedule.debug(log.decode().rstrip())
+        self.checkTailOutputExpectations(payload.decode())
         stream.send(schedule, payload)
         schedule.storeScheduleLocal(sinceKey, getOurLastCheckpoint(since, payload.decode()))
 
@@ -398,6 +399,9 @@ class Server(SkdbPeer):
   def startWriteCsv(self, *args):
     return startStreamingWriteCsv(*args, enableRebuilds=False)
 
+  def checkTailOutputExpectations(self, output):
+    pass
+
 class Client(SkdbPeer):
   def initTask(self) -> Task:
     return Task(f"create client {self.name}",
@@ -406,6 +410,10 @@ class Client(SkdbPeer):
 
   def startWriteCsv(self, *args):
     return startStreamingWriteCsv(*args, enableRebuilds=True)
+
+  def checkTailOutputExpectations(self, output):
+    if ("rebuild" in output):
+      raise AssertionError(f"Found rebuild coming from client")
 
 class Topology:
 

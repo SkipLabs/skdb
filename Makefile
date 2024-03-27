@@ -96,6 +96,10 @@ fmt:
 	find . -path ./compiler/runtime/libbacktrace -not -prune -or -path ./sql/test/TPC-h/tnt-tpch -not -prune -or -regex '.*\.[ch]\(pp\)*' -exec sh -c 'echo {}; clang-format -i {}' \;
 	npx prettier . --write
 
+.PHONY: check-fmt
+check-fmt: fmt
+	if ! git diff --quiet --exit-code; then echo "make fmt changed some files:"; git status --porcelain; exit 1; fi
+
 
 # test targets
 

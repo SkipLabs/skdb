@@ -10,6 +10,16 @@ commands:
             git submodule update --init --recursive
 
 jobs:
+  check-format:
+    docker:
+      - image: skiplabs/skdb-base:latest
+    steps:
+      - checkout
+      - run:
+          name: Check code is formatted
+          command: |
+            make check-fmt
+
   compiler:
     docker:
       - image: skiplabs/skdb-base:latest

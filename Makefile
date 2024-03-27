@@ -93,6 +93,7 @@ clean:
 .PHONY: fmt
 fmt:
 	find . -path ./compiler/tests -not -prune -or -name '*'.sk -exec sh -c 'echo {}; skfmt -i {}' \;
+	find . -path ./compiler/runtime/libbacktrace -not -prune -or -path ./sql/test/TPC-h/tnt-tpch -not -prune -or -regex '.*\.[ch]\(pp\)*' -exec sh -c 'echo {}; clang-format -i {}' \;
 	npx prettier . --write
 
 

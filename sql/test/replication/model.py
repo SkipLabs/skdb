@@ -125,17 +125,22 @@ async def tail(db, session, peerId, spec):
   (out, err) = await proc.communicate(json.dumps(spec).encode())
   return out, err
 
-def startStreamingWriteCsv(dbkey, writecsvKey, user, source, peerId, log):
+def startStreamingWriteCsv(dbkey, writecsvKey, user, source, peerId, log, enableRebuilds=False):
   async def f(schedule):
     db = schedule.getScheduleLocal(dbkey)
     if db is None:
       raise RuntimeError("could not get db")
 
-    proc = await asyncio.create_subprocess_exec(SKDB, "--data", db, "write-csv",
-                                                # TODO:
-                                                # "--user", user,
-                                                "--source", source,
-                                                # "--peer-id", peerId,  # for multi-peer
+    args = [
+      "--data", db, "write-csv",
+      # TODO:
+      # "--user", user,
+      "--source", source,
+      # "--peer-id", peerId,  # for multi-peer
+    ]
+    if (enableRebuilds):
+      args.append("--enable-rebuilds")
+    proc = await asyncio.create_subprocess_exec(SKDB, *args,
                                                 stdin=asyncio.subprocess.PIPE,
                                                 stdout=asyncio.subprocess.PIPE,
                                                 stderr=asyncio.subprocess.PIPE)
@@ -359,7 +364,7 @@ class SkdbPeer:
       key = (self, stream, 'write')
       async def start(schedule):
         user = "todo"               # TODO:
-        start = startStreamingWriteCsv(self, key, user, source, peerId, schedule.debug)
+        start = self.startWriteCsv(self, key, user, source, peerId, schedule.debug)
         await start(schedule)
 
       async def stop(schedule):
@@ -390,11 +395,17 @@ class Server(SkdbPeer):
                 createNativeDb(self, self.schema, shouldInit=True),
                 destroyNativeDb(self))
 
+  def startWriteCsv(self, *args):
+    return startStreamingWriteCsv(*args, enableRebuilds=False)
+
 class Client(SkdbPeer):
   def initTask(self) -> Task:
     return Task(f"create client {self.name}",
                 createNativeDb(self, self.schema, shouldInit=False),
                 destroyNativeDb(self))
+
+  def startWriteCsv(self, *args):
+    return startStreamingWriteCsv(*args, enableRebuilds=True)
 
 class Topology:
 

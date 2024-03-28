@@ -57,13 +57,13 @@ class Env implements Environment {
   fetch(url: URL) {
     let fUrl;
     if (url instanceof URL) {
-      fUrl = url
+      fUrl = url;
     } else {
       fUrl = new URL((url as any).default, import.meta.url);
     }
     return fetch(fUrl)
-        .then((res) => res.arrayBuffer())
-            .then((ab) => new Uint8Array(ab));
+      .then((res) => res.arrayBuffer())
+      .then((ab) => new Uint8Array(ab));
   }
 
   constructor(environment?: Array<string>) {

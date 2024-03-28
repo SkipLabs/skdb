@@ -74,7 +74,10 @@ class LinksImpl implements Links, ToWasm {
     };
     this.SKIP_js_write = (fd: int, skContents: ptr, len: int) => {
       // TODO: Write bytes directly into fs.
-      this.fs.write(fd, new TextDecoder().decode(utils.importBytes2(skContents, len)));
+      this.fs.write(
+        fd,
+        new TextDecoder().decode(utils.importBytes2(skContents, len)),
+      );
       return len;
     };
     this.SKIP_js_read = (fd: int, skContents: ptr, len: int) => {
@@ -124,7 +127,8 @@ class Manager implements ToWasmManager {
     toWasm.SKIP_js_close = (fd: int) => links.SKIP_js_close(fd);
     toWasm.SKIP_js_write = (fd: int, skContents: ptr, len: int) =>
       links.SKIP_js_write(fd, skContents, len);
-    toWasm.SKIP_js_read = (fd: int, skContents: ptr, len: int) => links.SKIP_js_read(fd, skContents, len);
+    toWasm.SKIP_js_read = (fd: int, skContents: ptr, len: int) =>
+      links.SKIP_js_read(fd, skContents, len);
     toWasm.SKIP_js_open_flags = (
       read: boolean,
       write: boolean,

@@ -8,14 +8,15 @@ skfs=$?
 git diff --quiet HEAD $(git merge-base main HEAD) -- sql/ sqlparser/
 skdb=$?
 
-if (($skc == 0 && $skfs == 0 && $skdb == 0))
-then
-    circleci-agent step halt
-fi
-
 cat .circleci/base.yml
 
 echo "workflows:"
+
+    cat <<EOF
+  check-format:
+    jobs:
+      - check-format
+EOF
 
 if (( $skc != 0 ))
 then

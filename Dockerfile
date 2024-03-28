@@ -9,8 +9,8 @@ RUN apt-get update && \
     echo "deb-src http://apt.llvm.org/jammy/ llvm-toolchain-jammy-15 main" >> /etc/apt/sources.list.d/llvm.list && \
     echo "deb https://deb.nodesource.com/node_20.x nodistro main" >> /etc/apt/sources.list.d/nodejs.list && \
     apt-get update && \
-    apt-get install -q -y git zip unzip curl make lld-15 sqlite3 gcc gawk clang-15 llvm-15 automake jq parallel nodejs file && \
-    npm install -g typescript@5.1 && \
+    apt-get install -q -y git zip unzip curl make lld-15 sqlite3 gcc gawk clang-15 clang-format-15 llvm-15 automake jq parallel nodejs file && \
+    npm install -g prettier typescript@5.1 && \
     npx playwright install-deps
 
 RUN sh -c 'curl -s "https://get.sdkman.io?rcupdate=false" | bash'
@@ -23,7 +23,8 @@ RUN update-alternatives --install /usr/bin/llvm-config llvm-config /usr/bin/llvm
     update-alternatives --install /usr/bin/clang clang /usr/bin/clang-15 100 && \
     update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-15 100 && \
     update-alternatives --install /usr/bin/llvm-link llvm-link /usr/bin/llvm-link-15 100 && \
-    update-alternatives --install /usr/bin/llc llc /usr/bin/llc-15 100
+    update-alternatives --install /usr/bin/llc llc /usr/bin/llc-15 100 && \
+    update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-15 100
 
 ENV CC=clang
 ENV CXX=clang++

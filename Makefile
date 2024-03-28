@@ -93,7 +93,12 @@ clean:
 .PHONY: fmt
 fmt:
 	find . -path ./compiler/tests -not -prune -or -name '*'.sk -exec sh -c 'echo {}; skfmt -i {}' \;
+	find . -path ./compiler/runtime/libbacktrace -not -prune -or -path ./sql/test/TPC-h/tnt-tpch -not -prune -or -regex '.*\.[ch]\(pp\)*' -exec sh -c 'echo {}; clang-format -i {}' \;
 	npx prettier . --write
+
+.PHONY: check-fmt
+check-fmt: fmt
+	if ! git diff --quiet --exit-code; then echo "make fmt changed some files:"; git status --porcelain; exit 1; fi
 
 
 # test targets
@@ -135,8 +140,6 @@ test-tpc: test
 	@echo ""
 	@cd sql/test/TPC-h/ && ./test_tpch.sh
 
-
-
 .PHONY: test-soak-priv
 test-soak-priv: $(SKNPM_BIN) build/skdb build/init.sql npm
 	./sql/server/test/test_soak.sh
@@ -168,7 +171,6 @@ check-vite: npm
 	cd build/vitejs && npm run build
 	cd build/vitejs && node server.js
 	cd build/vitejs && npm run dev
-
 
 .PHONY: test-bun
 test-bun: npm

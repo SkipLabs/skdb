@@ -1029,10 +1029,7 @@ mutable class Specializer{
         None()
       };
 
-      !info.sclass = sclass with {
-        fields => buf.toArray(),
-        arraySlot,
-      };
+      !info.sclass = sclass with {fields => buf.toArray(), arraySlot};
       this.untrackedSClassSet(info.sclass.id, info);
     }
   }

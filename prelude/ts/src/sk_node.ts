@@ -17,10 +17,7 @@ class WrkImpl implements Wrk {
     this.worker = worker;
   }
 
-  static fromPath(
-    url: URL,
-    options: WorkerOptions | undefined,
-  ): Wrk {
+  static fromPath(url: URL, options: WorkerOptions | undefined): Wrk {
     const filename = "./" + path.relative(process.cwd(), url.pathname);
     return new this(new Worker(filename, options));
   }
@@ -62,16 +59,16 @@ class Env implements Environment {
     return "node";
   }
   fetch(url: URL) {
-    let filename : string | URL;
+    let filename: string | URL;
     const cwd = process.cwd();
     if (url && url.pathname) {
       filename = "./" + path.relative(cwd, url.pathname);
       // @ts-ignore
     } else if (url && url.default) {
       // @ts-ignore
-      filename = "./" + path.relative(cwd, url.default as string)
+      filename = "./" + path.relative(cwd, url.default as string);
     } else {
-      filename = url
+      filename = url;
     }
     return new Promise<Uint8Array>(function (resolve, reject) {
       fs.readFile(filename, {}, (err, data) => {

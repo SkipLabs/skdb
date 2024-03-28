@@ -199,9 +199,13 @@ void SKIP_cond_init(void* /* cond */) {}
 
 void SKIP_cond_wait(void* /* x */, void* /* y */) {}
 
-int32_t SKIP_cond_timedwait(void* /* x */, void* /* y */, uint32_t /* secs */) { return 0; }
+int32_t SKIP_cond_timedwait(void* /* x */, void* /* y */, uint32_t /* secs */) {
+  return 0;
+}
 
-int32_t SKIP_cond_broadcast(void* /* c */) { return 0; }
+int32_t SKIP_cond_broadcast(void* /* c */) {
+  return 0;
+}
 
 int SKIP_stdin_has_data() {
   return 1;

@@ -2,11 +2,11 @@
 
 # TODO: This is flaky as it relies on coarse directory-level diffs.
 git diff --quiet HEAD $(git merge-base main HEAD) -- compiler/ prelude/ skfs/
-skc=$?
+skc=1 #$?
 git diff --quiet HEAD $(git merge-base main HEAD) -- skfs/
-skfs=$?
+skfs=1 #$?
 git diff --quiet HEAD $(git merge-base main HEAD) -- sql/ sqlparser/
-skdb=$?
+skdb=1 #$?
 
 if (($skc == 0 && $skfs == 0 && $skdb == 0))
 then

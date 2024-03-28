@@ -332,6 +332,8 @@ mutable class Context{
   mutable dirsWithSharedSubDirs: SortedSet<DirName> = SortedSet[],
   mutable sharedSubDirsRefCount: SortedMap<DirName, Int> = SortedMap[],
   mutable writeChecker: ?(mutable WriteChecker) = None(),
+  mutable purgeFrom: (mutable Context, Dir) ~> Tick = (ctx, _) ~>
+    Tick(ctx.tick.value - 1000),
 } {
   readonly fun isWithSharedSubDirs(dirName: DirName): Bool {
     this.dirsWithSharedSubDirs.contains(dirName)
@@ -429,6 +431,7 @@ mutable class Context{
       dirsWithSharedSubDirs => this.dirsWithSharedSubDirs,
       sharedSubDirsRefCount => this.sharedSubDirsRefCount,
       writeChecker => this.writeChecker.map(x -> x.clone()),
+      purgeFrom => this.purgeFrom,
     }
   }
 
@@ -465,6 +468,7 @@ mutable class Context{
       dirsWithSharedSubDirs => this.dirsWithSharedSubDirs,
       sharedSubDirsRefCount => this.sharedSubDirsRefCount,
       writeChecker => this.writeChecker.map(x -> x.mclone()),
+      purgeFrom => this.purgeFrom,
     }
   }
 
@@ -501,6 +505,7 @@ mutable class Context{
       dirsWithSharedSubDirs => ctx.dirsWithSharedSubDirs,
       sharedSubDirsRefCount => ctx.sharedSubDirsRefCount,
       writeChecker => ctx.writeChecker.map(x -> x.mclone()),
+      purgeFrom => ctx.purgeFrom,
     }
   }
 
@@ -536,6 +541,7 @@ mutable class Context{
     this.!dirsWithSharedSubDirs = ctx.dirsWithSharedSubDirs;
     this.!sharedSubDirsRefCount = ctx.sharedSubDirsRefCount;
     this.!writeChecker = ctx.writeChecker.map(x -> x.mclone());
+    this.!purgeFrom = ctx.purgeFrom;
   }
 
   mutable fun getReads(): SortedSet<Path> {
@@ -863,12 +869,17 @@ mutable class Context{
         dirName = dirSub.dirName;
         this.unsafeMaybeGetDir(dirName) match {
         | Some(dir @ EagerDir _) ->
-          (isReset, changes) = dir.getChangesAfter(start);
+          (shouldRebuild, changes) = if (start.value > 0) {
+            (shouldRebuild, changes) = dir.getChangesAfter(start);
+            (shouldRebuild, changes.iterator());
+          } else {
+            (false, dir.unsafeGetFileIterNoReducer(None()).map(pair -> pair.i0))
+          };
           ctx = this.clone();
           producedOutput = dir.writeDiff(
             ctx,
-            isReset,
-            changes.iterator(),
+            shouldRebuild,
+            changes,
             writer,
             dirSub.entity,
             dirSub.format,
@@ -1273,7 +1284,7 @@ fun resolveContext(
     context.unsafeMaybeGetEagerDir(dirName) match {
     | None() -> void
     | Some(dir) ->
-      !dir = dir.purge(context, Tick(context.tick.value - 1000));
+      !dir = dir.purge(context, context.purgeFrom(context, dir));
       context.setDir(dirName, dir)
     }
   };

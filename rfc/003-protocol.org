@@ -383,32 +383,77 @@ There are plans to re-design this protocol and use a binary
 serialisation for efficient processing; this section is intentionally
 brief.
 
-----
+** Replication
 
 Today this is a text-based protocol using a combination of
-tab-separated and comma-separated data fields. There is encoding for a
-reset control signal and a check-pointing mechanism - including acks
-from write-csv.
+tab-separated and comma-separated data fields. The payloads of the CSV
+values are encoded using a JSON representation, except for nulls which
+are the empty field.
+
+A payload can atomically update multiple rows across a set of tables.
+
+Here is a full example of an exchange:
+
+Sent to A:
+#+BEGIN_SRC text
+^table1 153
+0	"foo","bar","read-write"
+1	"foo","baz","read-write"
+^table2
+1	"some value",,4.3,7,"read-write"
+^table3 74
+!rebuild
+:197
+#+END_SRC
+
+This indicates that
+
+- we wish to update the 'foo' row of table1. We've seen up to tick 153
+  of A.
+- we wish to insert a row in to table2. We've not seen any data from
+  table 2 and so are leaving off the tick which is optional and
+  defaults to 0.
+- we cannot produce a diff for table3 (and we've seen up to A's tick
+  74). This happens due to tombstone GC. Without the tombs we cannot
+  reconstruct a full diff. Instead we communicate that the client
+  should rebuild their table by subscribing from 0 again and cold
+  starting.
+- this payload takes you up to date with the sender at tick 197. A
+  should update its watermarks appropriately.
+
+
+Response from A:
+#+BEGIN_SRC
+^table1__skdb_mirror_feedback
+:197
+^table2
+1	"some value",,4.3,7,"read-write"
+:197
+#+END_SRC
+
+This indicates that
+
+- A acks that it has received and persisted table1 up to 197 of the sender.
+- A nacks that it has received and processed up to 197 for table2. But
+  it could not process the update and is sending it back as rejected.
+  The sender should not retry, but should make necessary updates
+  locally to ensure the data is valid and this will be synchronised.
 
 Lines beginning with a colon act as control signals to the orchestration layer.
 
-- Checkpoint lines (of the form ":123 456") allow setting the fin flag in the
+- Checkpoint lines (of the form ":123") allow setting the fin flag in the
   orchestration protocol data message and knowing when to flush.  Checkpoint
   zero (i.e. a line of the form ":0") is used during initialization to allow the
   client to start processing data before receiving a fully consistent snapshot
   from the server.
-- Reset/reboot signals (of the form ":reboot") indicate a request from the
-  server that the client performs a cold start, and are described in detail in
-  the following subsection.
+- Reboot signals (of the form ":reboot") indicate a request from the
+  server that the client performs a complete cold start, and are described in
+  detail in the following subsection.
 
-Result sets do not in general have an end-of-data marker as the process
-terminates, the file closes, and we close the stream to signal this.
-
-** Cold start request
+** Reboot request from the server
 
 There are several uncommon and infrequent scenarios that our protocol
-is not yet rich enough to handle. e.g. schema changes, privacy change
-data races.
+is not yet rich enough to handle. e.g. schema changes.
 
 While we work to address these gaps, we have a stop-gap measure where
 the server may request the client cold start. This is used sparingly
@@ -434,8 +479,15 @@ immediately, like any other checkpoint line.
 The JS client will invoke a callback on receiving the reboot.
 Applications should register a handler that will reload entirely or at
 least re-create their SKDB client. Reloading is preferable as the
-reboot could signal a schema change which the app logic itself should
+reboot could signal a schema change that the app logic itself should
 refresh to work against.
+
+** Result sets
+
+These are payloads in response to queries.
+
+Result sets do not in general have an end-of-data marker as the process
+terminates, the file closes, and we close the stream to signal this.
 
 * Errors
 

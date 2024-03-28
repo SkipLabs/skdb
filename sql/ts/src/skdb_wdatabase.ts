@@ -39,9 +39,9 @@ class WrappedRemote implements RemoteSKDB {
       .send();
   }
 
-  setUser(userName: string) {
+  notifyConnectedAs(userName: string, replicationId: string) {
     return this.worker
-      .post(new Caller(this.wrapped, "setUser", [userName]))
+      .post(new Caller(this.wrapped, "notifyConnectedAs", [userName, replicationId]))
       .send();
   }
 
@@ -154,9 +154,9 @@ export class SKDBWorker implements SKDB {
       .send() as Promise<string>;
   };
 
-  setUser = async (userName: string) => {
+  notifyConnectedAs = async (userName: string, replicationId: string) => {
     return this.worker
-      .post(new Function("setUser", [userName]))
+      .post(new Function("notifyConnectedAs", [userName, replicationId]))
       .send() as Promise<void>;
   };
 

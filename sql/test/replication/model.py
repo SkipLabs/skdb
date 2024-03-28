@@ -123,19 +123,24 @@ async def tail(db, session, peerId, spec):
                                               stdout=asyncio.subprocess.PIPE,
                                               stderr=asyncio.subprocess.PIPE)
   (out, err) = await proc.communicate(json.dumps(spec).encode())
-  return out, err
+  return out, err, proc.returncode
 
-def startStreamingWriteCsv(dbkey, writecsvKey, user, source, peerId, log):
+def startStreamingWriteCsv(dbkey, writecsvKey, user, source, peerId, log, enableRebuilds=False):
   async def f(schedule):
     db = schedule.getScheduleLocal(dbkey)
     if db is None:
       raise RuntimeError("could not get db")
 
-    proc = await asyncio.create_subprocess_exec(SKDB, "--data", db, "write-csv",
-                                                # TODO:
-                                                # "--user", user,
-                                                "--source", source,
-                                                # "--peer-id", peerId,  # for multi-peer
+    args = [
+      "--data", db, "write-csv",
+      # TODO:
+      # "--user", user,
+      "--source", source,
+      # "--peer-id", peerId,  # for multi-peer
+    ]
+    if (enableRebuilds):
+      args.append("--enable-rebuilds")
+    proc = await asyncio.create_subprocess_exec(SKDB, *args,
                                                 stdin=asyncio.subprocess.PIPE,
                                                 stdout=asyncio.subprocess.PIPE,
                                                 stderr=asyncio.subprocess.PIPE)
@@ -188,9 +193,11 @@ class HalfStream:
     return self
 
   def recv(self, schedule):
-    payload =  schedule.getScheduleLocal(self).pop()
-    schedule.debug(payload.decode())
-    return payload
+    deque = schedule.getScheduleLocal(self)
+    while deque:
+      payload = deque.popleft()
+      schedule.debug(payload.decode())
+      yield payload
 
   def initTask(self):
     t = MutableCompositeTask()
@@ -342,12 +349,23 @@ class SkdbPeer:
         sinceKey = (self, stream, 'since')
         db = schedule.getScheduleLocal(self)
         session = schedule.getScheduleLocal(subkey)
-        since = schedule.getScheduleLocal(sinceKey) or 0
+        since = schedule.getScheduleLocal(sinceKey) or 1
         spec = { table: { "since": since } }
-        payload, log = await tail(db, session, peerId, spec)
+        payload, log, exitcode = await tail(db, session, peerId, spec)
         schedule.debug(log.decode().rstrip())
+        self.checkTailOutputExpectations(payload.decode(), since)
         stream.send(schedule, payload)
         schedule.storeScheduleLocal(sinceKey, getOurLastCheckpoint(since, payload.decode()))
+
+        # if tail fails then we've triggered a rebuild. trigger tail
+        # again with a since of 0.
+        if exitcode > 0:
+          schedule.debug(payload.decode().rstrip())
+          payload, log, exitcode = await tail(db, session, peerId, { table: { "since": 0 } })
+          schedule.debug(log.decode().rstrip())
+          self.checkTailOutputExpectations(payload.decode(), since)
+          stream.send(schedule, payload)
+          schedule.storeScheduleLocal(sinceKey, getOurLastCheckpoint(since, payload.decode()))
 
       if init:
         return Task(f"create subscription for {self} {table} {stream}", start)
@@ -359,7 +377,7 @@ class SkdbPeer:
       key = (self, stream, 'write')
       async def start(schedule):
         user = "todo"               # TODO:
-        start = startStreamingWriteCsv(self, key, user, source, peerId, schedule.debug)
+        start = self.startWriteCsv(self, key, user, source, peerId, schedule.debug)
         await start(schedule)
 
       async def stop(schedule):
@@ -369,15 +387,18 @@ class SkdbPeer:
       async def push(schedule):
         proc = schedule.getScheduleLocal(key)
 
-        payload = stream.recv(schedule)
-        proc.stdin.write(payload)
-        await proc.stdin.drain()
+        for payload in stream.recv(schedule):
+          proc.stdin.write(payload)
+          await proc.stdin.drain()
 
-        expectAck = payload.decode().startswith("^")
-        while expectAck:
-          ack = await proc.stdout.readline()
-          if ack.decode().startswith(":"):
-            return
+          payload = payload.decode()
+          expectAck = payload.startswith("^")  and not "!rebuild" in payload
+          while expectAck:
+            ack = await proc.stdout.readline()
+            ack = ack.decode()
+            # schedule.debug(ack)
+            if ack.startswith(":"):
+              return
 
       if init:
         return Task(f"start write-csv for {self} {stream}", start, stop)
@@ -390,11 +411,31 @@ class Server(SkdbPeer):
                 createNativeDb(self, self.schema, shouldInit=True),
                 destroyNativeDb(self))
 
+  def startWriteCsv(self, *args):
+    return startStreamingWriteCsv(*args, enableRebuilds=False)
+
+  def checkTailOutputExpectations(self, output, since):
+    if since == 0 and "rebuild" in output:
+      raise AssertionError(f"Found rebuild when tailing from 0")
+
 class Client(SkdbPeer):
   def initTask(self) -> Task:
     return Task(f"create client {self.name}",
                 createNativeDb(self, self.schema, shouldInit=False),
                 destroyNativeDb(self))
+
+  def startWriteCsv(self, *args):
+    return startStreamingWriteCsv(*args, enableRebuilds=True)
+
+  def checkTailOutputExpectations(self, output, _since):
+    if "rebuild" in output:
+      raise AssertionError(f"Found rebuild coming from client")
+
+  def purgeAllAtSomePointFromNow(self):
+    # we do not allow purging the client as the purge logic is defined
+    # to ensure that we never go past a point to trigger a rebuild. it
+    # doesn't make sense to model this behaviour
+    raise RuntimeError("Trying to purge a client")
 
 class Topology:
 
@@ -466,9 +507,10 @@ class Topology:
       t.add(s.sendTask())
     async def f(schedule):
       for s in streams:
-        out = s.recv(schedule).decode()
-        if not diffOutputIsSilent(out):
-          raise AssertionError(f"Not silent: {s} {out}")
+        for out in s.recv(schedule):
+          out = out.decode()
+          if not diffOutputIsSilent(out):
+            raise AssertionError(f"Not silent: {s} {out}")
     checkTask = Task(f"Check all tail output silent", f)
     t.add(checkTask)
     for scheduled in self.scheduler.tasks():

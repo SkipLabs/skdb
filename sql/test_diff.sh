@@ -25,6 +25,8 @@ run_diff () {
         $SKDB subscribe "V$i" --connect --updates "/tmp/V$i" > /dev/null &
     done
 
+    wait
+
     cat $3 $4 $5 | $SKDB
 
     rm -f /tmp/selects.sql
@@ -78,6 +80,8 @@ run_diff_no_sqlite () {
         rm -f /tmp/V$i
         $SKDB subscribe "V$i" --connect --updates "/tmp/V$i" > /dev/null &
     done
+
+    wait
 
     cat $3 $4 $5 | $SKDB
 

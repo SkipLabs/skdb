@@ -542,7 +542,7 @@ test_server_tail_filters_write_csv() {
     $SKDB_BIN diff --data $LOCAL_DB --format=csv --since 0 "$local_session" > $LOCAL_DIFF
     $SKDB_BIN write-csv --data $SERVER_DB --source 1234 --user test_user < $LOCAL_DIFF > /dev/null
 
-    $SKDB_BIN tail --data $SERVER_DB --format=csv "$server_session" --since 0 --user test_user > $SERVER_TAIL
+    $SKDB_BIN tail --data $SERVER_DB --format=csv "$server_session" --since 1 --user test_user > $SERVER_TAIL
 
     assert_line_count "$LOCAL_DIFF" hello 1
     # server does not echo

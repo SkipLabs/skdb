@@ -48,7 +48,10 @@ class SKDBMechanismImpl implements SKDBMechanism {
       );
     };
     this.writeCsv = (payload: string, source: string) => {
-      return client.runLocal(["write-csv", "--source", source], payload + "\n");
+      return client.runLocal(
+        ["write-csv", "--enable-rebuilds", "--source", source],
+        payload + "\n",
+      );
     };
     this.watchFile = (fileName: string, fn: (change: ArrayBuffer) => void) => {
       fs.watchFile(fileName, (change) => {
@@ -167,9 +170,11 @@ export class SKDBSyncImpl implements SKDBSync {
 
     this.accessKey = accessKey;
 
+    const mechanism = new SKDBMechanismImpl(this, this.fs, this.environment.encodeUTF8);
+
     this.connectedRemote = await connect(
       this.environment,
-      new SKDBMechanismImpl(this, this.fs, this.environment.encodeUTF8),
+      mechanism,
       endpoint,
       db,
       creds,
@@ -183,21 +188,21 @@ export class SKDBSyncImpl implements SKDBSync {
           "(userID TEXT PRIMARY KEY, permissions INTEGER NOT NULL, skdb_access TEXT NOT NULL)",
       },
       {
-        table: "skdb_groups",
-        expectedColumns:
-          "(groupID TEXT PRIMARY KEY, skdb_author TEXT, adminID TEXT NOT NULL, skdb_access TEXT NOT NULL)",
-      },
-      {
         table: "skdb_group_permissions",
         expectedColumns:
           "(groupID TEXT NOT NULL, userID TEXT, permissions INTEGER NOT NULL, skdb_access TEXT NOT NULL)",
       },
+      {
+        table: "skdb_groups",
+        expectedColumns:
+          "(groupID TEXT PRIMARY KEY, skdb_author TEXT, adminID TEXT NOT NULL, skdb_access TEXT NOT NULL)",
+      },
     );
-    await this.exec(
+    this.exec(
       "CREATE UNIQUE INDEX skdb_permissions_group_user ON skdb_group_permissions(groupID, userID);",
     );
 
-    await this.setUser(accessKey);
+    this.notifyConnectedAs(accessKey, mechanism.getReplicationUid(this.clientUuid));
   }
 
   getUser(): string | undefined {
@@ -244,8 +249,13 @@ export class SKDBSyncImpl implements SKDBSync {
     return this.runLocal(["dump-table", tableName], "");
   };
 
-  setUser = (userName: string) => {
-    return this.runLocal(["set-user", userName], "");
+  notifyConnectedAs = (userName: string, replicationId: string) => {
+    return this.runLocal(
+      [
+        "connected-as",
+        "--userId", userName,
+        "--replicationId", replicationId
+      ], "");
   };
 
   viewSchema = (viewName: string) => {
@@ -353,6 +363,8 @@ export class SKDBSyncImpl implements SKDBSync {
   async mirror(...tables: MirrorDefn[]) {
     const is_mirror_def_of = (table: any) => (mirror_def: any) =>
       mirror_def.table === table;
+    // order matters. we want to mirror up group permission changes
+    // before group changes to handle cyclic dependencies
     for (const metatable of [
       {
         table: "skdb_user_permissions",
@@ -360,14 +372,14 @@ export class SKDBSyncImpl implements SKDBSync {
           "(userID TEXT PRIMARY KEY, permissions INTEGER NOT NULL, skdb_access TEXT NOT NULL)",
       },
       {
-        table: "skdb_groups",
-        expectedColumns:
-          "(groupID TEXT PRIMARY KEY, skdb_author TEXT, adminID TEXT NOT NULL, skdb_access TEXT NOT NULL)",
-      },
-      {
         table: "skdb_group_permissions",
         expectedColumns:
           "(groupID TEXT NOT NULL, userID TEXT, permissions INTEGER NOT NULL, skdb_access TEXT NOT NULL)",
+      },
+      {
+        table: "skdb_groups",
+        expectedColumns:
+          "(groupID TEXT PRIMARY KEY, skdb_author TEXT, adminID TEXT NOT NULL, skdb_access TEXT NOT NULL)",
       },
     ]) {
       if (!tables.some(is_mirror_def_of(metatable.table)))

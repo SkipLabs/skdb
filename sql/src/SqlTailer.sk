@@ -111,9 +111,7 @@ fun tailFrom(
   | Some(tick) -> SKStore.Tick(tick)
   | None() ->
     // we haven't caught up yet so honour the requested since value per table
-    tableName = P.Name::create(
-      dirSub.dirName.toString().stripPrefix("/").stripSuffix("/"),
-    );
+    tableName = P.Name::create(getSqlTableName(dirSub.dirName));
     SKStore.Tick(spec(tableName).since)
   }
 }
@@ -124,7 +122,7 @@ fun tailSub(
   sessionID: Int,
   userIDOpt: ?String,
   spec: (P.Name -> TailSpec),
-): void {
+): Bool {
   sub = SKStore.withContext(gContext -> {
     // rebuild the sub with extra filtering as supported by tail
     gContext.sessions.maybeGet(sessionID) match {
@@ -175,7 +173,9 @@ fun tailSub(
 
       writer = mutable Debug.BufferedWriter(print_raw, 4096);
 
-      producedAnyOutput = false;
+      producedAnyOutput = false; // assume we won't
+      couldFollowChanges = true; // assume we can
+      chunkingDisabled = false;
       for (dirSub in sub.dirSubs) {
         dirName = dirSub.dirName;
         edir = context.unsafeGetEagerDir(dirName);
@@ -187,15 +187,15 @@ fun tailSub(
         | SKDB.OFK_Table() -> SKStore.OTable(getFieldNames(context, dirName))
         };
         since = tailFrom(spec, dirSub, tailWatermark);
-        receivedSomething = dirSub.getDestinationWatermark(context) is Some _;
-        (isReset, changes) = if (since.value > 0 || receivedSomething) {
-          // we ignore a zero since value if we have received
-          // something. this prevents a race: we could receive
-          // something, send it out where it is then modified and sent
-          // back, and then tail from zero which doesn't propagate the
-          // modification.
-          (isReset, changes) = edir.getChangesAfter(since, forceReset);
-          (isReset, changes.iterator())
+        (shouldRebuild, changes) = if (since.value > 0) {
+          // we can only chunk while tables are since 0 as we'll emit
+          // zero checkpoints. once a nonzero request is handled, we must
+          // make sure that it doesn't ultimately get sent back as part of a
+          // zero-checkpoint chunk - otherwise it won't be applied
+          // TODO: optimisation, request all 0 tables first
+          !chunkingDisabled = true;
+          (shouldRebuild, changes) = edir.getChangesAfter(since, forceReset);
+          (shouldRebuild, changes.iterator())
         } else {
           // if since is zero, the receiver is specifying that they
           // have no data to tail since. to avoid a likely reset and
@@ -208,13 +208,15 @@ fun tailSub(
         // initialization, so that the client can start processing without waiting
         // for the full changeset.
         // this value is chosen based on some unscientific local testing
-        checkpointInterval = if (since.value == 0 && !isReset) 512 else {
+        checkpointInterval = if (since.value == 0 && !chunkingDisabled) {
+          512
+        } else {
           Int::max
         };
 
         producedOutput = edir.writeDiff(
           context,
-          isReset,
+          shouldRebuild,
           changes.iterator(),
           writer,
           dirSub.entity,
@@ -222,8 +224,10 @@ fun tailSub(
           dirSub.filter,
           dirSub.getDestinationWatermark(context),
           checkpointInterval,
+          since.value < 1, // the client has nothing, so send everything
         );
-        !producedAnyOutput = producedAnyOutput || producedOutput
+        !producedAnyOutput = producedAnyOutput || producedOutput;
+        !couldFollowChanges = couldFollowChanges && !shouldRebuild;
       };
 
       // produce checkpoint for flushing and committing
@@ -237,11 +241,20 @@ fun tailSub(
         flushStdout();
       };
 
-      Some(context.tick.value)
+      if (couldFollowChanges) {
+        Some(context.tick.value)
+      } else {
+        None()
+      }
     });
 
     !tailWatermark = tick match {
-    | None() -> break void
+    // if we cannot follow changes from here - regardless of whether
+    // we want to - this is a failure to honour the request. i.e.
+    // the since value is too far in the past. the user should be
+    // made aware and take action, probably using the rebuild
+    // mechanism.
+    | None() -> break false
     | Some(_) -> tick
     };
     !init = false;
@@ -274,6 +287,7 @@ fun tailSub(
             privacyContext,
             userIDOpt,
             SKStore.Tick(tailWatermark.fromSome()),
+            sub.destinationSource,
           )
         })
       ) {
@@ -283,7 +297,7 @@ fun tailSub(
     SKStore.mutexUnlock(lock);
     SKStore.destroyObstack(localObstack);
     if (!follow) {
-      break void
+      break true
     }
   }
 }

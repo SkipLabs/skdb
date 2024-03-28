@@ -292,10 +292,10 @@ fun connectionHandler(
                                 try {
                                   handler.set(handler.get().handleMessage(data, stream))
                                 } catch (ex: RevealableException) {
-                                  System.err.println("Exception occurred: ${ex}")
+                                  ex.printStackTrace(System.err)
                                   stream.error(ex.code, ex.msg)
                                 } catch (ex: Exception) {
-                                  System.err.println("Exception occurred: ${ex}")
+                                  ex.printStackTrace(System.err)
                                   stream.error(2000u, "Internal error")
                                 }
                               }

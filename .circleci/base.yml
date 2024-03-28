@@ -36,6 +36,7 @@ jobs:
       - run:
           name: Run skfs tests
           command: |
+            (cd compiler && make STAGE=0 install)
             mkdir -p ~/test-results
             cd skfs && skargo test --jobs 8 --junitxml ~/test-results/skfs.xml
       - store_test_results:
@@ -50,6 +51,7 @@ jobs:
       - run:
           name: Run native skdb tests
           command: |
+            (cd compiler && make STAGE=0 install)
             make test-native
   skdb-wasm:
     docker:
@@ -64,6 +66,7 @@ jobs:
             PLAYWRIGHT_REPORTER: junit
             PLAYWRIGHT_JUNIT_OUTPUT_NAME: ~/test-results/skdb-wasm.xml
           command: |
+            (cd compiler && make STAGE=0 install)
             mkdir -p ~/test-results
             make test-wasm
       - store_test_results:
@@ -78,6 +81,7 @@ jobs:
       - run:
           name: Run skjson tests
           command: |
+            (cd compiler && make STAGE=0 install)
             mkdir -p ~/test-results
             cd skjson && skargo test --junitxml ~/test-results/skjson.xml
       - store_test_results:

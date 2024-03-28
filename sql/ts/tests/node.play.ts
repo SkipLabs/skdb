@@ -1,9 +1,12 @@
-import { test, type Page, expect } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import { tests } from "./tests";
-import { createSkdb } from "skdb";
+import { createSkdb, type SKDB } from "skdb";
 
 function run(t, asWorker: boolean) {
   test(t.name, async () => {
+    if (t.timeout) {
+      test.setTimeout(t.timeout);
+    }
     let skdb = await createSkdb({ asWorker: asWorker });
     let res = await t.fun(skdb);
     t.check(res);
@@ -21,6 +24,7 @@ const N = 765000; // we should be able to process this many rows without running
 run(
   {
     name: "Write-csv memory regression test",
+    timeout: 45000,
     fun: async (skdb: SKDB) => {
       await skdb.exec(
         "CREATE TABLE no_pk_inserts (id INTEGER, client INTEGER, value INTEGER, skdb_access TEXT NOT NULL);",

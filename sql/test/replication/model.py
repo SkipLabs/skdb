@@ -193,9 +193,11 @@ class HalfStream:
     return self
 
   def recv(self, schedule):
-    payload =  schedule.getScheduleLocal(self).pop()
-    schedule.debug(payload.decode())
-    return payload
+    deque = schedule.getScheduleLocal(self)
+    while deque:
+      payload = deque.popleft()
+      schedule.debug(payload.decode())
+      yield payload
 
   def initTask(self):
     t = MutableCompositeTask()
@@ -385,15 +387,18 @@ class SkdbPeer:
       async def push(schedule):
         proc = schedule.getScheduleLocal(key)
 
-        payload = stream.recv(schedule)
-        proc.stdin.write(payload)
-        await proc.stdin.drain()
+        for payload in stream.recv(schedule):
+          proc.stdin.write(payload)
+          await proc.stdin.drain()
 
-        expectAck = payload.decode().startswith("^")
-        while expectAck:
-          ack = await proc.stdout.readline()
-          if ack.decode().startswith(":"):
-            return
+          payload = payload.decode()
+          expectAck = payload.startswith("^")  and not "!rebuild" in payload
+          while expectAck:
+            ack = await proc.stdout.readline()
+            ack = ack.decode()
+            # schedule.debug(ack)
+            if ack.startswith(":"):
+              return
 
       if init:
         return Task(f"start write-csv for {self} {stream}", start, stop)
@@ -502,9 +507,10 @@ class Topology:
       t.add(s.sendTask())
     async def f(schedule):
       for s in streams:
-        out = s.recv(schedule).decode()
-        if not diffOutputIsSilent(out):
-          raise AssertionError(f"Not silent: {s} {out}")
+        for out in s.recv(schedule):
+          out = out.decode()
+          if not diffOutputIsSilent(out):
+            raise AssertionError(f"Not silent: {s} {out}")
     checkTask = Task(f"Check all tail output silent", f)
     t.add(checkTask)
     for scheduled in self.scheduler.tasks():

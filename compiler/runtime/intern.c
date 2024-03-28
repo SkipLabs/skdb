@@ -9,7 +9,6 @@ SKIP_gc_type_t* epointer_ty = NULL;
 #ifdef SKIP32
 char sk_dirty_pages[PERSISTENT_TABLE_SIZE];
 extern unsigned char* bump_pointer;
-extern void** sk_ftable;
 
 int32_t sk_dirty_pages_stack[PERSISTENT_TABLE_SIZE];
 int32_t sk_dirty_pages_stack_idx = 0;
@@ -163,8 +162,8 @@ void* SKIP_intern_shared(void* obj) {
   sk_stack_t* st = &st_holder;
   sk_stack3_t st3_holder;
   sk_stack3_t* st3 = &st3_holder;
-  size_t nbr_pages = sk_get_nbr_pages(NULL);
-  sk_cell_t* pages = sk_get_pages(nbr_pages);
+  size_t nbr_pages = sk_get_nbr_pages(NULL, NULL);
+  sk_cell_t* pages = sk_get_pages(NULL, nbr_pages);
 
   sk_stack_init(st, STACK_INIT_CAPACITY);
   sk_stack3_init(st3, STACK_INIT_CAPACITY);
@@ -232,8 +231,7 @@ void* SKIP_intern_shared(void* obj) {
       str->size = (uint32_t)(uintptr_t)cell.value3;
     }
   }
-
-  sk_free_size(pages, sizeof(sk_cell_t) * nbr_pages);
+  sk_free_pages(pages, nbr_pages);
   sk_stack_free(st);
   sk_stack3_free(st3);
 

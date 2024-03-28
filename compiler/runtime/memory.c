@@ -16,8 +16,14 @@ void free(void*);
 /* Free table. */
 /*****************************************************************************/
 
+typedef struct sk_size_info {
+  size_t main;
+  size_t remainder;
+} sk_size_info_t;
+
 #ifdef SKIP32
-void** sk_ftable;
+
+void* sk_ftable[SK_FTABLE_SIZE][SK_FTABLE_SIZE];
 
 size_t sk_bit_size(size_t size) {
   return (size_t)(sizeof(size_t) * 8 - __builtin_clzl(size - 1));
@@ -28,23 +34,39 @@ size_t sk_pow2_size(size_t size) {
   return (1 << sk_bit_size(size));
 }
 
-void sk_add_ftable(void* ptr, size_t size) {
-  size_t slot = sk_bit_size(size);
-  *(void**)ptr = sk_ftable[slot];
-  sk_ftable[slot] = ptr;
+size_t sk_obj_size(size_t size, sk_size_info_t* size_info) {
+  size_t pow2_size = sk_pow2_size(size);
+  size_t bit_size = sk_bit_size(size);
+  if (pow2_size > size && bit_size > 8) {
+    size_t main_size = 1 << (bit_size - 1);
+    size_t reminder_size = sk_pow2_size(size - main_size);
+    if (main_size != reminder_size) {
+      size_info->main = bit_size - 1;
+      size_info->remainder = sk_bit_size(reminder_size);
+      return main_size + reminder_size;
+    }
+  }
+  size_info->main = bit_size;
+  size_info->remainder = 0;
+  return  pow2_size;
 }
 
-void* sk_get_ftable(size_t size) {
-  size_t slot = sk_bit_size(size);
-  void** ptr = sk_ftable[slot];
+void sk_add_ftable(void* ptr, sk_size_info_t* si) {
+  *(void**)ptr = sk_ftable[si->main][si->remainder];
+  sk_ftable[si->main][si->remainder] = ptr;
+}
+
+void* sk_get_ftable(sk_size_info_t* si) {
+  void** ptr = sk_ftable[si->main][si->remainder];
   if (ptr == NULL) {
     return ptr;
   }
-  sk_ftable[slot] = *(void**)sk_ftable[slot];
+  sk_ftable[si->main][si->remainder] = *(void**)sk_ftable[si->main][si->remainder];
   return ptr;
 }
 
 #endif
+
 
 /*****************************************************************************/
 /* Common primitives . */
@@ -80,9 +102,10 @@ unsigned long total_size = 0;
 unsigned char* decr_heap_end(size_t size);
 
 void* sk_malloc(size_t size) {
-  size = sk_pow2_size(size);
+  sk_size_info_t info;
+  size = sk_obj_size(size, &info);
   total_size += size;
-  void* res = sk_get_ftable(size);
+  void* res = sk_get_ftable(&info);
   if (res != NULL) {
     return res;
   }
@@ -91,20 +114,11 @@ void* sk_malloc(size_t size) {
   return result;
 }
 
-void* sk_malloc_end(size_t size) {
-  size = sk_pow2_size(size);
-  total_size += size;
-  void* res = sk_get_ftable(size);
-  if (res != NULL) {
-    return res;
-  }
-  return decr_heap_end(size);
-}
-
 void sk_free_size(void* ptr, size_t size) {
-  size = sk_pow2_size(size);
+  sk_size_info_t info;
+  size = sk_obj_size(size, &info);
   total_size -= size;
-  sk_add_ftable(ptr, size);
+  sk_add_ftable(ptr, &info);
 }
 
 void* sk_palloc(size_t size) {

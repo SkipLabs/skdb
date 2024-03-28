@@ -80,6 +80,9 @@ void sk_print_ctx_table();
 /* Types used for the Obstack pages. */
 /*****************************************************************************/
 
+#ifdef SKIP32
+typedef struct sk_size_info sk_size_info_t;
+#endif
 typedef struct sk_obstack sk_obstack_t;
 
 /*****************************************************************************/
@@ -89,8 +92,9 @@ typedef struct sk_obstack sk_obstack_t;
 #define TOMB ((uint64_t)-1)
 
 typedef struct {
-  void* key;
+  sk_obstack_t* key;
   uint64_t value;
+  sk_obstack_t* next;
 } sk_cell_t;
 
 typedef struct {
@@ -107,8 +111,9 @@ sk_cell_t* sk_htbl_find(sk_htbl_t* table, void* key);
 int sk_htbl_mem(sk_htbl_t* table, void* key);
 void sk_htbl_remove(sk_htbl_t* table, void* key);
 SkipInt SKIP_String_cmp(unsigned char* str1, unsigned char* str2);
-size_t sk_get_nbr_pages(sk_obstack_t* saved_page);
-sk_cell_t* sk_get_pages(size_t size);
+size_t sk_get_nbr_pages(sk_obstack_t* from_page, sk_obstack_t* to_page);
+sk_cell_t* sk_get_pages(sk_obstack_t* from_page, size_t size);
+void sk_free_pages(sk_cell_t* pages, size_t size);
 size_t sk_get_obstack_idx(char* ptr, sk_cell_t* pages, size_t size);
 
 /*****************************************************************************/
@@ -274,7 +279,6 @@ void SKIP_call_after_unlock(char*, char*);
 void SKIP_throw(void*);
 __attribute__((noreturn)) void SKIP_throw_cruntime(int32_t);
 
-void sk_add_ftable(void* ptr, size_t size);
 void sk_commit(char*, uint32_t);
 char* SKIP_context_get_unsafe();
 void sk_context_set(char* obj);
@@ -282,7 +286,13 @@ void sk_context_set_unsafe(char* obj);
 uintptr_t sk_decr_ref_count(void*);
 void sk_free_size(void*, size_t);
 void sk_free_root(char* obj);
+#ifdef SKIP32
+void sk_add_ftable(void*, sk_size_info_t*);
+void* sk_get_ftable(sk_size_info_t*);
+# else
+void sk_add_ftable(void* ptr, size_t size);
 void* sk_get_ftable(size_t size);
+#endif
 void sk_global_lock();
 void sk_global_unlock();
 void sk_incr_ref_count(void*);
@@ -290,9 +300,8 @@ int sk_is_const(void*);
 int sk_is_large_page(sk_obstack_t* page);
 int sk_is_static(void*);
 void* sk_malloc(size_t size);
-void* sk_malloc_end(size_t);
 char* sk_new_const(char* cst);
-void sk_obstack_attach_page(sk_obstack_t* lpage);
+void sk_obstack_attach_page(sk_obstack_t* lpage, sk_obstack_t* next);
 size_t sk_page_size(sk_obstack_t* page);
 void* sk_palloc(size_t size);
 void sk_persist_consts();

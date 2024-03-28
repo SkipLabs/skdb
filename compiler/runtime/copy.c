@@ -7,9 +7,9 @@
 extern size_t total_palloc_size;
 
 static char* shallow_copy(char* obj, size_t memsize, size_t leftsize,
-                          sk_obstack_t* large_page) {
+                          sk_cell_t* large_page) {
   if (large_page != NULL) {
-    sk_obstack_attach_page(large_page);
+    sk_obstack_attach_page(large_page->key, large_page->next);
     return obj;
   }
 
@@ -22,7 +22,7 @@ static char* shallow_copy(char* obj, size_t memsize, size_t leftsize,
 }
 
 static char* SKIP_copy_obj(sk_stack_t* st, char* obj,
-                           sk_obstack_t* large_page) {
+                           sk_cell_t* large_page) {
   SKIP_gc_type_t* ty = get_gc_type(obj);
 
   size_t len = skip_object_len(ty, obj);
@@ -61,7 +61,7 @@ static char* SKIP_copy_obj(sk_stack_t* st, char* obj,
   return result;
 }
 
-static char* SKIP_copy_string(char* obj, sk_obstack_t* large_page) {
+static char* SKIP_copy_string(char* obj, sk_cell_t* large_page) {
   size_t len = *(uint32_t*)(obj - 2 * sizeof(uint32_t));
   char* result = shallow_copy(obj, len, 2 * sizeof(uint32_t), large_page);
   return result;
@@ -82,6 +82,7 @@ void* SKIP_copy_with_pages(void* obj, size_t nbr_pages, sk_cell_t* pages) {
 
   void* result = obj;
   sk_stack_push(st, &obj, &result);
+  sk_cell_t* large_page = NULL;
 
   while (st->head > 0) {
     sk_value_t delayed = sk_stack_pop(st);
@@ -93,10 +94,10 @@ void* SKIP_copy_with_pages(void* obj, size_t nbr_pages, sk_cell_t* pages) {
       continue;
     }
 
-    sk_obstack_t* large_page = NULL;
+    large_page = NULL;
 
     if (sk_is_large_page(pages[obstack_idx].key)) {
-      large_page = pages[obstack_idx].key;
+      large_page = &pages[obstack_idx];
       pages[obstack_idx].value = (uint64_t)pages[obstack_idx].key;
     }
 

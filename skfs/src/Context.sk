@@ -1376,6 +1376,10 @@ private native fun destroyObstack(Obstack): void;
 private native fun destroyObstackWithValue<T>(Obstack, List<T>): List<T>;
 
 @debug
+@cpp_extern("SKIP_copy_value_to_Obstack")
+private native fun copyValueToObstack<T>(Page,List<T>): List<T>;
+
+@debug
 @cpp_extern("SKIP_switch_to_parent")
 private native fun switchToParent(Obstack): Page;
 
@@ -1718,7 +1722,7 @@ private fun callOnParentObstack<T>(saved: Obstack, f: () -> T): T {
   res
 }
 
-fun copyToParentObstack<T>(
+fun destroyObstackWithValueCheckContext<T>(
   contextOpt: ?mutable Context,
   value: T,
   saved: Obstack,
@@ -1749,7 +1753,7 @@ fun withRegionFold<K, T>(
       | Some(k) ->
         !valueInRegion = fn(contextOpt, k, valueInRegion);
         if (shouldGC(saved) != 0) {
-          !valueInRegion = copyToParentObstack(
+          !valueInRegion = destroyObstackWithValueCheckContext(
             contextOpt,
             valueInRegion,
             saved,
@@ -1760,7 +1764,7 @@ fun withRegionFold<K, T>(
       }
     };
     optSaved match {
-    | Some(saved) -> copyToParentObstack(contextOpt, valueInRegion, saved)
+    | Some(saved) -> destroyObstackWithValueCheckContext(contextOpt, valueInRegion, saved)
     | _ -> value
     }
   } catch {
@@ -1842,7 +1846,7 @@ fun withRegionFoldRecHelp<K, T>(
       !i = i + 1;
     };
     optSaved match {
-    | Some(saved) -> copyToParentObstack(contextOpt, valueInRegion, saved)
+    | Some(saved) -> destroyObstackWithValueCheckContext(contextOpt, valueInRegion, saved)
     | _ -> value
     }
   } catch {
@@ -1855,6 +1859,14 @@ fun withRegionFoldRecHelp<K, T>(
     | _ -> throw exn
     }
   }
+}
+
+@debug
+fun copyValueToParentObstack<T>(saved: Obstack, value: List<T>): List<T> {
+  fromPage = switchToParent(saved);
+  res = copyValueToObstack(fromPage, value);
+  restoreFromParent(saved, fromPage);
+  res
 }
 
 module end;

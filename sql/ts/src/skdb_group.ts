@@ -50,54 +50,31 @@ export class SKDBGroupImpl implements SKDBGroup {
 
     // First, create the primary group and get its auto-generated groupID
     // (initially managed/accessed exclusively by userID, since we haven't created admin/owner groups yet)
-    const groupID = (
-      await new SKDBTransaction(skdb)
-        .add(
-          "INSERT INTO skdb_groups VALUES (id('groupID'), @userID, @userID, @userID)",
-        )
-        .add("SELECT id('groupID')")
-        .commit({ userID })
-    ).scalarValue();
-
+    const groupID = (await skdb.exec("SELECT id()")).scalarValue();
     const group = new SKDBGroupImpl(skdb, groupID);
-
     const adminGroupID = group.adminGroupID;
     const ownerGroupID = group.ownerGroupID;
 
-    // set up Admin and Owner groups, also accessed/managed by userID exclusively for now
-
-    await skdb.exec(
-      "INSERT INTO skdb_groups VALUES (@ownerGroupID, @userID, @userID, @userID);" +
+    await new SKDBTransaction(skdb)
+      .add(
         "INSERT INTO skdb_group_permissions VALUES (@ownerGroupID, @userID, skdb_permission('rw'), @userID);",
-      { ownerGroupID, userID },
-    );
-
-    await skdb.exec(
-      "INSERT INTO skdb_groups VALUES (@adminGroupID, @userID, @ownerGroupID, @userID);" +
-        "INSERT INTO skdb_group_permissions VALUES (@adminGroupID, @userID, skdb_permission('rw'), @ownerGroupID);",
-      { adminGroupID, userID, ownerGroupID },
-    );
-
-    // Now that Admin and Owner groups are set up, add userID to the Primary group
-    // and set all of the admin/access fields of the groups properly.
-    await skdb.exec(
-      "INSERT INTO skdb_group_permissions VALUES (@groupID, @userID, skdb_permission('rw'), @adminGroupID);",
-      { groupID, userID, adminGroupID },
-    );
-
-    await skdb.exec(
-      "UPDATE skdb_groups SET skdb_access='read-write', adminID=@adminGroupID WHERE groupID=@groupID;",
-      { groupID, adminGroupID },
-    );
-    await skdb.exec(
-      "UPDATE skdb_groups SET skdb_access=@adminGroupID WHERE groupID=@adminGroupID;" +
-        "UPDATE skdb_group_permissions SET skdb_access=@adminGroupID WHERE groupID=@adminGroupID;",
-      { adminGroupID },
-    );
-    await skdb.exec(
-      "UPDATE skdb_groups SET skdb_access=@ownerGroupID, adminID=@ownerGroupID WHERE groupID=@ownerGroupID;",
-      { ownerGroupID },
-    );
+      )
+      .add(
+        "INSERT INTO skdb_group_permissions VALUES (@adminGroupID, @userID, skdb_permission('rw'), @adminGroupID);",
+      )
+      .add(
+        "INSERT INTO skdb_group_permissions VALUES (@groupID, @userID, skdb_permission('rw'), @adminGroupID);",
+      )
+      .add(
+        "INSERT INTO skdb_groups VALUES (@adminGroupID, @userID, @ownerGroupID, @adminGroupID);",
+      )
+      .add(
+        "INSERT INTO skdb_groups VALUES (@groupID, @userID, @adminGroupID, 'read-write')",
+      )
+      .add(
+        "INSERT INTO skdb_groups VALUES (@ownerGroupID, @userID, @ownerGroupID, @ownerGroupID);",
+      )
+      .commit({ groupID, adminGroupID, ownerGroupID, userID });
 
     return group;
   }

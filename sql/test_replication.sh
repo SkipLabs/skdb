@@ -20,6 +20,3 @@ set -e
 
 # tests that the system works if no acls are defined
 ./test_no_acl_replication.sh
-
-# tests edge cases around resets and replication
-./test_replication_resets.sh

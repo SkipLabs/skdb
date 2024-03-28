@@ -59,6 +59,25 @@ fun setWatermark(
   watermarkDir.writeArray(context, key, Array[mark]);
 }
 
+fun resetWatermark(
+  context: mutable SKStore.Context,
+  tableName: String,
+  replicationSource: Int,
+): void {
+  watermarkDir = context.maybeGetDir(watermarks) match {
+  | None() ->
+    context.mkdir(SKStore.SID::keyType, SKStore.TickFile::type, watermarks)
+  | Some(d) ->
+    SKStore.EHandle(
+      SKStore.SID::keyType,
+      SKStore.TickFile::type,
+      d.getDirName(),
+    )
+  };
+  key = SKStore.SID::create(`${tableName}_${replicationSource}`);
+  watermarkDir.writeArray(context, key, Array[]);
+}
+
 base class ReplicationState {
   // gds: I envision an RSGarbageCollected to help with vector clock
   // growth, thus the base class
@@ -640,6 +659,19 @@ fun getTable(
     }
   | Some(dirDescr) -> getLatestDirDescr(context, dirDescr)
   }
+}
+
+fun getSqlTableName(dirName: SKStore.DirName): String {
+  dirNameStr = dirName.toString();
+  dirNameStr.stripPrefix("/").stripSuffix("/");
+}
+
+fun getSqlTableFromDirName(
+  context: readonly SKStore.Context,
+  dirName: SKStore.DirName,
+): SKDB.DirDescr {
+  dirNameStr = getSqlTableName(dirName);
+  SKDB.getTable(context.mclone(), 0, P.Name::create(dirNameStr))
 }
 
 fun feedbackTable(table: String): String {

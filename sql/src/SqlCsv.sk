@@ -2,6 +2,8 @@ module alias P = SQLParser;
 
 module SKCSV;
 
+class PrivacyWriteViolation() extends Exception {}
+
 fun requiresEscape(ch: Char): .Bool {
   !Chars.isPrintableAscii(ch) || (ch == '"') || (ch == '\\');
 }
@@ -273,11 +275,11 @@ fun lwwEdits(
 fun applyDiffStrategy(
   table: SKDB.DirDescr,
   identity: Int,
-  userFileOpt: ?SKDB.UserFile,
-  reset: Bool,
+  rebuild: Bool,
   rows: Array<SKDB.RowValues>,
   checkpoint: ?Int,
   snapshot: ?Int,
+  userFileOpt: ?SKDB.UserFile,
 ): ?((
   mutable SKStore.Context,
   mutable SKStore.Context,
@@ -298,12 +300,30 @@ fun applyDiffStrategy(
   };
 
   checkpointAndAck = (context, delta) ~> {
+    // the feedback table tracks the local writes that have been
+    // acknowledged - and as a result controls purging for clients.
+    // seed this if it hasn't already been done. this prevents a large
+    // initial mirror from purging and then wrongly triggering a
+    // rebuild.
+    SKDB.getWatermark(
+      context,
+      SKDB.feedbackTable(table.name.lower),
+      Some(identity),
+    ) match {
+    | None() ->
+      SKDB.setWatermark(
+        context,
+        SKDB.feedbackTable(table.name.lower),
+        identity,
+        delta.tick,
+      )
+    | _ -> void
+    };
     checkpoint match {
     // we do not checkpoint 0. this value communicates that you
     // haven't received a full snapshot yet. it's used for e.g.
     // chunking an initial mirror. once the value is > 0 we have
-    // received a consistent snapshot of the server and should
-    // checkpoint and ack.
+    // received a consistent snapshot and should checkpoint and ack.
     | Some(val) if (val > 0) ->
       checkpointTick = SKStore.Tick(val);
       SKDB.setWatermark(context, table.name.lower, identity, checkpointTick);
@@ -327,24 +347,30 @@ fun applyDiffStrategy(
     None()
   };
 
-  isVisibleToUser = (context) ~> {
+  privacyIsOk = (context) ~> {
     userFileOpt match {
-    | None() -> _ -> true
+    | None() -> true
     | Some(userFile) ->
-      (file: SKStore.Key) -> {
-        file match {
-        | k @ SKDB.RowKey _ ->
-          SKDB.checkUserCanReadRow(
-            context,
-            userFile,
-            table,
-            k.getRowValues(),
-          ) match {
-          | SKDB.AROK() -> true
-          | SKDB.ARError(_err) -> false
-          }
-        | _ -> false
+      accessSolver = SKDB.AccessSolver::create(context, userFile.name);
+      tableName = table.name.origName;
+      authorCol = SKDB.getAuthorIdx(table);
+      accessCol = SKDB.getAccessIdx(table);
+      for (row in rows) {
+        SKDB.checkUserCanWriteRow(
+          context,
+          accessSolver,
+          tableName,
+          authorCol,
+          accessCol,
+          row,
+        ) match {
+        | SKDB.AROK() -> void
+        | SKDB.ARError(err) ->
+          print_error("Error: " + err.toString());
+          break false
         }
+      } else {
+        true
       }
     }
   };
@@ -358,6 +384,10 @@ fun applyDiffStrategy(
     if (shouldShortCircuitUpdate(root)) {
       checkpointAndAck(newRoot, delta);
       return void;
+    };
+
+    if (!privacyIsOk(newRoot)) {
+      throw PrivacyWriteViolation()
     };
 
     dir = newRoot.unsafeGetEagerDir(table.dirName);
@@ -408,83 +438,6 @@ fun applyDiffStrategy(
     checkpointAndAck(newRoot, delta)
   });
 
-  // resetRows - if the update is communicating the entire current
-  // state (a reset).
-  resetRows = Some((newRoot, delta, root) ~> {
-    if (shouldShortCircuitUpdate(root)) {
-      checkpointAndAck(newRoot, delta);
-      return void;
-    };
-
-    dir = newRoot.unsafeGetEagerDir(table.dirName);
-
-    // we may only affect rows that have been seen
-    isEligibleForTomb = (tick, source) ~>
-      tick.value < snapshot.default(0) || source == writer;
-
-    !dir = SKStore.withRegionFold(
-      Some(newRoot),
-      rows.iterator(),
-      dir,
-      (optContext, row, newDir) ~> {
-        key: SKStore.Key = SKDB.RowKey::create(row, table.kinds);
-        keyRepeat = row.repeat;
-        for ((tick, source, files) in newDir.unsafeGetDataIterWithoutTombs(
-          key,
-        )) {
-          if (!isEligibleForTomb(tick, source)) {
-            continue
-          };
-          srcRepeat = 0;
-          for (file in files) {
-            !srcRepeat = srcRepeat + SKDB.RowValues::type(file).repeat
-          };
-
-          if (keyRepeat - srcRepeat < 0) {
-            !newDir = newDir.writeEntry(
-              optContext.fromSome(),
-              source,
-              writer,
-              key,
-              Array[],
-              true,
-            );
-          } else {
-            !keyRepeat = keyRepeat - srcRepeat;
-          }
-        };
-
-        if (keyRepeat != 0) {
-          !newDir = newDir.writeEntry(
-            optContext.fromSome(),
-            writer,
-            writer,
-            key,
-            Array[row.setRepeat(keyRepeat)],
-            true,
-          );
-        };
-        newDir
-      },
-    );
-
-    !dir = dir.reset(
-      newRoot,
-      writer,
-      rows
-        .iterator()
-        .filter(row -> row.repeat != 0)
-        .map(x -> SKDB.RowKey::create(x.setRepeat(1), table.kinds))
-        .collect(SortedSet),
-      isVisibleToUser(newRoot),
-      isEligibleForTomb,
-    );
-
-    newRoot.setDir(dir.dirName, dir);
-    newRoot.update();
-    checkpointAndAck(newRoot, delta)
-  });
-
   // lwwRows - if there is a unique constraint on the table (e.g. a
   // PK) then we resolve this using LWW. the total order is formed
   // using the vector clock. concurrent tiebreaks use the row data.
@@ -492,6 +445,10 @@ fun applyDiffStrategy(
     if (shouldShortCircuitUpdate(root)) {
       checkpointAndAck(newRoot, delta);
       return void;
+    };
+
+    if (!privacyIsOk(newRoot)) {
+      throw PrivacyWriteViolation()
     };
 
     dir = newRoot.unsafeGetEagerDir(table.dirName);
@@ -553,71 +510,35 @@ fun applyDiffStrategy(
     checkpointAndAck(newRoot, delta)
   });
 
-  // lwwReset - if the update is communicating the entire current
-  // state (a reset) on a table where we use LWW.
-  lwwReset = Some((newRoot, delta, root) ~> {
-    if (shouldShortCircuitUpdate(root)) {
-      checkpointAndAck(newRoot, delta);
-      return void;
-    };
-
+  // rebuild - this peer fell off the lead 'tail caravan' and got too
+  // far behind. we now need to cold start by rebuilding the table.
+  rebuildRows = Some((newRoot, _delta, _root) ~> {
     dir = newRoot.unsafeGetEagerDir(table.dirName);
 
-    !dir = SKStore.withRegionFold(
-      Some(newRoot),
-      rows.iterator(),
-      dir,
-      (optContext, row, newDir) ~> {
-        if (row.repeat > 0) {
-          for (edit in lwwEdits(
-            table,
-            snapshot.default(0),
-            writer,
-            primaryIdx,
-            optContext.fromSome(),
-            newDir,
-            row,
-          )) {
-            (editKey, (editSrc, editWriter, editFiles)) = edit;
-            !newDir = newDir.writeEntry(
-              optContext.fromSome(),
-              editSrc,
-              editWriter,
-              editKey,
-              editFiles,
-              true,
-            );
-          };
-        };
-        newDir
-      },
-    );
+    // so we don't wipe out unsynced rows
+    isEligibleForTomb = (tick, source) ~>
+      tick.value < snapshot.default(0) || source == writer;
 
     !dir = dir.reset(
       newRoot,
       writer,
-      rows
-        .iterator()
-        .filter(row -> row.repeat != 0)
-        .map(x -> SKDB.RowKey::create(x.setRepeat(1), table.kinds))
-        .collect(SortedSet),
-      isVisibleToUser(newRoot),
-      (tick, source) ~> tick.value < snapshot.default(0) || source == writer,
+      Array[].collect(SortedSet),
+      isEligibleForTomb,
     );
 
+    SKDB.resetWatermark(newRoot, table.name.lower, identity);
+
     newRoot.setDir(dir.dirName, dir);
-    newRoot.update();
-    checkpointAndAck(newRoot, delta)
+    newRoot.update(); // TODO: could we not do this so we don't get a blip?
   });
 
-  if (primaryIdx is Some _) {
-    if (reset) return lwwReset;
-    return lwwRows;
+  if (rebuild) {
+    rebuildRows;
+  } else if (primaryIdx is Some _) {
+    lwwRows;
+  } else {
+    assignRows
   };
-
-  if (reset) return resetRows;
-
-  assignRows
 }
 
 fun parseHeader(
@@ -704,22 +625,40 @@ fun parseTableChange(
   })
 }
 
+class FinalTableDiff(
+  table: SKDB.DirDescr,
+  snapshot: ?Int,
+  rebuild: Bool,
+  rows: Array<SKDB.RowValues>,
+  lines: Array<String>,
+) {}
+
 mutable class TableDiff(
   table: SKDB.DirDescr,
   snapshot: ?Int,
-  mutable reset: Bool,
+  mutable rebuild: Bool,
   rows: mutable Vector<SKDB.RowValues>,
   lines: mutable Vector<String>,
 ) {
   static fun create(table: SKDB.DirDescr, snapshot: ?Int): mutable this {
     mutable static(table, snapshot, false, mutable Vector[], mutable Vector[])
   }
+
+  readonly fun freeze(): FinalTableDiff {
+    FinalTableDiff(
+      this.table,
+      this.snapshot,
+      this.rebuild,
+      this.rows.toArray(),
+      this.lines.toArray(),
+    )
+  }
 }
 
 fun buildDiffChain(
-  tableDiffs: readonly Vector<mutable TableDiff>,
-  identity: Int,
   userFileOpt: ?SKDB.UserFile,
+  tableDiffs: Array<FinalTableDiff>,
+  identity: Int,
   checkpoint: Int,
 ): ?((
   mutable SKStore.Context,
@@ -730,18 +669,28 @@ fun buildDiffChain(
     applyDiffStrategy(
       td.table,
       identity,
-      userFileOpt,
-      td.reset,
-      td.rows.toArray(),
+      td.rebuild,
+      td.rows,
       Some(checkpoint),
       td.snapshot,
+      userFileOpt,
     );
   });
   Some((newRoot, delta, root) ~> {
-    for (strategy in strategies) {
-      if (strategy is Some _) {
-        strategy.fromSome()(newRoot, delta, root)
+    try {
+      for (strategy in strategies) {
+        if (strategy is Some _) {
+          strategy.fromSome()(newRoot, delta, root)
+        }
       }
+    } catch {
+    | PrivacyWriteViolation _ ->
+      writer = mutable Debug.BufferedWriter(print_raw, 4096);
+      for (tdiff in tableDiffs) {
+        nack(writer, tdiff)
+      };
+      writer.flush()
+    | exn -> throw exn
     }
   })
 }
@@ -751,7 +700,7 @@ mutable class DiffParsingState(
   currentDiff: mutable TableDiff,
 )
 
-fun nack(writer: mutable Debug.BufferedWriter, diff: readonly TableDiff): void {
+fun nack(writer: mutable Debug.BufferedWriter, diff: FinalTableDiff): void {
   writer.write("^" + SKDB.feedbackTable(diff.table.name.origName) + "\n");
   for (line in diff.lines) {
     writer.write(line);
@@ -764,6 +713,7 @@ fun replayDiff(
   getLine: () -> ?String,
   user: ?String,
   identity: Int,
+  rebuildsEnabled: Bool,
 ): SKStore.ContextOp {
   SKDB.getFinalState(context, Some(identity)) match {
   | Some(SKDB.RSError()) ->
@@ -772,8 +722,8 @@ fun replayDiff(
   | _ -> void
   };
 
-  immContext = context.clone();
   userFileOpt = user.map(x -> SKDB.UserFile::create(context, x));
+  immContext = context.clone();
   state: ?(mutable DiffParsingState) = None();
   try {
     loop {
@@ -814,54 +764,23 @@ fun replayDiff(
         tableDiffs.push(currentDiff);
         checkpoint = parseCheckpoint(line);
 
-        rejectedAnyDiff = false;
-        userFileOpt.each(userFile ->
-          SKStore.withContext(privacyContext -> {
-            accessSolver = SKDB.AccessSolver::create(
-              privacyContext,
-              userFile.name,
-            );
-            for (diff in tableDiffs) {
-              if (rejectedAnyDiff) {
-                break void
-              };
-              tableName = diff.table.name.origName;
-              authorCol = SKDB.getAuthorIdx(diff.table);
-              accessCol = SKDB.getAccessIdx(diff.table);
-              for (row in diff.rows) {
-                SKDB.checkUserCanWriteRow(
-                  privacyContext,
-                  accessSolver,
-                  tableName,
-                  authorCol,
-                  accessCol,
-                  row,
-                ) match {
-                | SKDB.AROK() -> void
-                | SKDB.ARError(err) ->
-                  print_error("Error: " + err.toString());
-                  !rejectedAnyDiff = true;
-                  break void
-                }
-              };
-            };
-          })
-        );
-        if (rejectedAnyDiff) {
-          writer = mutable Debug.BufferedWriter(print_raw, 4096);
-          for (tdiff in tableDiffs) {
-            nack(writer, tdiff)
-          };
-          writer.flush();
-          break SKStore.CContinue(None())
-        } else {
-          break SKStore.CContinue(
-            buildDiffChain(tableDiffs, identity, userFileOpt, checkpoint),
-          )
-        }
+        break SKStore.CContinue(
+          buildDiffChain(
+            userFileOpt,
+            tableDiffs.map(td -> td.freeze()).toArray(),
+            identity,
+            checkpoint,
+          ),
+        )
 
-      | current @ Some(DiffParsingState(_, currentDiff)) if (line == "\t\t") ->
-        currentDiff.!reset = true;
+      | current @ Some(DiffParsingState(_, currentDiff)) if (
+        line == "!rebuild"
+      ) ->
+        if (!rebuildsEnabled) {
+          SKDB.setFinalState(context, identity, SKDB.RSError());
+          invariant_violation("Received rebuild when processing disabled.")
+        };
+        currentDiff.!rebuild = true;
         current
 
       | current @ Some(DiffParsingState(_, currentDiff)) ->
@@ -905,16 +824,18 @@ fun replayStdin(): Map<String, (Int, Int)> {
     };
     chars: mutable Vector<Char> = mutable Vector[];
     iter = line.getIter();
-    header = false;
+    skip = false;
     checkpoint = false;
-    reset = false;
     loop {
       c = iter.next() match {
       | None() ->
         print_error("Error, line " + lineNbr + ": unexpected end of line");
         skipExit(23)
       | Some('^') ->
-        !header = true;
+        !skip = true;
+        break void
+      | Some('!') ->
+        !skip = true;
         break void
       | Some(':') ->
         !checkpoint = true;
@@ -923,7 +844,6 @@ fun replayStdin(): Map<String, (Int, Int)> {
       };
       if (c == '\t') {
         if (chars.size() == 0 || chars[0] == '\t') {
-          !reset = true;
           break void
         } else {
           break void
@@ -935,12 +855,7 @@ fun replayStdin(): Map<String, (Int, Int)> {
       };
       chars.push(c);
     };
-    if (header) {
-      continue;
-    };
-    if (reset) {
-      all.clear();
-      commit();
+    if (skip) {
       continue;
     };
     if (checkpoint) {

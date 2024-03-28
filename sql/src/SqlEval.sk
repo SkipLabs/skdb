@@ -1683,6 +1683,21 @@ fun evalWithContext(
   evaluator.stmt(context, params, stmt, inTransaction);
 }
 
+fun sqlPurgeFrom(
+  replicationId: Int,
+): (mutable SKStore.Context, SKStore.Dir) ~> SKStore.Tick {
+  (ctx, dir) ~> {
+    table = getSqlTableName(dir.getDirName());
+    ackTable = feedbackTable(table);
+    watermark = getWatermark(ctx, ackTable, Some(replicationId));
+    default = SKStore.Tick(ctx.tick.value - 1000);
+    watermark match {
+    | Some(SKStore.Tick(x)) if (x < default.value) -> SKStore.Tick(x - 1)
+    | _ -> default
+    }
+  }
+}
+
 fun makeSqlContext(): SKStore.Context {
   SKStore.Context{
     canReuse => SKStore.CRAlways(),
@@ -2153,10 +2168,10 @@ fun printContext(context: mutable SKStore.Context): void {
     producedAnyOutput = false;
     for ((dirsub, tick) in spec) {
       edir = context.unsafeGetEagerDir(dirsub.dirName);
-      (isReset, changes) = edir.getChangesAfter(tick);
+      (shouldRebuild, changes) = edir.getChangesAfter(tick);
       producedOutput = edir.writeDiff(
         context,
-        isReset,
+        shouldRebuild,
         changes.iterator(),
         writer,
         dirsub.entity,

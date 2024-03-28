@@ -111,6 +111,26 @@ assert_server_rows_has() {
     rm -f "$output"
 }
 
+assert_equal() {
+    actual=$1
+    expected=$2
+    if [[ ! $actual -eq $expected ]]
+    then
+        echo -e "FAIL\nexpected $expected but got $actual"
+        exit 1
+    fi
+}
+
+assert_gt() {
+    actual=$1
+    expected=$2
+    if [[ ! $actual -gt $expected ]]
+    then
+        echo -e "FAIL\nexpected $actual > $expected but it isn't"
+        exit 1
+    fi
+}
+
 ################################################################################
 # basic replication scenarios
 ################################################################################
@@ -541,6 +561,90 @@ EOF
     assert_line_count "$perms_stdout" "skdb_group_permissions__skdb_mirror_feedback" 1
 }
 
+test_rebuild_behaviour_with_rebuilds_disabled() {
+    setup_server
+    setup_local test_without_pk
+
+    watermark=$($SKDB_BIN --data $LOCAL_DB watermark --source 9999 test_without_pk)
+    assert_equal "$watermark" 0
+
+    $SKDB_BIN --data $SERVER_DB <<< "INSERT INTO test_without_pk VALUES(0, 'foo', 'test_user');"
+    replicate_to_local test_without_pk
+
+    watermark=$($SKDB_BIN --data $LOCAL_DB watermark --source 9999 test_without_pk)
+    assert_gt "$watermark" 0
+
+    row_count=$($SKDB_BIN --data $LOCAL_DB <<< "select * from test_without_pk"|wc -l)
+    assert_gt "$row_count" 0
+
+    $SKDB_BIN write-csv --data $LOCAL_DB --source 9999 > $WRITE_OUTPUT 2>&1 <<EOF
+^test_without_pk
+!rebuild
+:400
+EOF
+    assert_line_count "$WRITE_OUTPUT" "Invariant violation" 2
+
+    # crucially: the data is still there
+    row_count=$($SKDB_BIN --data $LOCAL_DB <<< "select * from test_without_pk"|wc -l)
+    assert_gt "$row_count" 0
+
+    watermark=$($SKDB_BIN --data $LOCAL_DB watermark --source 9999 test_without_pk)
+    assert_gt "$watermark" 0
+}
+
+test_rebuild_watermark_behaviour_with_rebuilds_enabled() {
+    setup_server
+    setup_local test_without_pk
+
+    watermark=$($SKDB_BIN --data $LOCAL_DB watermark --source 9999 test_without_pk)
+    assert_equal "$watermark" 0
+
+    $SKDB_BIN --data $SERVER_DB <<< "INSERT INTO test_without_pk VALUES(0, 'foo', 'test_user');"
+    replicate_to_local test_without_pk
+
+    watermark=$($SKDB_BIN --data $LOCAL_DB watermark --source 9999 test_without_pk)
+    assert_gt "$watermark" 0
+
+    row_count=$($SKDB_BIN --data $LOCAL_DB <<< "select * from test_without_pk"|wc -l)
+    assert_gt "$row_count" 0
+
+    $SKDB_BIN write-csv --data $LOCAL_DB --source 9999 --enable-rebuilds > $WRITE_OUTPUT <<EOF
+^test_without_pk
+!rebuild
+:400
+EOF
+
+    watermark=$($SKDB_BIN --data $LOCAL_DB watermark --source 9999 test_without_pk)
+    assert_equal "$watermark" 0
+
+    row_count=$($SKDB_BIN --data $LOCAL_DB <<< "select * from test_without_pk"|wc -l)
+    assert_equal "$row_count" 0
+
+    replicate_to_local test_without_pk
+
+    watermark=$($SKDB_BIN --data $LOCAL_DB watermark --source 9999 test_without_pk)
+    assert_gt "$watermark" 0
+
+    row_count=$($SKDB_BIN --data $LOCAL_DB <<< "select * from test_without_pk"|wc -l)
+    assert_gt "$row_count" 0
+
+    # and just check once more
+
+    $SKDB_BIN write-csv --data $LOCAL_DB --source 9999 --enable-rebuilds > $WRITE_OUTPUT <<EOF
+^test_without_pk 100
+!rebuild
+:400
+EOF
+
+    watermark=$($SKDB_BIN --data $LOCAL_DB watermark --source 9999 test_without_pk)
+    assert_equal "$watermark" 0
+
+    replicate_to_local test_without_pk
+
+    watermark=$($SKDB_BIN --data $LOCAL_DB watermark --source 9999 test_without_pk)
+    assert_gt "$watermark" 0
+}
+
 ################################################################################
 # these tests replicate data around first so we build some notion of
 # the vector clock and test concurrency
@@ -889,6 +993,9 @@ run_test test_replication_with_a_row_that_has_a_higher_than_two_repeat_count_dup
 run_test test_tailing_dups_uses_repeat
 
 run_test test_replication_privacy_rejection_and_feedback
+
+run_test test_rebuild_behaviour_with_rebuilds_disabled
+run_test test_rebuild_watermark_behaviour_with_rebuilds_enabled
 
 # local updates
 run_test test_seen_insert_deleted

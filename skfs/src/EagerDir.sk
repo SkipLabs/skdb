@@ -699,12 +699,11 @@ class EagerDir{
     context: mutable SKStore.Context,
     writer: Path,
     keep: SortedSet<Key>,
-    isVisible: Key -> Bool = _ -> true,
     wasSeen: (Tick, Path) ~> Bool = (_, _) ~> true,
   ): this {
     this.unsafeGetFileIter().each(kv -> {
       (key, valueIter) = kv;
-      if (!keep.contains(key) && isVisible(key)) {
+      if (!keep.contains(key)) {
         valueIter.next() match {
         | None() -> void
         | Some _ ->
@@ -712,7 +711,14 @@ class EagerDir{
             (tick, source, _values) = kv;
             // do not wipe out data that has not yet been seen
             if (wasSeen(tick, source)) {
-              !this = this.writeEntry(context, source, writer, key, Array[])
+              !this = this.writeEntry(
+                context,
+                source,
+                writer,
+                key,
+                Array[],
+                true, // force: reset is low-level and we wish to ignore any safeguards
+              )
             }
           })
         }
@@ -733,8 +739,19 @@ class EagerDir{
     filter: (SKStore.Context, Bool) ~> (SKStore.Key -> Bool),
     destinationTime: ?Tick,
     checkpointInterval: Int = Int::max,
+    sendEverything: Bool = false,
   ): Bool {
-    filterFun = filter(context.clone(), isReset);
+    if (isReset) {
+      theirTime = destinationTime match {
+      | None() -> ""
+      | Some(t) -> " " + t.value.toString()
+      };
+      writer.write(`^${entity}${theirTime}\n`);
+      writer.write("!rebuild\n");
+      return true
+    };
+
+    filterFun = filter(context.clone(), sendEverything);
 
     changesWritten = 0;
 
@@ -760,21 +777,6 @@ class EagerDir{
         writer.flush();
         flushStdout();
       };
-    };
-
-    if (isReset) {
-      if (changesWritten % checkpointInterval == 0) {
-        // output a header for the dir
-        theirTime = destinationTime match {
-        | None() -> ""
-        | Some(t) -> " " + t.value.toString()
-        };
-        writer.write(`^${entity}${theirTime}\n`)
-      };
-      // Indicates a reset, meaning all the data that was not in
-      // this transaction should be removed.
-      writer.write("\t\t\n");
-      return true
     };
 
     changesWritten > 0

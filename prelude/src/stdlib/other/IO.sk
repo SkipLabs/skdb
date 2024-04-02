@@ -51,13 +51,12 @@ trait Read {
         buf.ensureCapacity(buf.capacity() + 32)
       };
       spare = buf.unsafeSpareCapacityBytes();
-      this.read(spare) match {
-      | Success(0) -> break void
-      | Success(sz) ->
-        !nbytes = nbytes + sz;
-        buf.unsafeConsumeSpareCapacity(sz)
-      | Failure(err) -> return Failure(err)
-      }
+      sz = this.read(spare)?;
+      if (sz == 0) {
+        break void
+      };
+      !nbytes = nbytes + sz;
+      buf.unsafeConsumeSpareCapacity(sz)
     };
 
     Success(nbytes)
@@ -72,12 +71,11 @@ trait Read {
   mutable fun read_exact(buf: mutable MutableBytes): Result<void, Error> {
     nbytes = 0;
     while (nbytes != buf.size()) {
-      this.read(buf.mslice(nbytes)) match {
-      | Success(0) ->
+      sz = this.read(buf.mslice(nbytes))?;
+      if (sz == 0) {
         return Failure(Error(-1)) // TODO: Proper ErrorUnexpectedEOF.
-      | Failure(err) -> return Failure(err)
-      | Success(sz) -> !nbytes = nbytes + sz
-      }
+      };
+      !nbytes = nbytes + sz
     };
 
     Success(void)
@@ -89,10 +87,8 @@ trait Write {
 
   mutable fun write_all(buf: readonly Bytes): Result<void, Error> {
     while (buf.size() > 0) {
-      this.write(buf) match {
-      | Success(sz) -> !buf = buf.slice(sz)
-      | Failure(err) -> return Failure(err)
-      }
+      sz = this.write(buf)?;
+      !buf = buf.slice(sz)
     };
 
     Success(void)
@@ -114,19 +110,10 @@ trait Seek {
   }
 
   mutable fun stream_len(): Result<Int, Error> {
-    old_pos = this.stream_position() match {
-    | Failure(err) -> return Failure(err)
-    | Success(pos) -> pos
-    };
-    len = this.seek(SeekFromEnd(0)) match {
-    | Failure(err) -> return Failure(err)
-    | Success(len) -> len
-    };
+    old_pos = this.stream_position()?;
+    len = this.seek(SeekFromEnd(0))?;
     if (old_pos != len) {
-      this.seek(SeekFromStart(old_pos)) match {
-      | Failure(err) -> return Failure(err)
-      | Success _ -> void
-      }
+      _ = this.seek(SeekFromStart(old_pos))?
     };
 
     Success(len)
@@ -203,10 +190,7 @@ trait BufRead extends Read {
   }
 
   mutable fun read(buf: mutable MutableBytes): Result<Int, Error> {
-    available = this.fill_buf() match {
-    | Failure(err) -> return Failure(err)
-    | Success(data) -> data
-    };
+    available = this.fill_buf()?;
     sz = min(available.size(), buf.size());
     // TODO: Proper copy.
     for (i in Range(0, sz)) {
@@ -223,10 +207,7 @@ trait BufRead extends Read {
   ): Result<Int, Error> {
     nbytes = 0;
     loop {
-      available = this.fill_buf() match {
-      | Success(data) -> data
-      | Failure(err) -> return Failure(err)
-      };
+      available = this.fill_buf()?;
       // We have reached EOF.
       if (available.isEmpty()) {
         break void
@@ -263,10 +244,8 @@ mutable class BufferedReader<T: mutable Read>(
 ) uses BufRead {
   mutable fun fill_buf(): Result<readonly Bytes, Error> {
     if (this.available.isEmpty()) {
-      this.stream.read(this.buffer.mbytes()) match {
-      | Success(sz) -> this.!available = Range(0, sz)
-      | Failure(err) -> return Failure(err)
-      }
+      bytes_read = this.stream.read(this.buffer.mbytes())?;
+      this.!available = Range(0, bytes_read)
     };
 
     Success(this.buffer.bytes().slice(this.available.start, this.available.end))
@@ -283,15 +262,8 @@ fun copy<R: mutable Read, W: mutable Write>(
   writer: W,
 ): Result<Int, Error> {
   buf = mutable Vector[];
-  reader.read_to_end(buf) match {
-  | Failure(err) -> return Failure(err)
-  | Success _ -> void
-  };
-  res = buf.size();
-  writer.write_all(buf.bytes()) match {
-  | Failure(err) -> return Failure(err)
-  | Success _ -> void
-  };
+  res = reader.read_to_end(buf)?;
+  writer.write_all(buf.bytes())?;
   Success(res)
 }
 

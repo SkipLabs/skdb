@@ -66,6 +66,7 @@ typedef struct ginfo {
   char* fileName;
   char* break_ptr;
   size_t total_palloc_size;
+  size_t free_table_size;
 } ginfo_t;
 
 ginfo_t* ginfo = NULL;
@@ -698,6 +699,16 @@ void SKIP_memory_init(int argc, char** argv) {
 /* Persistent alloc/free primitives. */
 /*****************************************************************************/
 
+uint64_t SKIP_persistent_size() {
+  uint64_t size = (uint64_t)ginfo->total_palloc_size;
+  return size;
+}
+
+uint64_t SKIP_freetable_size() {
+  uint64_t size = (uint64_t)ginfo->free_table_size;
+  return size;
+}
+
 void SKIP_print_persistent_size() {
   printf("%ld\n", ginfo->total_palloc_size);
 }
@@ -708,6 +719,7 @@ void* sk_palloc(size_t size) {
   ginfo->total_palloc_size += size;
   sk_cell_t* ptr = sk_get_ftable(size);
   if (ptr != NULL) {
+    ginfo->free_table_size -= size;
     return ptr;
   }
   if (ginfo->head + size >= ginfo->end) {
@@ -723,5 +735,6 @@ void sk_pfree_size(void* chunk, size_t size) {
   sk_check_has_lock();
   size = sk_pow2_size(size);
   ginfo->total_palloc_size -= size;
+  ginfo->free_table_size += size;
   sk_add_ftable(chunk, size);
 }

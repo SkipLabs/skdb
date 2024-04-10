@@ -1,0 +1,24 @@
+module SKMonitor;
+
+untracked fun main(): void {
+  saved = SKStore.newObstack();
+  startSpan();
+  setName("skmonitor.test.trace");
+  incrIntAttribute("int.attribute", 2);
+  incrIntAttribute("int.attribute", 3);
+  setStringAttribute("string.attribute", "my value");
+  setFloatAttribute("float.attribute", 2.345);
+  setBoolAttribute("bool.attribute", false);
+  #log (debug, "Event debug message");
+  #log (info, "Event info message");
+  setStringArrayAttribute("string.array.attribute", Array["v1", "v2"]);
+  setErrorStatus("It's the error");
+  startSpan();
+  setName("skmonitor.test.child");
+  setStringAttribute("child.string.attribute", "I'm a child span.");
+  endSpan();
+  endSpan();
+  SKStore.destroyObstack(saved);
+}
+
+module end;

@@ -275,6 +275,10 @@ void __attribute__((constructor)) premain() {
   program_break = sbrk(0);
 }
 
+void SKIP_random_init();
+uint64_t SKIP_random_next();
+extern sk_session_t* psession;
+
 int main(int pargc, char** pargv) {
   sk_saved_obstack_t* saved;
   argc = pargc;
@@ -285,6 +289,11 @@ int main(int pargc, char** pargv) {
   SKIP_initializeSkip();
   sk_persist_consts();
   SKIP_destroy_Obstack(saved);
+  if (psession->low == 0 && psession->high == 0) {
+    SKIP_random_init();
+    psession->low = SKIP_random_next();
+    psession->high = SKIP_random_next();
+  }
   skip_main();
 }
 
@@ -420,10 +429,13 @@ int32_t SKIP_notify(char* filename, int32_t tick) {
 }
 
 void SKIP_random_init() {
+  static bool random_initialized = false;
+  if (random_initialized) return;
   std::random_device rd;
   std::uniform_int_distribution<uint64_t> dist(0, UINT64_MAX);
   uint64_t seed = dist(rd);
   xoroshiro128plus_init(seed);
+  random_initialized = true;
 }
 
 uint64_t SKIP_random_next() {

@@ -71,7 +71,14 @@ typedef struct sk_obstack {
   char user_data[0];
 } sk_obstack_t;
 
+typedef struct sk_trace {
+  struct sk_obstack* main;
+  sk_saved_obstack_t obstack;
+  sk_saved_obstack_t switched;
+} sk_trace_t;
+
 static __thread sk_saved_obstack_t init_saved = {NULL, NULL, NULL};
+static __thread sk_trace_t trace = {};
 
 size_t sk_page_size(sk_obstack_t* page) {
   return page->size;
@@ -191,6 +198,60 @@ char* SKIP_Obstack_shallowClone(size_t /* size */, char* obj) {
 
 sk_saved_obstack_t* sk_saved_obstack(sk_obstack_t* page) {
   return &page->saved;
+}
+
+void SKIP_destroy_Obstack(sk_saved_obstack_t* saved);
+char* SKIP_copy_string(char* obj, sk_cell_t* large_page);
+
+void SKIP_init_trace_Obstack() {
+  size_t block_size = PAGE_SIZE;
+  sk_obstack_t* trace_page = sk_malloc_page(block_size);
+  trace_page->previous = NULL;
+  trace_page->size = block_size;
+  trace_page->saved.head = NULL;
+  trace_page->saved.end = NULL;
+  trace_page->saved.page = NULL;
+  trace.main = trace_page;
+  trace.obstack.page = trace_page;
+  trace.obstack.end = (char*)trace_page + block_size;
+  trace.obstack.head = trace_page->user_data;
+}
+
+char* SKIP_duplicate(char* skstr) {
+  return SKIP_copy_string(skstr, NULL);
+}
+
+void SKIP_switch_to_trace() {
+  if (trace.main == NULL) {
+    SKIP_init_trace_Obstack();
+  }
+  trace.switched.head = head;
+  trace.switched.end = end;
+  trace.switched.page = page;
+  sk_saved_obstack_t* obstack = &trace.obstack;
+  head = obstack->head;
+  end = obstack->end;
+  page = obstack->page;
+}
+
+void SKIP_clear_and_restore_from_trace() {
+  SKIP_destroy_Obstack(NULL);
+  trace.main = NULL;
+  trace.obstack.page = NULL;
+  trace.obstack.end = NULL;
+  trace.obstack.head = NULL;
+  head = trace.switched.head;
+  end = trace.switched.end;
+  page = trace.switched.page;
+}
+
+void SKIP_restore_from_trace() {
+  trace.obstack.head = head;
+  trace.obstack.end = end;
+  trace.obstack.page = page;
+  head = trace.switched.head;
+  end = trace.switched.end;
+  page = trace.switched.page;
 }
 
 sk_saved_obstack_t* SKIP_new_Obstack() {

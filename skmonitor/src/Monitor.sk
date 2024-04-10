@@ -1,0 +1,346 @@
+module SKMonitor;
+
+base class Monitoring() {
+  children =
+  | MOn
+  | MMemory
+  | MOff
+}
+
+fun monitoring(): Monitoring {
+  Environ.varOpt("SK_MONITORING") match {
+  | Some(v) ->
+    v.lowercase() match {
+    | "on" -> MOn()
+    | "memory" -> MMemory()
+    | _ -> MOff()
+    }
+  | _ -> MOff()
+  }
+}
+
+value class Time(s: Int, ns: Int) {
+  fun toJSON(): JSON.Value {
+    JSON.Array(
+      Vector[JSON.String(this.s.toString()), JSON.String(this.ns.toString())],
+    )
+  }
+}
+
+const units: Array<String> = Array[
+  "kB",
+  "MB",
+  "GB",
+  "TB",
+  "PB",
+  "EB",
+  "ZB",
+  "YB",
+];
+
+fun toHumanReadable(size: Int, precision: Int = 2): String {
+  if (size < 0) return `-${toHumanReadable(-size)}`;
+  thresh = 1024.0;
+  fBytes = size.toFloat();
+  if (fBytes < thresh) {
+    return `${size}B`;
+  };
+  u = -1;
+  r = 10.0;
+  loop {
+    !fBytes = fBytes / thresh;
+    !u = u + 1;
+    if (!(Math.round(fBytes * r) / r >= thresh && u < 7)) break void;
+  };
+  p = Math.pow(10.0, precision.toFloat());
+  `${Math.round(fBytes * p) / p}${units[u]}`;
+}
+
+value class Memory(persistent: Int, freetable: Int, obstack_peak: Int) {
+  fun toJSON(): JSON.Value {
+    JSON.Object(
+      Map<String, JSON.Value>[
+        "persistent" => JSON.String(toHumanReadable(this.persistent)),
+        "freetable" => JSON.String(toHumanReadable(this.freetable)),
+        "obstack_peak" => JSON.String(toHumanReadable(this.obstack_peak)),
+      ],
+    )
+  }
+}
+
+@export("SKIP_SKMonitor_createMemory")
+fun createMemory(persistent: Int, freetable: Int, obstack_peak: Int): Memory {
+  Memory(persistent, freetable, obstack_peak)
+}
+
+@debug
+fun traceId(): String {
+  traceIdOpt() match {
+  | Some(traceId) ->
+    if (TraceId::isValid(traceId)) traceId else TraceId::getInvalid()
+  | None() ->
+    low = get_session_low();
+    high = get_session_high();
+    TraceId::fromHighAndLow(high, low)
+  }
+}
+
+@debug
+fun startSpan(optService: ?Service = None()): void {
+  if (!(monitoring() is MOn _)) return void;
+  SKStore.switchToTrace();
+  traceId = traceId();
+  optParent = get_span() match {
+  | Some(parent) ->
+    saved = SKStore.newObstack();
+    Some((parent, saved))
+  | _ -> None()
+  };
+  span = mutable Span(
+    now(),
+    traceId,
+    SpanId::fromInt(Random.next()),
+    optParent,
+    optService,
+  );
+  set_span(Some(span));
+  SKStore.restoreFromTrace();
+}
+
+@debug
+fun setName(name: String): void {
+  get_span().each(span -> {
+    SKStore.switchToTrace();
+    span.setName(SKStore.duplicate(name));
+    SKStore.restoreFromTrace()
+  })
+}
+
+fun setStringAttribute(name: String, value: String): void {
+  get_span().each(span -> {
+    SKStore.switchToTrace();
+    span.setStringAttribute(SKStore.duplicate(name), SKStore.duplicate(value));
+    SKStore.restoreFromTrace()
+  })
+}
+
+fun setFloatAttribute(name: String, value: Float): void {
+  get_span().each(span -> {
+    SKStore.switchToTrace();
+    span.setFloatAttribute(SKStore.duplicate(name), value);
+    SKStore.restoreFromTrace()
+  })
+}
+
+fun setIntAttribute(name: String, value: Int): void {
+  get_span().each(span -> {
+    SKStore.switchToTrace();
+    span.setIntAttribute(SKStore.duplicate(name), value);
+    SKStore.restoreFromTrace()
+  })
+}
+
+fun incrIntAttribute(name: String, value: Int): void {
+  get_span().each(span -> {
+    SKStore.switchToTrace();
+    span.getAttribute(name) match {
+    | Some((k, v)) ->
+      v match {
+      | VInt(int) -> span.setIntAttribute(k, int + value)
+      | _ -> span.setIntAttribute(SKStore.duplicate(name), value)
+      }
+    | _ -> span.setIntAttribute(SKStore.duplicate(name), value)
+    };
+    SKStore.restoreFromTrace()
+  })
+}
+
+fun setBoolAttribute(name: String, value: Bool): void {
+  get_span().each(span -> {
+    SKStore.switchToTrace();
+    span.setBoolAttribute(SKStore.duplicate(name), value);
+    SKStore.restoreFromTrace()
+  })
+}
+
+fun setStringArrayAttribute(name: String, value: Array<String>): void {
+  get_span().each(span -> {
+    SKStore.switchToTrace();
+    span.setArrayAttribute(
+      SKStore.duplicate(name),
+      value.map(v ~> VString(SKStore.duplicate(v))),
+    );
+    SKStore.restoreFromTrace()
+  })
+}
+
+fun setIntArrayAttribute(name: String, value: Array<Int>): void {
+  get_span().each(span -> {
+    SKStore.switchToTrace();
+    span.setArrayAttribute(SKStore.duplicate(name), value.map(v ~> VInt(v)));
+    SKStore.restoreFromTrace()
+  })
+}
+
+fun setFloatArrayAttribute(name: String, value: Array<Float>): void {
+  get_span().each(span -> {
+    SKStore.switchToTrace();
+    span.setArrayAttribute(SKStore.duplicate(name), value.map(v ~> VFloat(v)));
+    SKStore.restoreFromTrace()
+  })
+}
+
+fun setBoolArrayAttribute(name: String, value: Array<Bool>): void {
+  get_span().each(span -> {
+    SKStore.switchToTrace();
+    span.setArrayAttribute(SKStore.duplicate(name), value.map(v ~> VBool(v)));
+    SKStore.restoreFromTrace()
+  })
+}
+
+@debug
+fun addEvent(name: String, attributes: Map<String, Value>): void {
+  get_span().each(span -> {
+    SKStore.switchToTrace();
+    attributesCopy = mutable Map[];
+    attributes.each((k, v) ->
+      attributesCopy.set(SKStore.duplicate(k), v.duplicate())
+    );
+    span.addEvent(
+      Event::create(
+        SKStore.duplicate(name),
+        unsafe_chill_trust_me(attributesCopy),
+      ),
+    );
+    SKStore.restoreFromTrace()
+  })
+}
+
+@debug
+fun setOkStatus(): void {
+  get_span().each(span -> {
+    SKStore.switchToTrace();
+    span.setStatus(SOk());
+    SKStore.restoreFromTrace()
+  })
+}
+
+@debug
+fun setErrorStatus(description: String = ""): void {
+  get_span().each(span -> {
+    SKStore.switchToTrace();
+    span.setStatus(SError(), SKStore.duplicate(description));
+    SKStore.restoreFromTrace()
+  })
+}
+
+@debug
+fun setUnsetStatus(): void {
+  get_span().each(span -> {
+    SKStore.switchToTrace();
+    span.setStatus(SUnset());
+    SKStore.restoreFromTrace()
+  })
+}
+
+@debug
+fun endSpan(): void {
+  monitoring() match {
+  | MOn _ ->
+    get_span().each(span -> {
+      SKStore.switchToTrace();
+      span.!optEnd = Some(now());
+      if (span.optParent.isNone()) {
+        memory = memory();
+        span.setIntAttribute("skruntime.memory.persistent", memory.persistent);
+        span.setIntAttribute("skruntime.memory.freetable", memory.freetable);
+        span.setIntAttribute("skruntime.obstack.peak", memory.obstack_peak);
+      };
+      impact = get_trace_size(span.optParent.map(p -> p.i1));
+      span.setIntAttribute("skmonitor.memory", impact);
+      flush(span);
+      nSpan = span.optParent match {
+      | Some((parent, saved)) ->
+        SKStore.destroyObstack(saved);
+        Some(parent)
+      | _ -> None()
+      };
+      set_span(nSpan);
+      if (nSpan.isNone()) {
+        SKStore.clearAndRestoreFromTrace()
+      } else {
+        SKStore.restoreFromTrace()
+      }
+    })
+  | MMemory _ -> print_debug(memory().toJSON().toString())
+  | MOff _ -> void
+  }
+}
+
+fun log(level: Level, msg: String, meta: Logger.Metadata): void {
+  get_span().each(span -> {
+    SKStore.switchToTrace();
+    span.addEvent(
+      Event::create(
+        "log",
+        Map[
+          "log.severity" => VString(level.toString()),
+          "log.message" => VString(msg),
+          "code.function" => VString(meta.typename),
+          "code.filepath" => VString(meta.filename),
+          "code.lineno" => VInt(meta.lineno),
+        ],
+      ),
+    );
+    SKStore.restoreFromTrace()
+  })
+}
+
+fun trace(msg: String, meta: Logger.Metadata): void {
+  log(Trace(), msg, meta)
+}
+
+fun debug(msg: String, meta: Logger.Metadata): void {
+  log(Debug(), msg, meta)
+}
+
+fun info(msg: String, meta: Logger.Metadata): void {
+  log(Info(), msg, meta)
+}
+
+fun warn(msg: String, meta: Logger.Metadata): void {
+  log(Warn(), msg, meta)
+}
+
+fun error(msg: String, meta: Logger.Metadata): void {
+  log(Error(), msg, meta)
+}
+
+fun fatal(msg: String, meta: Logger.Metadata): void {
+  log(Fatal(), msg, meta)
+}
+
+/// EXTERNS
+
+@cpp_extern
+native fun get_trace_size(?SKStore.Obstack): Int;
+
+@cpp_extern
+native fun get_session_high(): Int;
+
+@cpp_extern
+native fun get_session_low(): Int;
+
+@debug
+@cpp_extern
+native fun get_span(): ?mutable Span;
+
+@debug
+@cpp_extern
+native fun set_span(span: ?mutable Span): void;
+
+@debug
+@cpp_extern
+native fun memory(): Memory;
+
+module end;

@@ -1,0 +1,148 @@
+module SKMonitor;
+
+const kINVALID_TRACE_ID: String = "00000000000000000000000000000000";
+const kINVALID_SPAN_ID: String = "0000000000000000";
+
+base class Id private () {
+  /**
+   * Returns the length of the bytes representation of the Id.
+   */
+  protected static fun getBytesLength(): Int;
+
+  /**
+   * Returns the invalid Id in lowercase hex (base16) representation. All characters
+   * are "0".
+   */
+  static fun getInvalid(): String;
+
+  /**
+   * Returns the length of the lowercase hex (base16) representation of the Id.
+   */
+  static deferred fun getLength(): Int {
+    static::getBytesLength() * 2
+  }
+
+  /**
+   * Returns whether the Id is valid. A valid trace identifier is a 32 character hex
+   * String, where at least one of the characters is not a '0'.
+   */
+  static deferred fun isValid(id: String): Bool {
+    id.length() == static::getLength() &&
+      static::getInvalid() != id &&
+      id.chars().all(Chars.isHexDigit);
+  }
+
+  /**
+   * Returns the lowercase hex (base16) representation of the Id converted from the
+   * given bytes representation, or Invalid value if the given byte
+   * array is too short.
+   *
+   * It converts the first 26 bytes of the given byte array.
+   *
+   * @param idBytes the bytes (16-byte array) representation of the Id.
+   */
+  static deferred fun fromBytes(idBytes: Array<UInt8>): String {
+    bytesLength = static::getBytesLength();
+    if (idBytes.size() < bytesLength) {
+      return static::getInvalid();
+    };
+    hex = idBytes.take(bytesLength).map(b ->
+      Chars.intToHexDigits(b.toInt(), 2)
+    );
+    hex.join("")
+  }
+}
+
+class TraceId extends Id {
+  protected static fun getBytesLength(): Int {
+    16
+  }
+
+  static fun getInvalid(): String {
+    kINVALID_TRACE_ID
+  }
+
+  /**
+   * Returns the bytes (16-byte array) representation of the TraceId converted from the
+   * given two Int values representing the lower and higher parts.
+   *
+   * There is no restriction on the specified values, other than the already established validity
+   * rules applying to TraceId. Specifying 0 for both values will effectively return Invalid
+   *
+   * This is equivalent to calling fromBytes with the specified values stored as big-endian.
+   *
+   * @param idHigh the higher part of the int values representation of the TraceId.
+   * @param idLow the lower part of the int values representation of the TraceId.
+   */
+  static fun fromHighAndLow(idHigh: Int, idLow: Int): String {
+    if (idHigh == 0 && idLow == 0) {
+      return static::getInvalid();
+    };
+    intToBase16String(idHigh) + intToBase16String(idLow);
+  }
+}
+
+class SpanId extends Id {
+  protected static fun getBytesLength(): Int {
+    8
+  }
+
+  static fun getInvalid(): String {
+    kINVALID_SPAN_ID
+  }
+
+  /**
+   * Returns the lowercase hex (base16) representation of the SpanId converted from the
+   * given Int value representation.
+   *
+   * There is no restriction on the specified values, other than the already established validity
+   * rules applying to SpanId. Specifying 0 for the long value will effectively inavlid value.
+   *
+   * This is equivalent to calling fromBytes with the specified value stored as big-endian.
+   *
+   * @param id Int value representation of the SpanId.
+   */
+  @debug
+  static fun fromInt(id: Int): String {
+    if (id == 0) {
+      return static::getInvalid();
+    };
+    intToBase16String(id)
+  }
+}
+
+/**
+ * Appends the base16 encoding of the specified value.
+ *
+ * @param value the value to be converted.
+ */
+fun intToBase16String(value: Int): String {
+  Array[56, 48, 40, 32, 24, 16, 8, 0].map(shift ->
+    Chars.intToHexDigits(value.shr(shift).and(0xFF), 2)
+  ).join("")
+}
+
+/**
+ * Returns the Int value whose base16 representation is stored in the first 16 chars of
+ * hex starting from the offset.
+ *
+ * @param hex the base16 representation of the Int.
+ * @param offset the starting offset in the hex.
+ */
+fun intFromBase16String(hex: String, offset: Int): Int {
+  chars = hex.chars();
+  Array[56, 48, 40, 32, 24, 16, 8, 0].mapWithIndex((idx, shift) ->
+    chars[offset + idx].code().and(0xFF).shl(shift)
+  ).reduce((acc, v) -> v + acc, 0);
+}
+
+/** Returns the `Array<UInt>` decoded from the given hex. */
+fun bytesFromBase16(hex: String, length: Int): Array<UInt8> {
+  chars = hex.chars();
+  Array::fillBy(length / 2, idx -> {
+    cIdx = idx * 2;
+    UInt8::truncate(Chars.hexDigitsToInt(`${chars[cIdx]}${chars[cIdx + 1]}`))
+  });
+}
+
+module end;

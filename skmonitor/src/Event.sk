@@ -1,0 +1,42 @@
+module SKMonitor;
+
+base class Level {
+  children =
+  | Error()
+  | Fatal()
+  | Trace()
+  | Debug()
+  | Info()
+  | Warn()
+
+  fun toString(): String
+  | Error() -> "Error"
+  | Fatal() -> "Fatal"
+  | Trace() -> "Trace"
+  | Debug() -> "Debug"
+  | Info() -> "Info"
+  | Warn() -> "Warn"
+}
+
+class Event(name: String, attributes: Map<String, Value>, time: Time) {
+  //
+  static fun create(name: String, attributes: Map<String, Value>): this {
+    Event(name, attributes, now())
+  }
+
+  fun toJSON(): JSON.Value {
+    JSON.Object(
+      Map<String, JSON.Value>[
+        "name" => JSON.String(this.name),
+        "attributes" => JSON.Object(
+          Map::createFromIterator(
+            this.attributes.map((_, v) -> v.toJSON()).items(),
+          ),
+        ),
+        "time" => this.time.toJSON(),
+      ],
+    )
+  }
+}
+
+module end;

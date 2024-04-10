@@ -1,0 +1,187 @@
+module SKMonitor;
+
+base class Status uses Show {
+  children =
+  | SUnset()
+  | SError()
+  | SOk()
+
+  fun toString(): String
+  | SUnset() -> "Unset"
+  | SError() -> "Error"
+  | SOk() -> "Ok"
+}
+
+value class Service(name: String, version: String) {
+  fun toJSON(): JSON.Value {
+    JSON.Object(
+      Map<String, JSON.Value>[
+        "name" => JSON.String(this.name),
+        "version" => JSON.String(this.version),
+      ],
+    )
+  }
+}
+
+/**
+ * An base class that represents a span.
+ *
+ * Spans are created by SpanBuilder.startSpan method.
+ *
+ * Span must be ended by calling end().
+ */
+mutable class Span(
+  start: Time,
+  traceId: String,
+  spanId: String,
+  optParent: ?(mutable Span, SKStore.Obstack) = None(),
+  optService: ?Service = None(),
+  mutable optEnd: ?Time = None(),
+  private mutable name: String = "",
+  private attributes: mutable Map<String, Value> = mutable Map[],
+  private events: mutable Vector<Event> = mutable Vector[],
+  private mutable optStatus: ?(Status, String) = None(),
+) {
+  /**
+   * Sets an attribute to the `Span`. If the `Span` previously contained a mapping for
+   * the key, the old value is replaced by the specified value.
+   *
+   * Empty String "" is valid attribute `value`, but not valid keys.
+   *
+   * @param key the key for this attribute.
+   * @param value the value for this attribute.
+   */
+  mutable fun setStringAttribute(key: String, value: String): void {
+    this.setAttribute(key, VString(value))
+  }
+
+  /**
+   * Sets an attribute to the `Span`. If the `Span` previously contained a mapping for
+   * the key, the old value is replaced by the specified value.
+   *
+   * @param key the key for this attribute.
+   * @param value the value for this attribute.
+   */
+  mutable fun setIntAttribute(key: String, value: Int): void {
+    this.setAttribute(key, VInt(value))
+  }
+
+  /**
+   * Sets an attribute to the `Span`. If the `Span` previously contained a mapping for
+   * the key, the old value is replaced by the specified value.
+   *
+   * @param key the key for this attribute.
+   * @param value the value for this attribute.
+   */
+  mutable fun setFloatAttribute(key: String, value: Float): void {
+    this.setAttribute(key, VFloat(value));
+  }
+
+  /**
+   * Sets an attribute to the `Span`. If the `Span` previously contained a mapping for
+   * the key, the old value is replaced by the specified value.
+   *
+   * @param key the key for this attribute.
+   * @param value the value for this attribute.
+   */
+  mutable fun setBoolAttribute(key: String, value: Bool): void {
+    this.setAttribute(key, VBool(value));
+  }
+
+  mutable fun setArrayAttribute(key: String, value: Array<Value>): void {
+    this.setAttribute(key, VArray(value));
+  }
+
+  /**
+   * Sets an attribute to the `Span`. If the `Span` previously contained a mapping for
+   * the key, the old value is replaced by the specified value.
+   *
+   * @param key the key for this attribute.
+   * @param value the value for this attribute.
+   */
+  mutable fun setAttribute(key: String, value: Value): void {
+    this.attributes.set(key, value)
+  }
+
+  readonly fun getAttribute(key: String): ?(String, Value) {
+    this.attributes.maybeGetItem(key)
+  }
+
+  /**
+   * Adds an event to the Span with the given `calendar`.
+   *
+   * @param event the event to add.
+   */
+  mutable fun addEvent(event: Event): void {
+    this.events.push(event)
+  }
+
+  /**
+   * Sets the status to the `Span`.
+   *
+   * If used, this will override the default `Span` status. Default status code is SUnset().
+   *
+   * Only the value of the last call will be recorded, and implementations are free to ignore
+   * previous calls.
+   *
+   * @param statusCode the StatusCode to set.
+   * @param description the description of the `Status`.
+   */
+  mutable fun setStatus(status: Status, description: String = ""): void {
+    this.!optStatus = if (status is SUnset _) None() else {
+      Some((status, description))
+    }
+  }
+
+  /**
+   * Sets the `Span` name.
+   *
+   * @param name the `Span` name.
+   */
+  mutable fun setName(name: String): void {
+    this.!name = name;
+  }
+
+  readonly fun rootId(): String {
+    this.optParent match {
+    | Some(parent) -> parent.i0.rootId()
+    | _ -> this.spanId
+    }
+  }
+
+  readonly fun toJSON(): JSON.Value {
+    end = this.optEnd match {
+    | Some(end) -> end
+    | _ -> now()
+    };
+    values = mutable Map<String, JSON.Value>[
+      "traceId" => JSON.String(this.traceId),
+      "spanId" => JSON.String(this.spanId),
+      "name" => JSON.String(this.name),
+      "start" => this.start.toJSON(),
+      "end" => end.toJSON(),
+      "attributes" => JSON.Object(
+        Map::createFromIterator(
+          this.attributes.map((_, v) -> v.toJSON()).items(),
+        ),
+      ),
+      "events" => JSON.Array(this.events.map(e -> e.toJSON())),
+    ];
+    this.optService.each(s -> values.add("service", s.toJSON()));
+    this.optParent.each(p -> values.add("parentId", JSON.String(p.i0.spanId)));
+    this.optStatus.each(status ->
+      values.add(
+        "status",
+        JSON.Object(
+          Map<String, JSON.Value>[
+            "status" => JSON.String(status.i0.toString()),
+            "message" => JSON.String(status.i1),
+          ],
+        ),
+      )
+    );
+    JSON.Object(values.chill())
+  }
+}
+
+module end;

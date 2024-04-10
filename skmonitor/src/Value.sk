@@ -1,0 +1,35 @@
+module SKMonitor;
+
+base class Value uses Show {
+  children =
+  | VInt(Int)
+  | VFloat(Float)
+  | VBool(Bool)
+  | VString(String)
+  | VArray(Array<Value>)
+
+  fun toString(): String
+  | VInt(v) -> v.toString()
+  | VFloat(v) -> v.toString()
+  | VBool(v) -> v.toString()
+  | VString(v) -> v.toString()
+  | VArray(v) -> v.toString()
+
+  fun toJSON(): JSON.Value
+  | VInt(v) ->
+    //{"int": "10" }
+    JSON.Object(Map["int" => JSON.String(v.toString())])
+  | VFloat(v) -> JSON.FloatNumber(v)
+  | VBool(v) -> JSON.Bool(v)
+  | VString(v) -> JSON.String(v)
+  | VArray(v) -> JSON.Array(Vector::createFromItems(v.map(e -> e.toJSON())))
+
+  fun duplicate(): Value
+  | VInt(v) -> VInt(v)
+  | VFloat(v) -> VFloat(v)
+  | VBool(v) -> VBool(v)
+  | VString(v) -> VString(v)
+  | VArray(v) -> VArray(v.map(e -> e.duplicate()))
+}
+
+module end;

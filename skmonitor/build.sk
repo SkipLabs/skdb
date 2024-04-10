@@ -1,0 +1,71 @@
+module SkmonitorBuild;
+
+@skbuild_extra_sources
+fun extra_sources(env: Skbuild.Env): Array<String> {
+  if (env.isWasm32()) {
+    Array["extra/wasm32.sk"]
+  } else {
+    Array["extra/host.sk"]
+  }
+}
+
+@skbuild_source_dirs
+fun source_dirs(env: Skbuild.Env): Array<String> {
+  if (!env.isWasm32()) {
+    Array["extern", "extern/common"]
+  } else {
+    Array["extern/common"]
+  }
+}
+
+module end;
+
+@debug
+fun main(): void {
+  Skbuild.build() match {
+  | Failure(err) -> skipExit(err.code)
+  | _ -> void
+  };
+  file_path = Path.join(Environ.var("OUT_DIR"), "Time.sk");
+  file = IO.File::open(
+    file_path,
+    IO.OpenOptions{create => true, truncate => true, write => true},
+  );
+
+  contents = Environ.varOpt("TARGET") match {
+  | Some(t) if (t.startsWith("wasm32")) ->
+    `module SKMonitor;
+
+@cpp_extern("SKIP_JS_now")
+native fun jsNow(): Float;
+
+fun now(): Time {
+  jsTime = jsNow();
+  s = jsTime.toInt();
+  ns = ((jsTime - s.toFloat()) * 1000000000.0).toInt();
+  Time(s, ns);
+}
+
+module end;`
+  | _ ->
+    `module SKMonitor;
+
+@debug
+@cpp_extern
+native fun now(): Time;
+
+@export("SKIP_SKMonitor_createTime")
+fun createTime(s: Int, ns: Int): Time {
+  Time(s, ns)
+}
+
+module end;`
+  };
+  file.write_all(contents.bytes()) match {
+  | Success _ -> void
+  | Failure(err) ->
+    print_error(`Could not write ${file_path}: ${err}`);
+    skipExit(1)
+  };
+  print_string(`skargo:skc-extra-source=${file_path}`)
+}

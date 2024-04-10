@@ -64,10 +64,13 @@ typedef struct ginfo {
   char* head;
   char* end;
   char* fileName;
+  char* break_ptr;
   size_t total_palloc_size;
 } ginfo_t;
 
 ginfo_t* ginfo = NULL;
+
+sk_session_t* psession = NULL;
 
 /*****************************************************************************/
 /* Global locking. */
@@ -446,6 +449,7 @@ struct file_mapping {
   ginfo_t ginfo_data;
   uint64_t gid;
   size_t capacity;
+  sk_session_t session;
   void** pconsts;
   char persistent_fileName[1];
 };
@@ -485,6 +489,7 @@ void sk_create_mapping(char* fileName, size_t icapacity) {
   gid = &mapping->gid;
   capacity = &mapping->capacity;
   pconsts = &mapping->pconsts;
+  psession = &mapping->session;
 
   size_t fileName_length = (fileName != NULL) ? strlen(fileName) + 1 : 0;
   char* persistent_fileName = mapping->persistent_fileName;
@@ -523,6 +528,8 @@ void sk_create_mapping(char* fileName, size_t icapacity) {
   }
   *capacity = icapacity;
   *pconsts = NULL;
+  psession->low = 0;
+  psession->high = 0;
 
   if (ginfo->fileName != NULL) {
     sk_global_lock_init();
@@ -571,6 +578,7 @@ void sk_load_mapping(char* fileName) {
   gid = &mapping->gid;
   capacity = &mapping->capacity;
   pconsts = &mapping->pconsts;
+  psession = &mapping->session;
 }
 
 /*****************************************************************************/
@@ -620,6 +628,7 @@ void* sk_get_ftable(size_t size) {
 typedef struct {
   ginfo_t ginfo_data;
   uint64_t gid;
+  sk_session_t session;
   void** pconsts;
 } no_file_t;
 
@@ -637,8 +646,11 @@ static void sk_init_no_file() {
   gmutex = NULL;
   gid = &no_file->gid;
   pconsts = &no_file->pconsts;
+  psession = &no_file->session;
   *gid = 1;
   *pconsts = NULL;
+  psession->low = 0;
+  psession->high = 0;
 }
 #endif
 

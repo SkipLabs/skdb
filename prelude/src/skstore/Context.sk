@@ -1383,6 +1383,22 @@ private native fun newObstack(): Obstack;
 private native fun destroyObstack(Obstack): void;
 
 @debug
+@cpp_extern("SKIP_switch_to_trace")
+private native fun switchToTrace(): void;
+
+@debug
+@cpp_extern("SKIP_duplicate")
+private native fun duplicate(String): String;
+
+@debug
+@cpp_extern("SKIP_restore_from_trace")
+private native fun restoreFromTrace(): void;
+
+@debug
+@cpp_extern("SKIP_clear_and_restore_from_trace")
+private native fun clearAndRestoreFromTrace(): void;
+
+@debug
 @cpp_extern("SKIP_destroy_Obstack_with_value")
 private native fun destroyObstackWithValue<T>(Obstack, List<T>): List<T>;
 

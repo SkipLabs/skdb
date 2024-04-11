@@ -17,6 +17,17 @@ untracked fun main(): void {
   setName("skmonitor.test.child");
   setStringAttribute("child.string.attribute", "I'm a child span.");
   endSpan();
+  startSpan();
+  setName("skmonitor.test.skdb");
+  setIntAttribute("skdb.bytes.read", 256);
+  setIntAttribute("skdb.bytes.written", 8 * 1024);
+  setIntAttribute("skdb.replication.writes", 3);
+  setIntAttribute("skdb.replication.reads", 24);
+  count = 0;
+  while (count < 10000) {
+    !count = count + 1
+  };
+  endSpan();
   endSpan();
   SKStore.destroyObstack(saved);
 }

@@ -1,0 +1,23 @@
+monitors:
+  - name: Long statement
+    type: metric
+    notify_everyone_by_email: true
+    metrics:
+      - skdb_statement_s as $seconds
+    query:
+      - max($seconds)
+    column: max($seconds)
+    column_unit: seconds
+    max_allowed_value: 2
+    check_num_point: 5
+  - name: Long transaction
+    type: metric
+    notify_everyone_by_email: true
+    metrics:
+      - skdb_transaction_s as $seconds
+    query:
+      - max($seconds)
+    column: max($seconds)
+    column_unit: seconds
+    max_allowed_value: 2
+    check_num_point: 5

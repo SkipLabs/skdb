@@ -1,0 +1,318 @@
+schema: v2
+id: project_2.dashboard_12
+name: SKDB
+table:
+  - metrics:
+      - skdb_statement_count as $count
+      - skruntime_memory_persistent as $persistent
+      - skruntime_memory_freetable as $freetable
+      - skdb_replication_batch_handling_count as $batch
+    query:
+      - per_min(sum($count))
+      - max($persistent)
+      - max($freetable)
+      - group by trace
+      - per_min(sum($batch))
+    columns:
+      max($freetable):
+        unit: bytes
+        color: '#fac858'
+        agg_func: max
+      max($persistent):
+        unit: bytes
+        color: '#91cc75'
+        agg_func: max
+      per_min(sum($batch)):
+        unit: '{batch}'
+        color: '#ee6666'
+        agg_func: median
+      per_min(sum($count)):
+        color: '#5470c6'
+        agg_func: median
+grid_rows:
+  - title: Memory
+    items:
+      - title: Memory
+        width: 12
+        height: 28
+        type: chart
+        chart: stacked-bar
+        metrics:
+          - skruntime_memory_persistent as $persistent
+          - skruntime_memory_freetable as $freetable
+          - skruntime_obstack_peak as $obstack
+          - skmonitor_memory as $monitoring
+        query:
+          - max($persistent)
+          - max($freetable)
+          - avg($obstack)
+          - avg($monitoring)
+        columns:
+          avg($monitoring):
+            unit: bytes
+            color: '#ee6666'
+          avg($obstack):
+            unit: bytes
+            color: '#fac858'
+          max($freetable):
+            unit: bytes
+            color: '#91cc75'
+          max($persistent):
+            unit: bytes
+            color: '#5470c6'
+        legend:
+          type: list
+          placement: bottom
+          values:
+            - avg
+  - title: Statements
+    items:
+      - title: Statements
+        width: 12
+        height: 28
+        type: chart
+        chart: bar
+        metrics:
+          - skdb_statement_success as $success
+          - skdb_statement_failure as $failure
+        query:
+          - per_min(sum($success))
+          - per_min(sum($failure))
+        columns:
+          per_min(sum($failure)):
+            unit: '{statement}'
+            color: '#91cc75'
+          per_min(sum($success)):
+            unit: '{statement}'
+            color: '#5470c6'
+        legend:
+          type: table
+          placement: bottom
+          values:
+            - last
+      - title: Duration
+        width: 12
+        height: 28
+        x_axis: 12
+        type: chart
+        chart: line
+        metrics:
+          - skdb_statement_s as $seconds
+        query:
+          - max($seconds)
+        columns:
+          max($seconds):
+            unit: seconds
+            color: '#5470c6'
+        legend:
+          type: table
+          placement: bottom
+          values:
+            - max
+  - title: Transactions
+    items:
+      - title: Transactions
+        width: 12
+        height: 28
+        type: chart
+        chart: bar
+        metrics:
+          - skdb_transaction_success as $success
+          - skdb_transaction_failure as $failure
+        query:
+          - per_min(sum($success))
+          - per_min(sum($failure))
+        columns:
+          per_min(sum($failure)):
+            unit: '{transaction}'
+            color: '#91cc75'
+          per_min(sum($success)):
+            unit: '{transaction}'
+            color: '#5470c6'
+        legend:
+          type: table
+          placement: bottom
+          values:
+            - last
+      - title: Duration
+        width: 12
+        height: 28
+        x_axis: 12
+        type: chart
+        chart: line
+        metrics:
+          - skdb_transaction_s as $seconds
+        query:
+          - max($seconds)
+        columns:
+          max($seconds):
+            unit: seconds
+            color: '#5470c6'
+        legend:
+          type: table
+          placement: bottom
+          values:
+            - max
+  - title: Replication reads
+    items:
+      - title: Reads
+        width: 12
+        height: 28
+        type: chart
+        chart: line
+        metrics:
+          - skdb_replication_batch_handling_count as $count
+        query:
+          - per_min(sum($count))
+        columns:
+          per_min(sum($count)):
+            unit: '{batch}'
+            color: '#5470c6'
+        legend:
+          type: list
+          placement: bottom
+          values:
+            - max
+      - title: Duration
+        width: 12
+        height: 28
+        x_axis: 12
+        type: chart
+        chart: line
+        metrics:
+          - skdb_replication_batch_handling_s as $seconds
+        query:
+          - max($seconds)
+        columns:
+          max($seconds):
+            unit: seconds
+            color: '#5470c6'
+        legend:
+          type: table
+          placement: bottom
+          values:
+            - max
+      - title: Updated tables
+        width: 12
+        height: 28
+        y_axis: 28
+        type: chart
+        chart: line
+        metrics:
+          - skdb_replication_table_count as $tables
+        query:
+          - per_min(sum($tables))
+        columns:
+          per_min(sum($tables)):
+            unit: '{table}'
+            color: '#5470c6'
+        legend:
+          type: table
+          placement: bottom
+          values:
+            - max
+      - title: Updated rows
+        width: 12
+        height: 28
+        x_axis: 12
+        y_axis: 28
+        type: chart
+        chart: line
+        metrics:
+          - skdb_replication_row_updates as $update
+          - skdb_replication_rejected_rows as $rejection
+        query:
+          - per_min(max($update))
+          - per_min(max($rejection))
+        columns:
+          per_min(max($rejection)):
+            unit: '{table}'
+            color: '#91cc75'
+          per_min(max($update)):
+            unit: '{row}'
+            color: '#5470c6'
+        legend:
+          type: table
+          placement: bottom
+          values:
+            - avg
+            - max
+  - title: Replication writes
+    items:
+      - title: Writes
+        width: 12
+        height: 28
+        type: chart
+        chart: line
+        metrics:
+          - skdb_tail_count as $count
+        query:
+          - per_min(sum($count))
+        columns:
+          per_min(sum($count)):
+            unit: '{tail}'
+            color: '#5470c6'
+        legend:
+          type: list
+          placement: bottom
+          values:
+            - max
+      - title: Duration
+        width: 12
+        height: 28
+        x_axis: 12
+        type: chart
+        chart: line
+        metrics:
+          - skdb_tail_s as $seconds
+        query:
+          - max($seconds)
+        columns:
+          max($seconds):
+            unit: seconds
+            color: '#5470c6'
+        legend:
+          type: table
+          placement: bottom
+          values:
+            - max
+      - title: Updated tables
+        width: 12
+        height: 28
+        y_axis: 28
+        type: chart
+        chart: line
+        metrics:
+          - skdb_tail_table_count as $tables
+        query:
+          - per_min(sum($tables))
+        columns:
+          per_min(sum($tables)):
+            unit: '{table}'
+            color: '#5470c6'
+        legend:
+          type: table
+          placement: bottom
+          values:
+            - max
+      - title: Updated rows
+        width: 12
+        height: 28
+        x_axis: 12
+        y_axis: 28
+        type: chart
+        chart: line
+        metrics:
+          - skdb.tail.rows as $update
+        query:
+          - per_min(max($update))
+        columns:
+          per_min(max($update)):
+            unit: '{row}'
+            color: '#5470c6'
+        legend:
+          type: table
+          placement: bottom
+          values:
+            - avg
+            - max

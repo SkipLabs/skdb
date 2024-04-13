@@ -21,7 +21,7 @@ value class Name private (
   }
 }
 
-base class Stmt{pos: Int = 0} uses Orderable, Show {
+base class Stmt{pos: Int = 0} uses Orderable, Show, HasClassName {
   children =
   | BeginTransaction{kind: TransactionKind}
   | EndTransaction{}

@@ -26,8 +26,6 @@
 
 void*** pconsts = NULL;
 
-void* program_break = NULL;
-
 /*****************************************************************************/
 /* Database capacity. */
 /*****************************************************************************/
@@ -223,7 +221,6 @@ typedef struct ginfo {
   char* head;
   char* end;
   char* fileName;
-  char* break_ptr;
   size_t total_palloc_size;
 } ginfo_t;
 
@@ -457,7 +454,7 @@ struct file_mapping {
 /* Creates a new file mapping. */
 /*****************************************************************************/
 
-void sk_create_mapping(char* fileName, char* static_limit, size_t icapacity) {
+void sk_create_mapping(char* fileName, size_t icapacity) {
   if (fileName != NULL && access(fileName, F_OK) == 0) {
     fprintf(stderr, "ERROR: File %s already exists!\n", fileName);
     exit(ERROR_MAPPING_EXISTS);
@@ -509,7 +506,6 @@ void sk_create_mapping(char* fileName, char* static_limit, size_t icapacity) {
     ginfo->ftable[i] = NULL;
   }
 
-  ginfo->break_ptr = static_limit;
   ginfo->total_palloc_size = 0;
 
   // The head must be aligned!
@@ -578,7 +574,7 @@ void sk_load_mapping(char* fileName) {
 /*****************************************************************************/
 
 int sk_is_static(void* ptr) {
-  return !(ginfo->head <= (char*)ptr && (char*)ptr < ginfo->end);
+  return !(ginfo->head <= (char*)ptr && (char*)ptr <= ginfo->end);
 }
 
 /*****************************************************************************/
@@ -622,14 +618,13 @@ typedef struct {
 } no_file_t;
 
 #ifdef __APPLE__
-static void sk_init_no_file(char* static_limit) {
+static void sk_init_no_file() {
   no_file_t* no_file = malloc(sizeof(no_file_t));
   if (no_file == NULL) {
     perror("malloc");
     exit(1);
   }
   ginfo = &no_file->ginfo_data;
-  ginfo->break_ptr = static_limit;
   ginfo->total_palloc_size = 0;
   ginfo->fileName = NULL;
   ginfo->context = NULL;
@@ -665,13 +660,13 @@ void SKIP_memory_init(int argc, char** argv) {
   if (is_create) {
     exit(EXIT_SUCCESS);
   }
-  sk_init_no_file(program_break);
+  sk_init_no_file();
 
 #else   // __APPLE__
   if (is_create || fileName == NULL) {
     size_t capacity = DEFAULT_CAPACITY;
     capacity = parse_capacity(argc, argv);
-    sk_create_mapping(fileName, program_break, capacity);
+    sk_create_mapping(fileName, capacity);
   } else {
     sk_load_mapping(fileName);
   }

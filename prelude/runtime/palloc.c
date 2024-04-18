@@ -458,17 +458,21 @@ struct file_mapping {
 /*****************************************************************************/
 
 void sk_create_mapping(char* fileName, char* static_limit, size_t icapacity) {
-  if (access(fileName, F_OK) == 0) {
+  if (fileName != NULL && access(fileName, F_OK) == 0) {
     fprintf(stderr, "ERROR: File %s already exists!\n", fileName);
     exit(ERROR_MAPPING_EXISTS);
   }
-  int fd = open(fileName, O_RDWR | O_CREAT, 0600);
-  lseek(fd, icapacity, SEEK_SET);
-  (void)write(fd, "", 1);
+  file_mapping_t* mapping;
   int prot = PROT_READ | PROT_WRITE;
-  file_mapping_t* mapping =
-      mmap(BOTTOM_ADDR, icapacity, prot, MAP_SHARED | MAP_FIXED, fd, 0);
-  close(fd);
+  if (fileName == NULL) {
+    mapping = mmap(NULL, icapacity, prot, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  } else {
+    int fd = open(fileName, O_RDWR | O_CREAT, 0600);
+    lseek(fd, icapacity, SEEK_SET);
+    (void)write(fd, "", 1);
+    mapping = mmap(BOTTOM_ADDR, icapacity, prot, MAP_SHARED | MAP_FIXED, fd, 0);
+    close(fd);
+  }
 
   if (mapping == MAP_FAILED) {
     perror("ERROR (MAP FAILED)");
@@ -485,7 +489,7 @@ void sk_create_mapping(char* fileName, char* static_limit, size_t icapacity) {
   capacity = &mapping->capacity;
   pconsts = &mapping->pconsts;
 
-  size_t fileName_length = strlen(fileName) + 1;
+  size_t fileName_length = (fileName != NULL) ? strlen(fileName) + 1 : 0;
   char* persistent_fileName = mapping->persistent_fileName;
 
   char* head = persistent_fileName + fileName_length;
@@ -496,7 +500,9 @@ void sk_create_mapping(char* fileName, char* static_limit, size_t icapacity) {
     exit(ERROR_MAPPING_MEMORY);
   }
 
-  memcpy(persistent_fileName, fileName, fileName_length);
+  if (fileName != NULL) {
+    memcpy(persistent_fileName, fileName, fileName_length);
+  }
 
   int i;
   for (i = 0; i < FTABLE_SIZE; i++) {
@@ -511,7 +517,7 @@ void sk_create_mapping(char* fileName, char* static_limit, size_t icapacity) {
 
   ginfo->head = head;
   ginfo->end = end;
-  ginfo->fileName = persistent_fileName;
+  ginfo->fileName = (fileName != NULL) ? persistent_fileName : NULL;
   ginfo->context = NULL;
   *gid = 1;
   if (icapacity != DEFAULT_CAPACITY) {
@@ -621,6 +627,7 @@ typedef struct {
   void** pconsts;
 } no_file_t;
 
+#ifdef __APPLE__
 static void sk_init_no_file(char* static_limit) {
   no_file_t* no_file = malloc(sizeof(no_file_t));
   if (no_file == NULL) {
@@ -638,6 +645,7 @@ static void sk_init_no_file(char* static_limit) {
   *gid = 1;
   *pconsts = NULL;
 }
+#endif
 
 int sk_is_nofile_mode() {
   return (ginfo->fileName == NULL);
@@ -666,9 +674,7 @@ void SKIP_memory_init(int argc, char** argv) {
   sk_init_no_file(program_break);
 
 #else   // __APPLE__
-  if (fileName == NULL) {
-    sk_init_no_file(program_break);
-  } else if (is_create) {
+  if (is_create || fileName == NULL) {
     size_t capacity = DEFAULT_CAPACITY;
     capacity = parse_capacity(argc, argv);
     sk_create_mapping(fileName, program_break, capacity);
@@ -690,14 +696,6 @@ void SKIP_print_persistent_size() {
 }
 
 void* sk_palloc(size_t size) {
-  if (ginfo->fileName == NULL) {
-    void* result = malloc(size);
-    if (result == NULL) {
-      perror("malloc");
-      exit(1);
-    }
-    return result;
-  }
   sk_check_has_lock();
   size = sk_pow2_size(size);
   ginfo->total_palloc_size += size;
@@ -715,10 +713,6 @@ void* sk_palloc(size_t size) {
 }
 
 void sk_pfree_size(void* chunk, size_t size) {
-  if (ginfo->fileName == NULL) {
-    free(chunk);
-    return;
-  }
   sk_check_has_lock();
   size = sk_pow2_size(size);
   ginfo->total_palloc_size -= size;

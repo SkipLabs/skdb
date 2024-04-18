@@ -578,13 +578,7 @@ void sk_load_mapping(char* fileName) {
 /*****************************************************************************/
 
 int sk_is_static(void* ptr) {
-  return (char*)ptr <= ginfo->break_ptr;
-}
-
-void sk_lower_static(void* ptr) {
-  if ((char*)ptr < ginfo->break_ptr) {
-    ginfo->break_ptr = ptr;
-  }
+  return !(ginfo->head <= (char*)ptr && (char*)ptr < ginfo->end);
 }
 
 /*****************************************************************************/

@@ -2266,16 +2266,17 @@ fun printContext(context: mutable SKStore.Context): void {
     for ((dirsub, tick) in spec) {
       edir = context.unsafeGetEagerDir(dirsub.dirName);
       (shouldRebuild, changes) = edir.getChangesAfter(tick);
-      producedOutput = edir.writeDiff(
-        context,
-        shouldRebuild,
-        changes.iterator(),
-        writer,
-        dirsub.entity,
-        dirsub.format,
-        dirsub.filter,
-        dirsub.getDestinationWatermark(context),
-      );
+      producedOutput =
+        edir.writeDiff(
+          context,
+          shouldRebuild,
+          changes.iterator(),
+          writer,
+          dirsub.entity,
+          dirsub.format,
+          dirsub.filter,
+          dirsub.getDestinationWatermark(context),
+        ) > 0;
       !producedAnyOutput = producedAnyOutput || producedOutput
     };
     if (producedAnyOutput) {

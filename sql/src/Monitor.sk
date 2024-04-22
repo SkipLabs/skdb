@@ -9,6 +9,11 @@ const kReplicationRebuild: String = "skdb.replication.rebuild";
 const kReplicationFeedback: String = "skdb.replication.feedback";
 const kReplicationTable: String = "skdb.replication.table";
 const kReplicationBatchHandling: String = "skdb.replication.batch.handling";
+const kTailTable: String = "skdb.tail.table";
+const kTailReboot: String = "skdb.tail.reboot";
+const kTailRebuild: String = "skdb.tail.rebuild";
+const kTailCommit: String = "skdb.tail.commit";
+const kTailChanges: String = "skdb.tail.changes";
 const kExecuted: String = "skdb.executed";
 const kBytesRead: String = "skdb.bytes.read";
 const kBytesWritten: String = "skdb.bytes.written";
@@ -35,12 +40,28 @@ fun replicationFeedback(): void {
   SKMonitor.addEvent(kReplicationFeedback, Map[])
 }
 
+fun tailReboot(): void {
+  SKMonitor.addEvent(kTailReboot, Map[])
+}
+
+fun tailRebuild(): void {
+  SKMonitor.addEvent(kTailRebuild, Map[])
+}
+
+fun tailCommit(): void {
+  SKMonitor.addEvent(kTailCommit, Map[])
+}
+
 fun addReplicationRowUpdates(rows: Int): void {
   SKMonitor.incrIntAttribute(kReplicationRowUpdates, rows)
 }
 
 fun addReplicationRejectedRows(rows: Int): void {
   SKMonitor.incrIntAttribute(kReplicationRejectedRows, rows)
+}
+
+fun addTailChanges(changes: Int): void {
+  SKMonitor.incrIntAttribute(kTailChanges, changes)
 }
 
 fun setName(name: String): void {
@@ -90,6 +111,11 @@ fun startReplicationBatchHangling(): void {
   setName(kReplicationBatchHandling)
 }
 
+fun startTailTable(): void {
+  start();
+  setName(kTailTable)
+}
+
 fun end(): void {
   SKMonitor.endSpan()
 }
@@ -107,6 +133,10 @@ fun endReplicationTable(): void {
 }
 
 fun endReplicationBatchHangling(): void {
+  end()
+}
+
+fun endTailTable(): void {
   end()
 }
 

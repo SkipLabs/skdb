@@ -2,6 +2,12 @@ module alias P = SQLParser;
 
 module SKDB;
 
+class TailException(msg: String) extends Exception {
+  fun getMessage(): String {
+    this.msg
+  }
+}
+
 class TailSpec{
   since: Int,
   filter: ?String,
@@ -33,9 +39,7 @@ fun buildTailFilter(
     );
     e = compiler.compileExpr(compilerContext, ast) match {
     | SKDB.CIExpr(x) -> x
-    | _ ->
-      print_error("Unexpected type for filter expression");
-      skipExit(2)
+    | _ -> throw TailException("Unexpected type for filter expression")
     };
     (context, isReset, dirName) ~> {
       mcontext = context.mclone();
@@ -43,9 +47,7 @@ fun buildTailFilter(
       baseName -> {
         inputRow = baseName match {
         | rowKey @ SKDB.RowKey _ -> rowKey.getRowValues()
-        | _ ->
-          print_error("Unexpected table entry type");
-          skipExit(2)
+        | _ -> throw TailException("Unexpected table entry type")
         };
         evaluator = SKDB.ExprEvaluator(Array[inputRow], Array[], None());
 
@@ -78,9 +80,7 @@ fun buildTailFilter(
             | SKDB.AROK() -> true
             | _ -> false
             }
-          | _ ->
-            print_error("Unexpected table entry type");
-            skipExit(2)
+          | _ -> throw TailException("Unexpected table entry type")
           };
       }
     }
@@ -103,18 +103,18 @@ fun buildCSVSchemaTransform(
       sourceCol.default is None _ &&
       !target.contains(sourceCol)
     ) {
-      print_error(
+      throw TailException(
         `Incompatible schema: missing required column ${sourceCol.name}`,
-      );
-      skipExit(2)
+      )
     };
   };
 
   schemaTransformation = target.map(targetCol -> {
     source.findIdx(col -> col.name == targetCol.name) match {
     | None() ->
-      print_error(`Incompatible schema: unknown column ${targetCol.name}`);
-      skipExit(2)
+      throw TailException(
+        `Incompatible schema: unknown column ${targetCol.name}`,
+      )
     | Some(idx) -> idx
     }
   });
@@ -178,7 +178,9 @@ fun tailSub(
     // rebuild the sub with extra filtering as supported by tail
     gContext.sessions.maybeGet(sessionID) match {
     | None() ->
-      print_error("Error: session not found");
+      error = "Error: session not found";
+      SKMonitor.setErrorStatus(error);
+      print_error(error);
       skipExit(2)
     | Some(sub) ->
       dirDescrs = getDirDescrs(gContext);
@@ -252,7 +254,9 @@ fun tailSub(
     tick = SKStore.withContext<?Int>(context -> {
       context.sessions.maybeGet(sessionID) match {
       | None() ->
-        print_error("Error: session not found");
+        error = "Error: session not found";
+        SKMonitor.setErrorStatus(error);
+        print_error(error);
         skipExit(2)
       | Some(_) -> void
       };
@@ -262,6 +266,7 @@ fun tailSub(
         sub.destinationSource,
       ) match {
       | Some(RSError()) ->
+        SKDBMonitor.tailReboot();
         print_raw(":reboot\n");
         return None()
       | Some(RSEstablished()) -> true
@@ -299,6 +304,7 @@ fun tailSub(
       chunkingDisabled = false;
 
       for (dirSub in sub.dirSubs) {
+        SKDBMonitor.startTailTable();
         dirName = dirSub.dirName;
         edir = context.unsafeGetEagerDir(dirName);
         format = options.format match {
@@ -358,8 +364,14 @@ fun tailSub(
           dirSub.getDestinationWatermark(context),
           checkpointInterval,
         );
-        !producedAnyOutput = producedAnyOutput || producedOutput;
+        if (shouldRebuild) {
+          SKDBMonitor.tailRebuild()
+        } else {
+          SKDBMonitor.addTailChanges(producedOutput)
+        };
+        !producedAnyOutput = producedAnyOutput || producedOutput > 0;
         !couldFollowChanges = couldFollowChanges && !shouldRebuild;
+        SKDBMonitor.endTailTable()
       };
 
       // produce checkpoint for flushing and committing
@@ -370,6 +382,7 @@ fun tailSub(
         // timeout
         writer.write(":" + context.tick.value.toString() + "\n");
         writer.flush();
+        SKDBMonitor.tailCommit();
         flushStdout();
       };
 

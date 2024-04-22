@@ -2281,7 +2281,7 @@ fun printContext(context: mutable SKStore.Context): void {
         dirsub.format,
         dirsub.filter(context.clone(), false, dirsub.dirName),
         dirsub.getDestinationWatermark(context),
-      );
+      ) > 0;
       !producedAnyOutput = producedAnyOutput || producedOutput
     };
     if (producedAnyOutput) {

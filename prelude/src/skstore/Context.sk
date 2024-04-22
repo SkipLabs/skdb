@@ -872,7 +872,7 @@ mutable class Context{
             dirSub.format,
             dirSub.filter(ctx, false, dirName),
             dirSub.getDestinationWatermark(ctx),
-          );
+          ) > 0;
           !producedAnyOutput = producedAnyOutput || producedOutput
         | _ -> void
         }

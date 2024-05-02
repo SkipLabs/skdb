@@ -420,22 +420,18 @@ private fun resetReactiveViews(
     tableDir.writeArray(context, fileName, Array[dirDescr]);
   };
 }
-
-fun alterTableAddColumn(
+fun alterTable(
   context: mutable SKStore.Context,
   pos: Int,
   name: P.Name,
-  newCol: P.ColumnDefinition,
+  transformSchema: (Array<P.ColumnDefinition>, Int) -> Array<
+    P.ColumnDefinition,
+  >,
+  transformRow: (mutable SKStore.Context, RowValues, Int) -> RowValues,
   options: Options,
 ): void {
   if (PredefinedTable::isReservedName(name)) {
     error(pos, "Can't add column to predefined table")
-  };
-  if (newCol.notNull is Some _ && newCol.default is None _) {
-    error(pos, "ADD COLUMN must either be nullable or provide a default value");
-  };
-  if (newCol.unique is Some _ || newCol.primary is Some _) {
-    error(pos, "ADD COLUMN must not impose a uniqueness or PK constraint")
   };
 
   tableDir = getTableDir(context);
@@ -449,9 +445,7 @@ fun alterTableAddColumn(
   dir = context.unsafeGetEagerDir(dirName);
   oldNCols = oldDescr.schema.size();
 
-  newSchema = Array::fillBy(oldNCols + 1, i ->
-    if (i < oldNCols) oldDescr.schema[i] else newCol
-  );
+  newSchema = transformSchema(oldDescr.schema, oldNCols);
   newKinds = newSchema.mapWithIndex((idx, col) -> (idx, P.IASC(), col.ty));
 
   convertToNewSchema: (
@@ -469,16 +463,8 @@ fun alterTableAddColumn(
         | _ -> invariant_violation("Invalid SKDB row")
         }
       );
-
-      newVals = RowValues(
-        Array::fillBy(oldNCols + 1, i ->
-          if (i < oldNCols) oldRow.getValue(i) else {
-            newCol.default.flatMap(def -> evaluateDefault(context, def.expr))
-          }
-        ),
-        repeat,
-      );
-      newKey = RowKey(newVals, newKinds);
+      newRow = transformRow(context, oldRow with {repeat}, oldNCols);
+      newKey = RowKey(newRow, newKinds);
       newSource = SKStore.Path::create(dirName, newKey);
 
       // Since schema/kinds information is encoded in SKDB.RowKeys, we have to both null
@@ -487,7 +473,7 @@ fun alterTableAddColumn(
         (_tick, source, writer, _row) = x;
         yield (key, (source, writer, Array[]))
       };
-      yield (newKey, (newSource, newSource, Array[newVals]))
+      yield (newKey, (newSource, newSource, Array[newRow]))
 
     | None() -> void
     | Some(_) -> invariant_violation("Invalid SKDB row")
@@ -521,6 +507,36 @@ fun alterTableAddColumn(
     transitiveChildren.map((x) -> P.Name::create(x.dirName)),
     options,
   );
+}
+
+fun alterTableAddColumn(
+  context: mutable SKStore.Context,
+  pos: Int,
+  name: P.Name,
+  newCol: P.ColumnDefinition,
+  options: Options,
+): void {
+  if (newCol.notNull is Some _ && newCol.default is None _) {
+    error(pos, "ADD COLUMN must either be nullable or provide a default value");
+  };
+  if (newCol.unique is Some _ || newCol.primary is Some _) {
+    error(pos, "ADD COLUMN must not impose a uniqueness or PK constraint")
+  };
+
+  transformSchema = (oldSchema, oldNCols) -> {
+    Array::fillBy(oldNCols + 1, i -> if (i < oldNCols) oldSchema[i] else newCol)
+  };
+  transformRow = (context, oldRow, oldNCols) -> {
+    RowValues(
+      Array::fillBy(oldNCols + 1, i ->
+        if (i < oldNCols) oldRow.getValue(i) else {
+          newCol.default.flatMap(def -> evaluateDefault(context, def.expr))
+        }
+      ),
+      oldRow.repeat,
+    )
+  };
+  alterTable(context, pos, name, transformSchema, transformRow, options);
 }
 
 /*****************************************************************************/

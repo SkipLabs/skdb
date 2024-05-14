@@ -424,10 +424,8 @@ fun alterTable(
   context: mutable SKStore.Context,
   pos: Int,
   name: P.Name,
-  transformSchema: (Array<P.ColumnDefinition>, Int) -> Array<
-    P.ColumnDefinition,
-  >,
-  transformRow: (mutable SKStore.Context, RowValues, Int) -> RowValues,
+  transformSchema: Array<P.ColumnDefinition> -> Array<P.ColumnDefinition>,
+  transformRow: (mutable SKStore.Context, RowValues) -> RowValues,
   options: Options,
 ): void {
   if (PredefinedTable::isReservedName(name)) {
@@ -443,9 +441,8 @@ fun alterTable(
   };
   dirName = oldDescr.dirName;
   dir = context.unsafeGetEagerDir(dirName);
-  oldNCols = oldDescr.schema.size();
 
-  newSchema = transformSchema(oldDescr.schema, oldNCols);
+  newSchema = transformSchema(oldDescr.schema);
   newKinds = newSchema.mapWithIndex((idx, col) -> (idx, P.IASC(), col.ty));
 
   convertToNewSchema: (
@@ -463,7 +460,7 @@ fun alterTable(
         | _ -> invariant_violation("Invalid SKDB row")
         }
       );
-      newRow = transformRow(context, oldRow with {repeat}, oldNCols);
+      newRow = transformRow(context, oldRow with {repeat});
       newKey = RowKey(newRow, newKinds);
       newSource = SKStore.Path::create(dirName, newKey);
 
@@ -523,18 +520,33 @@ fun alterTableAddColumn(
     error(pos, "ADD COLUMN must not impose a uniqueness or PK constraint")
   };
 
-  transformSchema = (oldSchema, oldNCols) -> {
-    Array::fillBy(oldNCols + 1, i -> if (i < oldNCols) oldSchema[i] else newCol)
-  };
-  transformRow = (context, oldRow, oldNCols) -> {
+  transformSchema = (oldSchema) -> oldSchema.append(newCol);
+  transformRow = (context, oldRow) ->
     RowValues(
-      Array::fillBy(oldNCols + 1, i ->
-        if (i < oldNCols) oldRow.getValue(i) else {
-          newCol.default.flatMap(def -> evaluateDefault(context, def.expr))
-        }
+      oldRow.values.append(
+        newCol.default.flatMap(def -> evaluateDefault(context, def.expr)),
       ),
       oldRow.repeat,
-    )
+    );
+  alterTable(context, pos, name, transformSchema, transformRow, options);
+}
+
+// helper for alterTableDropColumn; hoisted due to polymorphic type
+private fun dropAtIdx<T>(array: Array<T>, idx: Int): Array<T> {
+  n = array.size();
+  Array::fillBy(n - 1, i -> array[if (i < idx) i else i + 1]);
+}
+
+private fun alterTableDropColumn(
+  context: mutable SKStore.Context,
+  pos: Int,
+  name: P.Name,
+  colIdx: Int,
+  options: Options,
+): void {
+  transformSchema = (oldSchema) -> dropAtIdx(oldSchema, colIdx);
+  transformRow = (_context, oldRow) -> {
+    RowValues(dropAtIdx(oldRow.values, colIdx), oldRow.repeat)
   };
   alterTable(context, pos, name, transformSchema, transformRow, options);
 }

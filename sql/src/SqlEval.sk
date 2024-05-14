@@ -1319,7 +1319,9 @@ class Evaluator{options: Options, user: ?UserFile} {
         alterTableAddColumn(context, pos, name, colDef, this.options)
       )
     | P.AlterTableDropCol _ ->
-      invariant_violation("DROP COLUMN not yet implemented")
+      invariant_violation(
+        "DROP COLUMN not allowed outside of extract-column transaction",
+      )
     };
   }
 
@@ -1891,6 +1893,13 @@ private mutable class SQLContext(
         mutable SKStore.Context,
         SKStore.Context,
       ) ~> void) = None();
+
+      if (
+        isTransaction &&
+        statements.any((stmt) -> stmt is P.AlterTableDropCol _)
+      ) {
+        return alterTableExtractColumn(context, statements, params, options)
+      };
 
       for (stmt in statements) {
         markIfRead(context, stmt);

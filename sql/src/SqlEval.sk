@@ -596,6 +596,8 @@ class Evaluator{options: Options, user: ?UserFile} {
           .getIterator(context)
           .map(kv -> (kv.i0, kv.i1.collect(Array)));
 
+        context.removeDir(selectDir.dirName);
+
         tableDir.writeArrayMany(context, content);
       })
     | P.Insert{pos, onConflict, name, alias, paramsOpt, values} ->

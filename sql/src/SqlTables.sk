@@ -360,6 +360,7 @@ fun getLatestIndexDescr(
 // Recompile and reevaluate any views that depend upon any of the altered directories
 private fun resetReactiveViews(
   context: mutable SKStore.Context,
+  pos: Int,
   alteredDirs: SortedSet<P.Name>,
   options: Options,
 ): void {
@@ -377,12 +378,22 @@ private fun resetReactiveViews(
 
   for (childView in viewsToReset) {
     selectFile = SelectFile::type(childView);
-    newCSelect = SKDB.Compiler::create(
-      false,
-      options with {reactive => true},
-      selectFile.select.pos,
-      selectFile.queryParams,
-    ).compileSelect(context, selectFile.select, selectFile.name, true);
+    newCSelect = try {
+      SKDB.Compiler::create(
+        false,
+        options with {reactive => true},
+        selectFile.select.pos,
+        selectFile.queryParams,
+      ).compileSelect(context, selectFile.select, selectFile.name, true);
+    } catch {
+    | SqlError _ ->
+      error(
+        pos,
+        `Reactive view ${selectFile.name.toString()} rendered invalid by schema change`,
+      )
+    | e -> throw e
+    };
+
     dirName = SKStore.DirName::create("/" + selectFile.name + "/");
 
     tableDir = context.unsafeGetEagerDir(getTableDir(context).dirName);
@@ -501,6 +512,7 @@ fun alterTable(
 
   resetReactiveViews(
     context,
+    pos,
     transitiveChildren.map((x) -> P.Name::create(x.dirName)),
     options,
   );

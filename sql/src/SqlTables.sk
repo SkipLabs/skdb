@@ -561,6 +561,7 @@ private fun alterTableDropColumn(
     RowValues(dropAtIdx(oldRow.values, colIdx), oldRow.repeat)
   };
   alterTable(context, pos, name, transformSchema, transformRow, options);
+  errorAllExistingSubs(context, SKStore.DirName::create("/" + name + "/"));
 }
 
 // _Extract_ a column `c` from a table `t` with primary key column `id` to a

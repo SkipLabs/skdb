@@ -577,12 +577,12 @@ fun alterTableExtractColumn(
   SKStore.Context,
 ) ~> void {
   // First, validate that the transaction has the expected form:
-  // (1) CREATE TABLE t_c AS SELECT c, id, skdb_access, true AS __skdb_is_original FROM t;
+  // (1) CREATE TABLE t_c AS SELECT c, id, skdb_access, true AS skdb_original FROM t;
   //   i.e. create-table-as-select from some table `t` with selected columns (in any order)
   //       (a) some data column (`c` here),
   //       (b) the primary-key column (`id` here),
   //       (c) `skdb_access` iff `t` has an `skdb_access` column
-  //       (d) `true AS __skdb_is_original` verbatim (TODO: make this column-name a constant)
+  //       (d) `true AS skdb_original` verbatim
   // (2) ALTER TABLE t DROP COLUMN c;
   //   i.e. drops the data column selected in the create-table
   if (stmts.size() != 2) {
@@ -616,7 +616,7 @@ fun alterTableExtractColumn(
         | P.SelectExpr(
           P.VInt(1),
           Some(alias),
-        ) if (alias.toString() == "__skdb_is_original" && !seen_orig) ->
+        ) if (alias.toString() == "skdb_original" && !seen_orig) ->
           (seen_data, seen_pk, seen_access, true)
         | P.SelectExpr(
           P.Identifier(ident, _),

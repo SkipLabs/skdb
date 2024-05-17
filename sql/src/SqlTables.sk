@@ -589,7 +589,7 @@ fun alterTableExtractColumn(
     pos = if (stmts.size() >= 1) stmts[0].pos else 0;
     error(pos, "Malformed extract-column transaction")
   };
-  (createStmt, sourceTable, dataCol) = stmts[0] match {
+  (createStmt, sourceTable, dataCol, pkCol) = stmts[0] match {
   | stmt @ P.CreateTableAs{
     ifNotExists => false,
     select => P.Select{
@@ -644,13 +644,13 @@ fun alterTableExtractColumn(
     ) match {
     | (
       Some(data),
-      Some(_pk),
+      Some(pk),
       has_skdb_access,
       true,
     ) if (
       has_skdb_access == oldSchema.any(col -> col.name == skdbAccessColName)
     ) ->
-      (stmt, sourceTable, data)
+      (stmt, sourceTable, data, pk)
     | _ -> error(stmt.pos, "Malformed extract-column transaction")
     }
   | bad_stmt -> error(bad_stmt.pos, "Malformed extract-column transaction")
@@ -665,6 +665,52 @@ fun alterTableExtractColumn(
   | stmt -> error(stmt.pos, "Malformed extract-column transaction6")
   };
 
+  // Construct a system reactive view, checking the constraint that the extracted
+  // table contains no more than one "skdb_original" column for each primary key
+  // in the source table
+  originalUniqueConstraint = {
+    pkIdent = P.Identifier(pkCol.name, None());
+    check_unique = P.SelectExpr(
+      P.Check(
+        P.BinOp(
+          P.OLtEq(),
+          P.Call(P.Name::create("count"), Array[pkIdent], false),
+          P.VInt(1),
+        ),
+      ),
+      Some(P.Name::create("unique_original_extracted_value")),
+    );
+    core = P.SelectCoreQuery{
+      params => Array[check_unique],
+      from => Some(
+        P.FromTable{
+          asName => None(),
+          indexed => false,
+          name => createStmt.name,
+        },
+      ),
+      groupBy => Some(Array[pkIdent]),
+      where => Some(P.Identifier(P.Name::create("skdb_original"), None())),
+      having => None(),
+      distinct => false,
+    };
+    select = P.Select{
+      core,
+      orderBy => None(),
+      limit => None(),
+      pos => stmts[0].pos,
+      rest => Array[],
+    };
+    P.CreateView{
+      reactive => true,
+      name => P.Name::create(
+        "__skdb__unique_original__" + createStmt.name.lower,
+      ),
+      ifNotExists => false,
+      query => P.SQuery(select),
+    }
+  };
+
   user = context.getGlobal("USER").map(UserFile::type);
   evaluator = Evaluator{options, user};
   Some((context, delta, root) ~> {
@@ -677,6 +723,20 @@ fun alterTableExtractColumn(
         "Failed to create table for extract-column transaction",
       )
     };
+    evaluator.stmt(
+      context,
+      queryParams,
+      originalUniqueConstraint,
+      false,
+    ) match {
+    | Some(op) -> op(context, delta, root)
+    | None() ->
+      error(
+        stmts[0].pos,
+        "Unique skdb_original constraint failed for extract-column transaction",
+      )
+    };
+
     alterTableDropColumn(
       context,
       stmts[1].pos,

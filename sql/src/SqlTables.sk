@@ -563,6 +563,129 @@ private fun alterTableDropColumn(
   alterTable(context, pos, name, transformSchema, transformRow, options);
 }
 
+// _Extract_ a column `c` from a table `t` with primary key column `id` to a
+// one-to-many relation in a new table `t_c`.
+fun alterTableExtractColumn(
+  context: mutable SKStore.Context,
+  stmts: Array<P.Stmt>,
+  queryParams: Map<String, P.Value>,
+  options: Options,
+): ?(
+  mutable SKStore.Context,
+  mutable SKStore.Context,
+  SKStore.Context,
+) ~> void {
+  // First, validate that the transaction has the expected form:
+  // (1) CREATE TABLE t_c AS SELECT c, id, skdb_access, true AS __skdb_is_original FROM t;
+  //   i.e. create-table-as-select from some table `t` with selected columns (in any order)
+  //       (a) some data column (`c` here),
+  //       (b) the primary-key column (`id` here),
+  //       (c) `skdb_access` iff `t` has an `skdb_access` column
+  //       (d) `true AS __skdb_is_original` verbatim (TODO: make this column-name a constant)
+  // (2) ALTER TABLE t DROP COLUMN c;
+  //   i.e. drops the data column selected in the create-table
+  if (stmts.size() != 2) {
+    pos = if (stmts.size() >= 1) stmts[0].pos else 0;
+    error(pos, "Malformed extract-column transaction")
+  };
+  (createStmt, sourceTable, dataCol) = stmts[0] match {
+  | stmt @ P.CreateTableAs{
+    ifNotExists => false,
+    select => P.Select{
+      core => P.SelectCoreQuery{
+        distinct => false,
+        params,
+        from => Some(P.FromTable{name}),
+        where => None(),
+        groupBy => None(),
+        having => None(),
+      },
+      orderBy => None(),
+      limit => None(),
+      rest,
+    },
+  } if (rest.size() == 0) ->
+    // Validate columns of SELECT: check (a-d) from above
+    sourceTable = getTable(context, stmt.pos, name);
+    oldSchema = sourceTable.schema;
+    params.foldl<(?P.ColumnDefinition, ?P.ColumnDefinition, Bool, Bool)>(
+      (acc, curr) -> {
+        (seen_data, seen_pk, seen_access, seen_orig) = acc;
+        curr match {
+        | P.SelectExpr(
+          P.VInt(1),
+          Some(alias),
+        ) if (alias.toString() == "__skdb_is_original" && !seen_orig) ->
+          (seen_data, seen_pk, seen_access, true)
+        | P.SelectExpr(
+          P.Identifier(ident, _),
+          None(),
+        ) if (ident == skdbAccessColName) ->
+          (seen_data, seen_pk, true, seen_orig)
+        | P.SelectExpr(P.Identifier(ident, _), None()) ->
+          oldSchema.find(col -> col.name == ident) match {
+          | data_col @ Some(col) if (
+            col.primary is None _ &&
+            seen_data is None _
+          ) ->
+            (data_col, seen_pk, seen_access, seen_orig)
+          | pk_col @ Some(col) if (
+            col.primary is Some _ &&
+            seen_pk is None _
+          ) ->
+            (seen_data, pk_col, seen_access, seen_orig)
+          | _ -> error(stmt.pos, "Malformed extract-column transaction")
+          }
+        | _ -> error(stmt.pos, "Malformed extract-column transaction")
+        }
+      },
+      (None(), None(), false, false),
+    ) match {
+    | (
+      Some(data),
+      Some(_pk),
+      has_skdb_access,
+      true,
+    ) if (
+      has_skdb_access == oldSchema.any(col -> col.name == skdbAccessColName)
+    ) ->
+      (stmt, sourceTable, data)
+    | _ -> error(stmt.pos, "Malformed extract-column transaction")
+    }
+  | bad_stmt -> error(bad_stmt.pos, "Malformed extract-column transaction")
+  };
+
+  colIdx = stmts[1] match {
+  | P.AlterTableDropCol{
+    name,
+    col,
+  } if (name == sourceTable.name && col == dataCol.name) ->
+    sourceTable.schema.findIdx(schemaCol -> schemaCol.name == col).fromSome()
+  | stmt -> error(stmt.pos, "Malformed extract-column transaction6")
+  };
+
+  user = context.getGlobal("USER").map(UserFile::type);
+  evaluator = Evaluator{options, user};
+  Some((context, delta, root) ~> {
+    // NB: lie about being inTransaction, since we're under lock here
+    evaluator.stmt(context, queryParams, createStmt, false) match {
+    | Some(op) -> op(context, delta, root)
+    | None() ->
+      error(
+        stmts[0].pos,
+        "Failed to create table for extract-column transaction",
+      )
+    };
+    alterTableDropColumn(
+      context,
+      stmts[1].pos,
+      sourceTable.name,
+      colIdx,
+      options,
+    );
+  })
+}
+
 /*****************************************************************************/
 /* Sharding stats for joins. */
 /*****************************************************************************/

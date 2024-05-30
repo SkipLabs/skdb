@@ -1,0 +1,262 @@
+module Cc;
+
+class Build(
+  files_: Array<String> = Array[],
+  compiler_: ?String = None(),
+  cpp_: Bool = false,
+  include_directories_: Array<String> = Array[],
+  definitions_: Map<String, ?String> = Map[],
+  std_: ?String = None(),
+  target_: ?String = None(),
+  flags_: Array<String> = Array[],
+  out_dir_: ?String = None(),
+  opt_level_: ?String = None(),
+  debug_: ?Bool = None(),
+  pic_: ?Bool = None(),
+  shared_flag_: ?Bool = None(),
+  static_flag_: ?Bool = None(),
+  skargo_metadata_: Bool = true,
+  skargo_warnings_: Bool = true,
+  // warnings: ?Bool = None(),
+  // extra_warnings: ?Bool = None(),
+) {
+  fun compiler(compiler: String): this {
+    this with {compiler_ => Some(compiler)}
+  }
+
+  fun cpp(value: Bool): this {
+    this with {cpp_ => value}
+  }
+
+  fun include(dir: String): this {
+    this with {
+      include_directories_ => this.include_directories_.concat(Array[dir]),
+    }
+  }
+
+  fun includes(dirs: Array<String>): this {
+    this with {include_directories_ => this.include_directories_.concat(dirs)}
+  }
+
+  fun define(var: String, val: ?String = None()): this {
+    m = this.definitions_.clone();
+    m.set(var, val);
+    this with {definitions_ => m.chill()}
+  }
+
+  fun flag(flag: String): this {
+    this.flags(Array[flag])
+  }
+
+  fun flags(flags: Array<String>): this {
+    this with {flags_ => this.flags_.concat(flags)}
+  }
+
+  fun shared_flag(shared_flag: Bool): this {
+    this with {shared_flag_ => Some(shared_flag)}
+  }
+
+  fun static_flag(static_flag: Bool): this {
+    this with {static_flag_ => Some(static_flag)}
+  }
+
+  fun file(file: String): this {
+    this with {files_ => this.files_.concat(Array[file])}
+  }
+
+  fun files(files: Array<String>): this {
+    this with {files_ => this.files_.concat(files)}
+  }
+
+  fun std(std: String): this {
+    this with {std_ => Some(std)}
+  }
+
+  fun target(target: String): this {
+    this with {target_ => Some(target)}
+  }
+
+  fun opt_level(opt_level: String): this {
+    this with {opt_level_ => Some(opt_level)}
+  }
+
+  fun debug(debug: Bool): this {
+    this with {debug_ => Some(debug)}
+  }
+
+  fun out_dir(out_dir: String): this {
+    this with {out_dir_ => Some(out_dir)}
+  }
+
+  fun skargo_metadata(skargo_metadata: Bool): this {
+    this with {skargo_metadata_ => skargo_metadata}
+  }
+
+  fun skargo_warnings(skargo_warnings: Bool): this {
+    this with {skargo_warnings_ => skargo_warnings}
+  }
+
+  fun pic(pic: Bool): this {
+    this with {pic_ => Some(pic)}
+  }
+
+  fun compile(output: String): void {
+    this.try_compile(output) match {
+    | Success _ -> void
+    | Failure(err) ->
+      print_error(err.getMessage());
+      skipExit(2)
+    }
+  }
+
+  private fun get_ar(): Result<mutable ProcessBuilder, Error> {
+    Success(mutable ProcessBuilder("ar"))
+  }
+
+  private fun getenv(v: String): Result<String, Error> {
+    Environ.varOpt(v) match {
+    | Some(val) -> Success(val)
+    | None() ->
+      Failure(Error(EnvVarNotFound(), `Environment variable ${v} not defined.`))
+    }
+  }
+
+  private fun get_opt_level(): Result<String, Error> {
+    this.opt_level_ match {
+    | Some(level) -> Success(level)
+    | None() -> this.getenv("OPT_LEVEL")
+    }
+  }
+
+  private fun get_debug(): Result<Bool, Error> {
+    this.debug_ match {
+    | Some(v) -> Success(v)
+    | None() -> Success(this.getenv("DEBUG")? != "false")
+    }
+  }
+
+  private fun get_target(): Result<String, Error> {
+    this.target_ match {
+    | Some(target) -> Success(target)
+    | None() -> this.getenv("TARGET")
+    }
+  }
+
+  private fun get_out_dir(): Result<String, Error> {
+    this.out_dir_ match {
+    | Some(p) -> Success(p)
+    | None() -> this.getenv("OUT_DIR")
+    }
+  }
+
+  private fun get_compiler(): Result<mutable ProcessBuilder, Error> {
+    compiler = this.compiler_.default(if (this.cpp_) "clang++" else "clang");
+    cmd = mutable ProcessBuilder(compiler);
+    opt_level = this.get_opt_level()?;
+    cmd.arg(`-O${opt_level}`);
+    target = this.get_target()?;
+    cmd.arg(`--target=${target}`);
+    if (this.get_debug()?) {
+      cmd.arg(`-g3`)
+    };
+    this.include_directories_.each(dir -> cmd.arg(`-I${dir}`));
+    this.definitions_.each((k, vOpt) ->
+      vOpt match {
+      | Some(v) -> cmd.arg(`-D${k}=${v}`)
+      | None() -> cmd.arg(`-D${k}`)
+      }
+    );
+    this.std_.each(std -> cmd.arg(`-std=${std}`));
+    this.flags_.each(flag -> cmd.arg(flag));
+    this.pic_.each(pic -> if (pic) cmd.arg(`-fPIC`));
+    this.shared_flag_.each(f -> if (f) cmd.arg(`-shared`));
+    this.static_flag_.each(f -> if (f) cmd.arg(`-static`));
+
+    Success(cmd)
+  }
+
+  private fun try_compile(output: String): Result<void, Error> {
+    dst = this.get_out_dir()?;
+    objects = objects_from_files(this.files_, dst)?;
+    this.compile_objects(objects)?;
+    lib_name = if (output.startsWith("lib") && output.endsWith(".a")) {
+      output
+    } else {
+      `lib${output}.a`
+    };
+    out_file = Path.join(dst, lib_name);
+    this.assemble(out_file, objects)?;
+
+    if (this.skargo_metadata_) {
+      print_string(`skargo:skc-link-lib=${out_file}`)
+    };
+
+    Success(void)
+  }
+
+  private fun assemble(dst: String, objs: Array<Object>): Result<void, Error> {
+    // FIXME:
+    // FileSystem.remove_file(dst)
+
+    cmd = this.get_ar()?;
+    cmd.arg("crs");
+    cmd.arg(dst);
+    cmd.args(objs.map(o -> o.dst));
+    // TODO: Only print logs if required.
+    print_error(cmd.get_argv().join(" "));
+    // TODO: Properly handle error.
+    p = cmd.run(print_raw, print_error_raw);
+    if (!p.success()) {
+      skipExit(2)
+    };
+
+    Success(void)
+  }
+
+  fun compile_objects(objects: Array<Object>): Result<void, Error> {
+    for (obj in objects) {
+      cmd = this.get_compiler()?;
+      cmd.args(Array["-c", obj.src]);
+      cmd.args(Array["-o", obj.dst]);
+      // TODO: Only print logs if required.
+      print_error(cmd.get_argv().join(" "));
+      // TODO: Properly handle error.
+      p = cmd.run(print_raw, print_error_raw);
+      if (!p.success()) {
+        skipExit(2)
+      }
+    };
+
+    Success(void)
+  }
+}
+
+class Object(src: String, dst: String)
+
+class Error(kind: ErrorKind, message: String) {
+  fun getMessage(): String {
+    `Error: ${this.message}`
+  }
+}
+
+base class ErrorKind {
+  children =
+  | EnvVarNotFound()
+}
+
+private fun objects_from_files(
+  files: Array<String>,
+  dst: String,
+): Result<Array<Object>, Error> {
+  res = mutable Vector[];
+  for (file in files) {
+    (dirname, basename) = Path.split(file);
+    hash = dirname.hash().toStringHex();
+    res.push(
+      Object(file, Path.join(dst, `${hash}-${basename.splitLast(".").i0}.o`)),
+    )
+  };
+  Success(res.collect(Array))
+}
+
+module end;

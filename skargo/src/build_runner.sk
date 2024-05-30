@@ -129,7 +129,7 @@ mutable class BuildRunner(
     if (!this.fingerprints.containsKey(unit)) {
       this.fingerprints![unit] = (
         unit.target.srcs
-          .map(f -> (f, getLastModificationTime(f)))
+          .map(f -> (f, getLastModificationTime(Path.join(unit.pkg.root(), f))))
           .collect(Array),
         this.bctx.unit_graph[unit].map(dep -> this.fingerprint_for(dep)),
         this.bctx.build_config,
@@ -143,7 +143,9 @@ mutable class BuildRunner(
             // files in the corresponding package.
             FileSystem.readTextFile(dep_file)
               .split("\n")
-              .map(f -> (f, getLastModificationTime(f)))
+              .map(f ->
+                (f, getLastModificationTime(Path.join(unit.pkg.root(), f)))
+              )
               .collect(Array)
           } else {
             Array[]
@@ -226,11 +228,17 @@ mutable class BuildRunner(
     cmd = mutable ProcessBuilder{
       process_cmd => Path.join(
         this.build_dir_for(
-          unit with {arch => TargetArchHost(), mode => CompileModeBuild()},
+          unit with {
+            arch => TargetArchHost(),
+            mode => CompileModeBuild(),
+            build_opts => unit.build_opts with {relocation_model => "static"},
+          },
         ),
         unit.target.name,
       ),
     };
+
+    cmd.cwd(unit.pkg.root());
 
     cmd.env("PCK_DIR", unit.pkg.root());
     cmd.env(
@@ -243,11 +251,15 @@ mutable class BuildRunner(
       "VERBOSE",
       (this.bctx.gctx.console.verbosity >= VerbosityVerbose()).toString(),
     );
-    unit.arch match {
-    | TargetArchTriple(t) -> cmd.env("TARGET", t.toString())
-    | TargetArchHost() ->
-      void // TODO: Explicit host arch triple.
-    };
+    cmd.env(
+      "HOST",
+      this.bctx.target_data.target_triple_for_arch(TargetArchHost()).toString(),
+    );
+    cmd.env(
+      "TARGET",
+      this.bctx.target_data.target_triple_for_arch(unit.arch).toString(),
+    );
+    cmd.env("RELOCATION_MODEL", unit.build_opts.relocation_model);
 
     p = this.run_cmd(cmd);
 
@@ -271,6 +283,7 @@ mutable class BuildRunner(
   }
 
   private mutable fun prepare_unit(unit: Unit): void {
+    this.create_dir(this.layout_for(unit).build);
     fingerprint_path = dirname(this.fingerprint_file_for(unit));
     this.create_dir(fingerprint_path);
 
@@ -288,7 +301,9 @@ mutable class BuildRunner(
   }
 
   private mutable fun skc(unit: Unit, check: Bool = false): void {
-    skc = this.bctx.skc.process();
+    skc = this.bctx.target_data.skc.process();
+
+    skc.cwd(unit.pkg.root());
 
     unit.arch match {
     | TargetArchHost() -> void
@@ -309,9 +324,7 @@ mutable class BuildRunner(
       skc.env(
         "SKC_PREAMBLE",
         this.build_script_outputs[bs_unit].preambles.map(path ->
-          if (path.startsWith("/")) path else {
-            Path.join(bs_unit.pkg.root(), path)
-          }
+          Path.join(bs_unit.pkg.root(), path)
         ).join(Path.listSeparator),
       )
     | None() -> void
@@ -343,7 +356,12 @@ mutable class BuildRunner(
     if (!unit.target.is_build_script()) {
       // TODO: Once we have namespaced packages, we can share the state.db
       // across architectures.
-      state_db_path = Path.join(this.layout_for(unit).build, "state.db");
+      state_db_path = Path.join(
+        this.layout_for(unit).build,
+        // FIXME: This is a dirty hack that splits out the state.db between pic
+        // and static, which is required until `skc` namespaces packages.
+        `${unit.build_opts.relocation_model}_state.db`,
+      );
       skc.args(
         Array[
           if (FileSystem.exists(state_db_path)) {
@@ -536,7 +554,6 @@ private fun hash_of(
   out: mutable Map<Unit, Int>,
 ): Int {
   if (!out.containsKey(unit)) {
-    out.set(unit, -1);
     dep_hashes = mutable Vector[];
     for (dep in bctx.unit_graph[unit]) {
       dep_hashes.push(hash_of(dep, bctx, out))
@@ -561,6 +578,7 @@ private fun compute_hash(
     unit.mode,
     unit.target.name,
     unit.target.kind,
+    unit.build_opts,
   ).hash()
 }
 

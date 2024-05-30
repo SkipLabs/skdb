@@ -2,6 +2,9 @@
 name = "skdb"
 version = "0.1.0"
 
+[lib]
+type = ["sklib", "cdylib"]
+
 [dependencies]
 std = { path = "../prelude" }
 skdate = { path = "../skdate" }

@@ -1,0 +1,36 @@
+module Skargo;
+
+class SkcTargetData{
+  skc: Skc,
+  requested_arches: Array<TargetTriple>,
+  host_target: TargetTriple,
+} {
+  static fun create(
+    gctx: GlobalContext,
+    requested_arches: Array<TargetTriple>,
+  ): SkcTargetData {
+    skc = Skc(Environ.varOpt("SKC").default("skc"));
+    host_target = get_host_target(gctx);
+
+    SkcTargetData{skc, requested_arches, host_target}
+  }
+
+  fun target_triple_for_arch(arch: TargetArch): TargetTriple {
+    arch match {
+    | TargetArchHost() -> this.host_target
+    | TargetArchTriple(t) -> t
+    }
+  }
+}
+
+private fun get_host_target(gctx: GlobalContext): TargetTriple {
+  p = System.subprocess(Array["llvm-config", "--host-target"]);
+  if (!p.success()) {
+    gctx.console.error(subprocess_error_message(p));
+    skipExit(3)
+  };
+
+  TargetTriple::fromString(p.stdout.trim())
+}
+
+module end;

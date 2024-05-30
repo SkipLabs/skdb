@@ -37,25 +37,16 @@
 // head: The current position in the page.
 // end: The end of the page.
 
+static struct sk_obstack* page = NULL;
+static char* head = NULL;
+static char* end = NULL;
+
 #ifdef SKIP32
 
-// In 32bits mode there are no threads, so the obstack does not have to be
-// thread local. This is because wasm doesn't support threads (at least not
-// well).
-
-struct sk_obstack* page = NULL;
-char* head = NULL;
-char* end = NULL;
 struct sk_obstack* free_list = NULL;
 
 unsigned char* decr_heap_end(size_t size);
 void reset_heap_end();
-
-#else
-
-__thread struct sk_obstack* page = NULL;
-__thread char* head = NULL;
-__thread char* end = NULL;
 
 #endif
 
@@ -75,11 +66,7 @@ typedef struct sk_obstack {
   sk_saved_obstack_t saved;
   char user_data[0];
 } sk_obstack_t;
-#ifdef SKIP32
 sk_saved_obstack_t init_saved = {NULL, NULL, NULL};
-#else
-__thread sk_saved_obstack_t init_saved = {NULL, NULL, NULL};
-#endif
 
 size_t sk_page_size(sk_obstack_t* page) {
   return page->size;

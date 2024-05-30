@@ -1,17 +1,12 @@
-module Skargo;
+module Cc;
 
-class Skc(cmd: String) {
-  fun process(): mutable ProcessBuilder {
-    mutable ProcessBuilder{process_cmd => this.cmd}
-  }
-}
-
-mutable class ProcessBuilder{
+// TODO: Move into stdlib.
+mutable class ProcessBuilder(
   mutable process_cmd: String,
   process_args: mutable Vector<String> = mutable Vector[],
   process_env: mutable Map<String, String> = mutable Map[],
   mutable process_cwd: ?String = None(),
-} {
+) {
   mutable fun cmd(value: String): void {
     this.!process_cmd = value
   }
@@ -33,11 +28,12 @@ mutable class ProcessBuilder{
   }
 
   mutable fun clone(): mutable ProcessBuilder {
-    mutable ProcessBuilder{
-      process_cmd => this.process_cmd,
-      process_args => this.process_args.clone(),
-      process_env => this.process_env.clone(),
-    }
+    mutable ProcessBuilder(
+      this.process_cmd,
+      this.process_args.clone(),
+      this.process_env.clone(),
+      this.process_cwd,
+    )
   }
 
   readonly fun get_cmd(): String {
@@ -45,9 +41,16 @@ mutable class ProcessBuilder{
   }
 
   readonly fun get_argv(): Array<String> {
-    Array[this.process_cmd].concat(this.process_args.collect(Array)).collect(
-      Array,
-    )
+    res = Array[this.process_cmd].concat(
+      this.process_args.collect(Array),
+    ).collect(Array);
+
+    // TODO: Move this logic into popen.
+    this.process_cwd match {
+    | Some(path) -> !res = Array["env", "-C", path].concat(res)
+    | _ -> void
+    };
+    res
   }
 
   readonly fun get_env(): Map<String, String> {
@@ -58,13 +61,7 @@ mutable class ProcessBuilder{
     stdout: (String) -> void = _ -> void,
     stderr: (String) -> void = _ -> void,
   ): System.CompletedProcess {
-    System.popen{
-      args => this.get_argv(),
-      env => this.get_env(),
-      cwd => this.process_cwd,
-      stdout,
-      stderr,
-    }
+    System.popen{args => this.get_argv(), env => this.get_env(), stdout, stderr}
   }
 }
 

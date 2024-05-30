@@ -128,17 +128,24 @@ fun link(
       config.verbose,
     );
   } else {
+    flags = if (config.emit == "cdylib") {
+      Array["-fPIC", "-shared"]
+    } else {
+      Array["-no-pie"]
+    };
+
     runShell(
       Array[
         "clang++",
-        "-no-pie",
         `-O${config.optLevel}`,
         "-mllvm",
         "-inline-threshold=0",
         "-o",
         config.output,
         llFile,
-      ].concat(linker_args).concat(static_libs),
+      ].concat(flags)
+        .concat(linker_args)
+        .concat(static_libs),
       config.verbose,
     );
   }
@@ -342,7 +349,8 @@ fun compile(
 
         conf.emit match {
         | "llvm-ir" -> compile_llvm_ir(defs, conf)
-        | "link" ->
+        | "link" | "cdylib" ->
+          // TODO: Remove exports stuff once --emit=cdylib is supported.
           wasm_exports = outerIst
             .getFuns(context, defsProj)
             .filter(f ->

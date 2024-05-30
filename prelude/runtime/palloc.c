@@ -26,8 +26,6 @@
 
 void*** pconsts = NULL;
 
-void* program_break = NULL;
-
 /*****************************************************************************/
 /* Database capacity. */
 /*****************************************************************************/
@@ -57,6 +55,21 @@ uint64_t SKIP_genSym(uint64_t largerThan) {
 }
 
 /*****************************************************************************/
+/* The global information structure. */
+/*****************************************************************************/
+
+typedef struct ginfo {
+  void* ftable[FTABLE_SIZE];
+  void* context;
+  char* head;
+  char* end;
+  char* fileName;
+  size_t total_palloc_size;
+} ginfo_t;
+
+ginfo_t* ginfo = NULL;
+
+/*****************************************************************************/
 /* Global locking. */
 /*****************************************************************************/
 
@@ -67,7 +80,7 @@ pthread_mutex_t* gmutex = (void*)1234;
 int sk_is_locked = 0;
 
 void sk_check_has_lock() {
-  if ((gmutex != NULL) && !sk_is_locked) {
+  if ((ginfo->fileName != NULL) && !sk_is_locked) {
     fprintf(stderr, "INTERNAL ERROR: unsafe operation\n");
     SKIP_throw_cruntime(ERROR_INTERNAL_LOCK);
   }
@@ -83,7 +96,7 @@ void sk_global_lock_init() {
 }
 
 void sk_global_lock() {
-  if (gmutex == NULL) {
+  if (ginfo->fileName == NULL) {
     return;
   }
 
@@ -106,7 +119,7 @@ void sk_global_lock() {
 }
 
 void sk_global_unlock() {
-  if (gmutex == NULL) {
+  if (ginfo->fileName == NULL) {
     return;
   }
 
@@ -212,22 +225,6 @@ int32_t SKIP_cond_timedwait(pthread_cond_t* x, pthread_mutex_t* y,
 int32_t SKIP_cond_broadcast(void* c) {
   return (int32_t)pthread_cond_broadcast(c);
 }
-
-/*****************************************************************************/
-/* The global information structure. */
-/*****************************************************************************/
-
-typedef struct ginfo {
-  void* ftable[FTABLE_SIZE];
-  void* context;
-  char* head;
-  char* end;
-  char* fileName;
-  char* break_ptr;
-  size_t total_palloc_size;
-} ginfo_t;
-
-ginfo_t* ginfo = NULL;
 
 /*****************************************************************************/
 /* Debugging support for contexts. Set CTX_TABLE to 1 to use. */
@@ -457,18 +454,22 @@ struct file_mapping {
 /* Creates a new file mapping. */
 /*****************************************************************************/
 
-void sk_create_mapping(char* fileName, char* static_limit, size_t icapacity) {
-  if (access(fileName, F_OK) == 0) {
+void sk_create_mapping(char* fileName, size_t icapacity) {
+  if (fileName != NULL && access(fileName, F_OK) == 0) {
     fprintf(stderr, "ERROR: File %s already exists!\n", fileName);
     exit(ERROR_MAPPING_EXISTS);
   }
-  int fd = open(fileName, O_RDWR | O_CREAT, 0600);
-  lseek(fd, icapacity, SEEK_SET);
-  (void)write(fd, "", 1);
+  file_mapping_t* mapping;
   int prot = PROT_READ | PROT_WRITE;
-  file_mapping_t* mapping =
-      mmap(BOTTOM_ADDR, icapacity, prot, MAP_SHARED | MAP_FIXED, fd, 0);
-  close(fd);
+  if (fileName == NULL) {
+    mapping = mmap(NULL, icapacity, prot, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  } else {
+    int fd = open(fileName, O_RDWR | O_CREAT, 0600);
+    lseek(fd, icapacity, SEEK_SET);
+    (void)write(fd, "", 1);
+    mapping = mmap(BOTTOM_ADDR, icapacity, prot, MAP_SHARED | MAP_FIXED, fd, 0);
+    close(fd);
+  }
 
   if (mapping == MAP_FAILED) {
     perror("ERROR (MAP FAILED)");
@@ -485,7 +486,7 @@ void sk_create_mapping(char* fileName, char* static_limit, size_t icapacity) {
   capacity = &mapping->capacity;
   pconsts = &mapping->pconsts;
 
-  size_t fileName_length = strlen(fileName) + 1;
+  size_t fileName_length = (fileName != NULL) ? strlen(fileName) + 1 : 0;
   char* persistent_fileName = mapping->persistent_fileName;
 
   char* head = persistent_fileName + fileName_length;
@@ -496,14 +497,15 @@ void sk_create_mapping(char* fileName, char* static_limit, size_t icapacity) {
     exit(ERROR_MAPPING_MEMORY);
   }
 
-  memcpy(persistent_fileName, fileName, fileName_length);
+  if (fileName != NULL) {
+    memcpy(persistent_fileName, fileName, fileName_length);
+  }
 
   int i;
   for (i = 0; i < FTABLE_SIZE; i++) {
     ginfo->ftable[i] = NULL;
   }
 
-  ginfo->break_ptr = static_limit;
   ginfo->total_palloc_size = 0;
 
   // The head must be aligned!
@@ -511,7 +513,7 @@ void sk_create_mapping(char* fileName, char* static_limit, size_t icapacity) {
 
   ginfo->head = head;
   ginfo->end = end;
-  ginfo->fileName = persistent_fileName;
+  ginfo->fileName = (fileName != NULL) ? persistent_fileName : NULL;
   ginfo->context = NULL;
   *gid = 1;
   if (icapacity != DEFAULT_CAPACITY) {
@@ -520,7 +522,9 @@ void sk_create_mapping(char* fileName, char* static_limit, size_t icapacity) {
   *capacity = icapacity;
   *pconsts = NULL;
 
-  sk_global_lock_init();
+  if (ginfo->fileName != NULL) {
+    sk_global_lock_init();
+  }
 }
 
 /*****************************************************************************/
@@ -572,13 +576,7 @@ void sk_load_mapping(char* fileName) {
 /*****************************************************************************/
 
 int sk_is_static(void* ptr) {
-  return (char*)ptr <= ginfo->break_ptr;
-}
-
-void sk_lower_static(void* ptr) {
-  if ((char*)ptr < ginfo->break_ptr) {
-    ginfo->break_ptr = ptr;
-  }
+  return !(ginfo->head <= (char*)ptr && (char*)ptr <= ginfo->end);
 }
 
 /*****************************************************************************/
@@ -621,14 +619,14 @@ typedef struct {
   void** pconsts;
 } no_file_t;
 
-static void sk_init_no_file(char* static_limit) {
+#ifdef __APPLE__
+static void sk_init_no_file() {
   no_file_t* no_file = malloc(sizeof(no_file_t));
   if (no_file == NULL) {
     perror("malloc");
     exit(1);
   }
   ginfo = &no_file->ginfo_data;
-  ginfo->break_ptr = static_limit;
   ginfo->total_palloc_size = 0;
   ginfo->fileName = NULL;
   ginfo->context = NULL;
@@ -638,6 +636,7 @@ static void sk_init_no_file(char* static_limit) {
   *gid = 1;
   *pconsts = NULL;
 }
+#endif
 
 int sk_is_nofile_mode() {
   return (ginfo->fileName == NULL);
@@ -663,15 +662,13 @@ void SKIP_memory_init(int argc, char** argv) {
   if (is_create) {
     exit(EXIT_SUCCESS);
   }
-  sk_init_no_file(program_break);
+  sk_init_no_file();
 
 #else   // __APPLE__
-  if (fileName == NULL) {
-    sk_init_no_file(program_break);
-  } else if (is_create) {
+  if (is_create || fileName == NULL) {
     size_t capacity = DEFAULT_CAPACITY;
     capacity = parse_capacity(argc, argv);
-    sk_create_mapping(fileName, program_break, capacity);
+    sk_create_mapping(fileName, capacity);
   } else {
     sk_load_mapping(fileName);
   }
@@ -690,14 +687,6 @@ void SKIP_print_persistent_size() {
 }
 
 void* sk_palloc(size_t size) {
-  if (ginfo->fileName == NULL) {
-    void* result = malloc(size);
-    if (result == NULL) {
-      perror("malloc");
-      exit(1);
-    }
-    return result;
-  }
   sk_check_has_lock();
   size = sk_pow2_size(size);
   ginfo->total_palloc_size += size;
@@ -715,10 +704,6 @@ void* sk_palloc(size_t size) {
 }
 
 void sk_pfree_size(void* chunk, size_t size) {
-  if (ginfo->fileName == NULL) {
-    free(chunk);
-    return;
-  }
   sk_check_has_lock();
   size = sk_pow2_size(size);
   ginfo->total_palloc_size -= size;

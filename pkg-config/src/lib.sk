@@ -1,0 +1,174 @@
+module PkgConfig;
+
+class Library{
+  // Libraries specified by -l
+  libs: Array<String>,
+  // Library search paths specified by -L
+  link_paths: Array<String>,
+  // Library file paths specified without -l
+  link_files: Array<String>,
+  // C/C++ header include paths specified by -I
+  include_paths: Array<String>,
+  // C/C++ definitions specified by -D
+  defines: Map<String, ?String>,
+  version: String,
+} {
+  static fun parse(libs_cflags: String, modversion: String): Library {
+    libs = mutable Vector[];
+    link_paths = mutable Vector[];
+    link_files = mutable Vector[];
+    include_paths = mutable Vector[];
+    defines = mutable Map[];
+
+    flags = split_flags(libs_cflags).flatMap(flag ->
+      if (flag.startsWith("-") && flag.length() > 2) {
+        f = flag.take(2);
+        val = flag.stripPrefix(f);
+        Array[f, val]
+      } else {
+        Array[flag]
+      }
+    );
+
+    iter = flags.iterator();
+    loop {
+      flag = iter.next() match {
+      | Some(word) -> word
+      | None() -> break void
+      };
+      if (flag.startsWith("-")) {
+        val = iter.next() match {
+        | Some(v) -> v
+        | None() -> invariant_violation(`Missing value for flag ${flag}`)
+        };
+        flag match {
+        | "-l" -> libs.push(val)
+        | "-L" -> link_paths.push(val)
+        | "-I" -> include_paths.push(val)
+        | "-D" ->
+          (k, v) = if (val.contains("=")) {
+            (k, v) = val.splitFirst("=");
+            (k, Some(v))
+          } else {
+            (val, None())
+          };
+          defines.set(k, v)
+        | _ -> invariant_violation(`Unrecognized flag ${flag}`)
+        }
+      } else {
+        link_files.push(flag)
+      }
+    };
+
+    Library{
+      libs => libs.collect(Array),
+      link_paths => link_paths.collect(Array),
+      link_files => link_files.collect(Array),
+      include_paths => include_paths.collect(Array),
+      defines => defines.chill(),
+      version => modversion.trim(),
+    }
+  }
+}
+
+class Config(
+  statik_: ?Bool = None(),
+  min_version_: ?String = None(),
+  max_version_: ?String = None(),
+  skargo_metadata_: Bool = true,
+) {
+  fun statik(value: Bool = true): this {
+    this with {statik_ => Some(value)}
+  }
+
+  fun atleast_version(ver: String): this {
+    this with {min_version_ => Some(ver)}
+  }
+
+  fun atmost_version(ver: String): this {
+    this with {max_version_ => Some(ver)}
+  }
+
+  fun skargo_metadata(val: Bool = true): this {
+    this with {skargo_metadata_ => val}
+  }
+
+  fun probe(name: String): Result<Library, Error> {
+    libs_cflags = this.run(name, Array["--libs", "--cflags"])?;
+    modversion = this.run(name, Array["--modversion"])?;
+
+    res = Library::parse(libs_cflags, modversion);
+    if (this.skargo_metadata_) {
+      for (lib in res.libs) {
+        print_string(`skargo:skc-link-arg=-l${lib}`)
+      };
+      for (p in res.link_paths) {
+        print_string(`skargo:skc-link-arg=-L${p}`)
+      };
+      for (lib in res.link_files) {
+        print_string(`skargo:skc-link-lib=${lib}`)
+      }
+    };
+
+    Success(res)
+  }
+
+  private fun run(name: String, args: Array<String>): Result<String, Error> {
+    cmd = this.cmd().concat(Array[name]).concat(args);
+    p = System.subprocess(cmd);
+
+    if (p.success()) {
+      Success(p.stdout)
+    } else {
+      Failure(ErrorProbeFailure(name, cmd.join(" "), p.stdout))
+    }
+  }
+
+  private fun cmd(): Array<String> {
+    res = mutable Vector["pkg-config"];
+    this.statik_ match {
+    | Some(true) -> res.push(`--static`)
+    | _ -> void
+    };
+    this.min_version_ match {
+    | Some(ver) -> res.push(`--atleast-version ${ver}`)
+    | None() -> void
+    };
+    this.max_version_ match {
+    | Some(ver) -> res.push(`--max-version ${ver}`)
+    | None() -> void
+    };
+
+    res.collect(Array)
+  }
+}
+
+base class Error {
+  children =
+  | ErrorProbeFailure(name: String, command: String, output: String)
+}
+
+private fun split_flags(output: String): Array<String> {
+  res = mutable Vector[];
+  word = mutable Vector[];
+  escaped = false;
+
+  for (c in output.chars()) {
+    c match {
+    | _ if (escaped) ->
+      !escaped = false;
+      word.push(c)
+    | '\\' -> !escaped = true
+    | '\t' | '\n' | '\r' | ' ' ->
+      if (!word.isEmpty()) {
+        res.push(String::fromChars(word.collect(Array)));
+        word.clear()
+      }
+    | _ -> word.push(c)
+    }
+  };
+
+  res.collect(Array)
+}
+
+module end;

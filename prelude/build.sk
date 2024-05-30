@@ -1,86 +1,143 @@
-class RuntimeException(code: Int) extends Exception {
-  fun getMessage(): String {
-    `Runtime error with code ${this.code}`
-  }
-}
+const kCflags: Array<String> = Array[
+  "-Werror",
+  "-Wall",
+  "-Wextra",
+  "-Wno-sign-conversion",
+  "-Wno-sometimes-uninitialized",
+  "-Wno-c2x-extensions",
+  "-Wsign-compare",
+  "-Wextra-semi-stmt",
+  // To add: -Wcast-align -Wcast-qual -Wimplicit-int-conversion -Wmissing-noreturn -Wpadded -Wreserved-identifier -Wshorten-64-to-32 -Wtautological-unsigned-zero-compare
+  // -Watomic-implicit-seq-cst ?
+  // If using -Weverything, you may want to add -Wno-declaration-after-statement -Wno-missing-prototypes -Wno-missing-variable-declarations -Wno-shadow -Wno-strict-prototypes -Wno-zero-length-array -Wno-unreachable-code-break -Wno-unreachable-code-return
+];
 
-class Env(
-  refDir: String,
-  outDir: String,
-  name: String,
-  profile: String,
-  optTarget: ?String,
-  verbose: Bool,
-) {
-  static fun create(): Env {
-    Env(
-      Environ.var("PCK_DIR"),
-      Environ.var("OUT_DIR"),
-      Environ.var("NAME"),
-      Environ.var("PROFILE"),
-      Environ.varOpt("TARGET"),
-      Environ.var("VERBOSE").lowercase() == "true",
-    )
-  }
-
-  fun isWasm32(): Bool {
-    this.optTarget.map(t -> t.startsWith("wasm32")).default(false)
-  }
-
-  fun resolve(path: String): String {
-    Path.resolve(this.refDir, path)
-  }
-
-  fun outpath(path: String): String {
-    Path.join(this.outDir, path)
-  }
-
-  fun printError(error: String): void {
-    if (this.verbose) {
-      print_error(error)
-    };
-  }
-
-  fun run(args: Array<String>): void {
-    if (this.verbose) {
-      // TODO: colors
-      print_error(`>> ${args.join(" ")}`)
-    };
-    p = System.subprocess(args, print_string, this.printError);
-    if (this.verbose || !p.success()) {
-      print_error_raw(p.stdout);
-      print_error_raw(p.stderr);
-    };
-    if (!p.success()) {
-      throw RuntimeException(p.exitcode())
-    };
-  }
-
-  fun vars(): Array<String> {
-    vars = Array[
-      `OUT_DIR=${this.outDir}`,
-      `PCK_DIR=${this.refDir}`,
-      `NAME=${this.name}`,
-      `PROFILE=${this.profile}`,
-      `VERBOSE=${this.verbose}`,
-    ];
-    this.optTarget.each(t -> !vars = vars.concat(Array[`TARGET=${t}`]));
-    vars
-  }
-}
-
-@debug
 fun main(): void {
-  env = Env::create();
-  target = if (env.isWasm32()) {
-    "wasm"
-  } else {
-    "default"
+  // FIXME: This should be passed by Skargo.
+  Environ.set_var("DEBUG", "true");
+
+  profile = Environ.var("PROFILE");
+  target = Environ.var("TARGET");
+  host = Environ.var("HOST");
+  out_dir = Environ.var("OUT_DIR");
+  pic = (Environ.var("RELOCATION_MODEL") == "pic");
+
+  profile match {
+  | "release" -> Environ.set_var("OPT_LEVEL", "3")
+  | "debug" | "dev" -> Environ.set_var("OPT_LEVEL", "0")
+  | p -> invariant_violation(`Unrecognized profile ${p}`)
   };
-  _ = system("pwd");
-  env.run(
-    Array["make", "-r", "-C", env.refDir, target].concat(
-      if (env.verbose) Array["-d"] else Array[],
-    ).concat(env.vars()),
-  )
+
+  magic_c = Path.join(out_dir, "magic.c");
+  FileSystem.writeTextFile(
+    magic_c,
+    `int SKIP_get_version() { return ${Time.time_ms()}; }`,
+  );
+
+  srcs = Array[
+    "runtime/copy.c",
+    "runtime/free.c",
+    "runtime/hash.c",
+    "runtime/hashtable.c",
+    "runtime/intern.c",
+    "runtime/memory.c",
+    "runtime/obstack.c",
+    "runtime/runtime.c",
+    "runtime/stdlib.c",
+    "runtime/stack.c",
+    "runtime/string.c",
+    "runtime/native_eq.c",
+    "runtime/splitmix64.c",
+    "runtime/xoroshiro128plus.c",
+  ];
+
+  cfg = Cc.Build().pic(pic).flags(kCflags).files(srcs).file(magic_c);
+  srcs.each(f -> print_string(`skargo:rerun-if-changed=${f}`));
+
+  // TODO: `skargo:rerun-if-changed` on sources.
+  target match {
+  | "wasm32-unknown-unknown" ->
+    wasm_srcs = Array["runtime/runtime32_specific.c"];
+    wasm_srcs.each(f -> print_string(`skargo:rerun-if-changed=${f}`));
+    cfg
+      .define("SKIP32")
+      .files(wasm_srcs)
+      .flags(Array["--target=wasm32", "-emit-llvm", "-nostdlibinc"])
+      .compile("skip_runtime");
+    print_string("skargo:skc-preamble=preamble/preamble32.ll");
+    print_string("skargo:rerun-if-changed=preamble/preamble32.ll")
+
+  | _ ->
+    libbacktrace_include = build_libbacktrace(
+      Path.join(out_dir, "libbacktrace"),
+      host == target,
+      pic,
+    );
+
+    native_srcs = Array[
+      "runtime/consts.c",
+      "runtime/palloc.c",
+      "runtime/posix.c",
+    ];
+    native_srcs.each(f -> print_string(`skargo:rerun-if-changed=${f}`));
+    cfg.files(native_srcs).define("SKIP64").compile("skip_runtime");
+
+    native_cpp_srcs = Array["runtime/runtime64_specific.cpp"];
+    native_cpp_srcs.each(f -> print_string(`skargo:rerun-if-changed=${f}`));
+    Cc.Build()
+      .cpp(true)
+      .pic(pic)
+      .files(native_cpp_srcs)
+      .define("SKIP64")
+      .define(if (pic) "SKIP_LIBRARY" else "SKIP_BINARY")
+      .include(libbacktrace_include)
+      .compile("skip_runtime64");
+    print_string("skargo:skc-preamble=preamble/preamble64.ll");
+    print_string("skargo:rerun-if-changed=preamble/preamble64.ll")
+  }
+}
+
+fun build_libbacktrace(
+  out_dir: String,
+  host_is_target: Bool,
+  pic: Bool,
+): String {
+  if (host_is_target && !pic) {
+    // Try using system installed libbacktrace.
+    PkgConfig.Config().skargo_metadata(true).probe("libbacktrace") match {
+    | Success(cfg) ->
+      invariant(cfg.include_paths.size() == 1);
+      return cfg.include_paths[0]
+    | Failure(PkgConfig.ErrorProbeFailure _) -> void
+    }
+  };
+
+  // Resort to building libbacktrace from source.
+  p = System.popen{
+    args => Array["./configure", "--prefix", out_dir].concat(
+      if (pic) Array["--with-pic"] else Array[],
+    ),
+    stdout => print_error_raw,
+    stderr => print_error_raw,
+    cwd => Some("./libbacktrace"),
+  };
+  if (!p.success()) {
+    skipExit(1)
+  };
+
+  !p = System.popen{
+    args => Array["make", "install"],
+    stdout => print_error_raw,
+    stderr => print_error_raw,
+    cwd => Some("./libbacktrace"),
+  };
+  if (!p.success()) {
+    skipExit(1)
+  };
+
+  print_string(
+    `skargo:skc-link-lib=${Path.join(out_dir, "lib", "libbacktrace.a")}`,
+  );
+
+  Path.join(out_dir, "include")
 }

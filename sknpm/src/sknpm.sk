@@ -301,7 +301,8 @@ fun manage(
     dfs(brunner, unit, units)
   };
   libraries = units.filter(u ->
-    (u.target.kind is Skargo.LibTarget _) &&
+    (u.target.kind is Skargo.LibTarget(Skargo.LibraryTypeSklib _)) &&
+      u.build_opts.relocation_model == "static" &&
       u.arch match {
       | Skargo.TargetArchHost() -> false
       | Skargo.TargetArchTriple(t) -> t.isWasm32()

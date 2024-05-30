@@ -5,17 +5,19 @@ class Unit(
   target: Target,
   arch: TargetArch,
   mode: CompileMode,
-) uses Equality, Hashable {
-  fun hash(): Int {
-    (this.pkg, this.target, this.arch, this.mode).hash()
-  }
-}
+  build_opts: UnitBuildOptions,
+) uses Equality, Hashable
 
 private base class CompileMode uses Equality, Hashable {
   children =
   | CompileModeBuild()
   | CompileModeRunBuildScript()
 }
+
+private class UnitBuildOptions{
+  // Can be `static` or `pic`.
+  relocation_model: String,
+} uses Equality, Hashable
 
 type UnitGraph = Map<Unit, Array<Unit>>;
 

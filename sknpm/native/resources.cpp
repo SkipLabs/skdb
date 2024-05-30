@@ -36,6 +36,6 @@ void SKIP_sknpm_save_archive(char* skTarget) {
   FILE* write_ptr = fopen(archiveFile.c_str(), "wb");
   fwrite((char*)resources_tests_tar_gz, size, 1, write_ptr);
   fclose(write_ptr);
-  system(command.c_str());
+  (void)system(command.c_str());
 }
 }

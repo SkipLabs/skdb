@@ -5,7 +5,7 @@ private class Package(
   manifest_path: String,
 ) uses Equality, Hashable {
   static fun read(manifest_path: String): Package {
-    Package(Manifest::read(manifest_path), manifest_path)
+    Package(Manifest::read(manifest_path), FileSystem.realpath(manifest_path))
   }
 
   fun name(): String {
@@ -90,7 +90,7 @@ private class BuildContext{
   roots: Array<Unit>,
   unit_graph: UnitGraph,
   target_dir: String,
-  skc: Skc,
+  target_data: SkcTargetData,
 }
 
 // TODO: Return Result<...>
@@ -102,8 +102,14 @@ fun create_bctx(
   resolved_packages = resolve(ws.package);
 
   roots = generate_root_units(gctx, ws.package, opts.filter, opts.build_config);
+  target_data = SkcTargetData::create(
+    gctx,
+    opts.build_config.requested_arch match {
+    | TargetArchHost _ -> Array[]
+    | TargetArchTriple(triple) -> Array[triple]
+    },
+  );
   unit_graph = build_unit_dependencies(roots, resolved_packages);
-  skc = Skc(Environ.varOpt("SKC").default("skc"));
   target_dir = ws.target_dir();
   BuildContext{
     ws,
@@ -112,7 +118,7 @@ fun create_bctx(
     roots,
     unit_graph,
     target_dir,
-    skc,
+    target_data,
   }
 }
 
@@ -154,9 +160,21 @@ private fun generate_root_units(
     res.collect(Array)
   };
   targets
-    .map(target ->
-      Unit(package, target, build_config.requested_arch, CompileModeBuild())
-    )
+    .map(target -> {
+      Unit(
+        package,
+        target,
+        build_config.requested_arch,
+        CompileModeBuild(),
+        UnitBuildOptions{
+          relocation_model => if (
+            target.kind is LibTarget(LibraryTypeCdylib _)
+          ) "pic" else {
+            "static"
+          },
+        },
+      )
+    })
     .collect(Array)
 }
 
@@ -244,7 +262,11 @@ private fun compute_deps(
     unit.mode is CompileModeRunBuildScript _
   ) {
     return Array[
-      unit with {arch => TargetArchHost(), mode => CompileModeBuild()},
+      unit with {
+        arch => TargetArchHost(),
+        mode => CompileModeBuild(),
+        build_opts => unit.build_opts with {relocation_model => "static"},
+      },
     ]
   };
 
@@ -263,13 +285,20 @@ private fun compute_deps(
         unit.pkg.manifest.lib_target().fromSome(),
         unit.arch,
         CompileModeBuild(),
+        unit.build_opts,
       ),
     )
   | LibTarget(LibraryTypeSklib _) ->
     unit.pkg.manifest.build_script_target() match {
     | Some(target) ->
       unit_deps.push(
-        Unit(unit.pkg, target, unit.arch, CompileModeRunBuildScript()),
+        Unit(
+          unit.pkg,
+          target,
+          unit.arch,
+          CompileModeRunBuildScript(),
+          unit.build_opts,
+        ),
       )
     | None() -> void
     }
@@ -294,6 +323,7 @@ private fun compute_deps(
         dep_package.manifest.lib_target().fromSome(),
         unit.arch,
         CompileModeBuild(),
+        unit.build_opts,
       ),
     )
   };

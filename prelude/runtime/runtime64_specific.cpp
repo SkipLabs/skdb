@@ -269,24 +269,37 @@ void SKIP_unsetenv(char* name) {
 
 void SKIP_memory_init(int pargc, char** pargv);
 void sk_persist_consts();
-extern void* program_break;
 
-void __attribute__((constructor)) premain() {
-  program_break = sbrk(0);
-}
-
-int main(int pargc, char** pargv) {
+void sk_init(int pargc, char** pargv) {
   sk_saved_obstack_t* saved;
   argc = pargc;
   argv = pargv;
-  std::set_terminate(terminate);
   SKIP_memory_init(pargc, pargv);
   saved = SKIP_new_Obstack();
   SKIP_initializeSkip();
   sk_persist_consts();
   SKIP_destroy_Obstack(saved);
+}
+
+#ifdef SKIP_LIBRARY
+__attribute__((constructor)) static void lib_init() {
+  argc = 1;
+  char* argv0 = strdup("library");
+  argv = (char**)malloc(2 * sizeof(char*));
+  argv[0] = argv0;
+  argv[1] = NULL;
+  sk_init(argc, argv);
+}
+#else
+int main(int pargc, char** pargv) {
+  std::set_terminate(terminate);
+  // TODO: Make memory initialization read state.db path from the environment
+  // rather than command line arguments, and let the above constructor handle
+  // it.
+  sk_init(pargc, pargv);
   skip_main();
 }
+#endif  // SKIP_LIBRARY
 
 static void print(FILE* descr, char* str) {
   size_t size = SKIP_String_byteSize((char*)str);
@@ -587,33 +600,71 @@ void SKIP_last_tick(uint32_t) {
 void SKIP_switch_to(uint32_t) {
   // Not implemented
 }
+
+void (*SKIP_clear_field_names_ptr)();
 void SKIP_clear_field_names() {
-  // Not implemented
+  if (SKIP_clear_field_names_ptr) {
+    SKIP_clear_field_names_ptr();
+  }
 }
-void SKIP_push_field_name(char*) {
-  // Not implemented
+
+void (*SKIP_push_field_name_ptr)(char*);
+void SKIP_push_field_name(char* val) {
+  if (SKIP_push_field_name_ptr) {
+    SKIP_push_field_name_ptr(val);
+  }
 }
+
+void (*SKIP_clear_object_ptr)();
 void SKIP_clear_object() {
-  // Not implemented
+  if (SKIP_clear_object_ptr) {
+    SKIP_clear_object_ptr();
+  }
 }
+
+void (*SKIP_push_object_field_null_ptr)();
 void SKIP_push_object_field_null() {
+  if (SKIP_push_object_field_null_ptr) {
+    SKIP_push_object_field_null_ptr();
+  }
+}
+
+void (*SKIP_push_object_field_int32_ptr)(int32_t);
+void SKIP_push_object_field_int32(int32_t val) {
+  if (SKIP_push_object_field_int32_ptr) {
+    SKIP_push_object_field_int32_ptr(val);
+  }
   // Not implemented
 }
-void SKIP_push_object_field_int32(int32_t) {
-  // Not implemented
+
+void (*SKIP_push_object_field_int64_ptr)(char*);
+void SKIP_push_object_field_int64(char* val) {
+  if (SKIP_push_object_field_int64_ptr) {
+    SKIP_push_object_field_int64_ptr(val);
+  }
 }
-void SKIP_push_object_field_int64(char*) {
-  // Not implemented
+
+void (*SKIP_push_object_field_float_ptr)(char*);
+void SKIP_push_object_field_float(char* val) {
+  if (SKIP_push_object_field_float_ptr) {
+    SKIP_push_object_field_float_ptr(val);
+  }
 }
-void SKIP_push_object_field_float(char*) {
-  // Not implemented
+
+void (*SKIP_push_object_field_string_ptr)(char*);
+void SKIP_push_object_field_string(char* val) {
+  if (SKIP_push_object_field_string_ptr) {
+    SKIP_push_object_field_string_ptr(val);
+  }
 }
-void SKIP_push_object_field_string(char*) {
-  // Not implemented
-}
+
+void (*SKIP_push_object_ptr)();
 void SKIP_push_object() {
-  // Not implemented
+  if (SKIP_push_object_ptr) {
+    SKIP_push_object_ptr();
+  }
 }
+
 void SKIP_js_delete_fun() {
   // Not implemented
 }

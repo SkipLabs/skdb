@@ -1,0 +1,21 @@
+module SKDBFFI;
+
+@cpp_export("skdb_exec")
+fun exec(query: String): Int {
+  SKDB.eval(
+    query,
+    SKDB.Options{
+      alwaysAllowJoins => true,
+      backtrace => true,
+      sync => true,
+      showUsedIndexes => false,
+      format => SKDB.OFK_JS(),
+    },
+    Map[],
+  ) match {
+  | Success _ -> 0
+  | Failure _ -> 1
+  }
+}
+
+module end;

@@ -16,6 +16,7 @@ const indexByCol: SKStore.DirName = SKStore.DirName::create("/indexByCol/");
 const indexByName: SKStore.DirName = SKStore.DirName::create("/indexByName/");
 const watermarks: SKStore.DirName = SKStore.DirName::create("/watermarks/");
 const replication: SKStore.DirName = SKStore.DirName::create("/replication/");
+const extractedCols: SKStore.DirName = SKStore.DirName::create("/extracted/");
 
 fun getWatermark(
   context: readonly SKStore.Context,
@@ -744,7 +745,137 @@ fun alterTableExtractColumn(
       colIdx,
       options,
     );
+
+    legacyView = createLegacyView(
+      context,
+      sourceTable.name,
+      dataCol,
+      pkCol,
+      createStmt,
+    );
+
+    evaluator.stmt(context, queryParams, legacyView, false) match {
+    | Some(op) -> op(context, delta, root)
+    | None() -> error(createStmt.pos, "")
+    }
   })
+}
+
+class ExtractedColumnsFile{
+  // `legacyView` joins extracted columns with the original table on its primary key column,
+  // so as to serve clients connecting on a pre-extraction schema
+  legacyView: P.Name,
+  pkCol: P.ColumnDefinition,
+  // each pair in `extractedCols` is
+  // (i0) a column extracted from some table and
+  // (i1) the create-table-as statement used to extract it
+  extractedCols: Array<(P.ColumnDefinition, P.CreateTableAs)>,
+} extends SKStore.File {
+  static fun type(f: SKStore.File): ExtractedColumnsFile {
+    f match {
+    | x @ ExtractedColumnsFile _ -> x
+    | _ -> invariant_violation("Unexpected row file type")
+    }
+  }
+}
+
+fun getExtractedColsDir(
+  context: mutable SKStore.Context,
+): SKStore.EHandle<SKStore.Key, ExtractedColumnsFile> {
+  makeDir(ExtractedColumnsFile::type, context, extractedCols, () -> {
+    context.mkdir(x ~> x, ExtractedColumnsFile::type, extractedCols)
+  })
+}
+
+// When a column is extracted from a table to a one-to-many relation, we set up a reactive
+// view to mimic the pre-extraction schema for any clients tailing on that legacy schema.
+private fun createLegacyView(
+  context: mutable SKStore.Context,
+  sourceTable: P.Name,
+  column: P.ColumnDefinition,
+  pkCol: P.ColumnDefinition,
+  extractionStmt: P.CreateTableAs,
+): P.CreateView {
+  newName = P.Name::create(
+    `__skdb__legacy_schema_${sourceTable}_${column.name}`,
+  );
+
+  createViewStmt = (oldTableOrView) -> {
+    newTable = extractionStmt.name;
+
+    join = P.Join{
+      kind => P.JLeft(false),
+      lhs => P.FromTable{name => oldTableOrView, asName => None()},
+      rhs => P.FromTable{name => newTable, asName => None()},
+      using => None(),
+      on => Some(
+        P.BinOp(
+          P.OEq(),
+          P.Identifier(pkCol.name, Some(oldTableOrView)),
+          P.Identifier(pkCol.name, Some(newTable)),
+        ),
+      ),
+    };
+
+    viewQuery = P.SelectCoreQuery{
+      distinct => false,
+      groupBy => None(),
+      having => None(),
+      from => Some(join),
+      params => Array[
+        P.SelectStar(Some(oldTableOrView)),
+        P.SelectExpr(P.Identifier(column.name, Some(newTable)), None()),
+      ],
+      where => Some(P.Identifier(skdbOriginal, Some(newTable))),
+    };
+
+    P.CreateView{
+      reactive => true,
+      ifNotExists => false,
+      name => newName,
+      query => P.SQuery(
+        P.Select{
+          core => viewQuery,
+          orderBy => None(),
+          limit => None(),
+          rest => Array[],
+        },
+      ),
+    }
+  };
+
+  sid = SKStore.SID::create(sourceTable.lower);
+  extractedColsDir = getExtractedColsDir(context);
+  colsFile = extractedColsDir.maybeGet(context, sid);
+
+  colsFile.each(file ->
+    file.extractedCols.each(col -> {
+      if (col.i0.name == column.name) {
+        error(
+          extractionStmt.pos,
+          `a column named ${
+            column.name
+          } has already been extracted from ${sourceTable}`,
+        )
+      }
+    })
+  );
+
+  extractedColsDir.writeArray(
+    context,
+    sid,
+    Array[
+      ExtractedColumnsFile{
+        legacyView => newName,
+        pkCol,
+        extractedCols => colsFile.maybe(Array[(column, extractionStmt)], x ->
+          x.extractedCols.append((column, extractionStmt))
+        ),
+      },
+    ],
+  );
+
+  createViewStmt(colsFile.maybe(sourceTable, file -> file.legacyView));
 }
 
 /*****************************************************************************/

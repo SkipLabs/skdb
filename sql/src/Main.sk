@@ -122,7 +122,12 @@ untracked fun main(): void {
         .arg(
           Cli.Arg::string("table").positional().required().about("Table name"),
         )
-        .arg(Cli.Arg::string("table-suffix").about("Optional suffix")),
+        .arg(Cli.Arg::string("table-suffix").about("Optional suffix"))
+        .arg(
+          Cli.Arg::bool("legacy-schema").about(
+            "Request maximally-legacy-compatible schema, including any columns which have been extracted to separate tables.",
+          ),
+        ),
     )
     .subcommand(
       Cli.Command("connected-as")
@@ -457,8 +462,9 @@ fun execDumpTable(args: Cli.ParseResults, options: SKDB.Options): void {
   ensureContext(args);
   tableName = args.getString("table");
   suffix = args.maybeGetString("table-suffix");
+  legacySchema = args.getBool("legacy-schema");
   SKDB.runSql(options, context ~> {
-    SKDB.dumpTable(context, tableName.lowercase(), suffix);
+    SKDB.dumpTable(context, tableName.lowercase(), suffix, legacySchema);
     SKStore.CStop(None())
   })
 }

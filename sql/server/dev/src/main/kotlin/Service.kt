@@ -163,8 +163,9 @@ class RequestHandler(
         val result =
             when (request.scope) {
               SchemaScope.ALL -> skdb.dumpSchema()
-              SchemaScope.TABLE -> skdb.dumpTable(request.name!!, request.suffix!!)
+              SchemaScope.TABLE -> skdb.dumpTable(request.name!!, request.suffix!!, false)
               SchemaScope.VIEW -> skdb.dumpView(request.name!!)
+              SchemaScope.LEGACY_SCHEMA -> skdb.dumpTable(request.name!!, request.suffix!!, true)
             }
         if (result.exitSuccessfully()) {
           stream.send(encodeProtoMsg(ProtoData(ByteBuffer.wrap(result.output), finFlagSet = true)))

@@ -113,10 +113,14 @@ class Skdb(val name: String, private val dbPath: String) {
     return blockingRun(ProcessBuilder(ENV.skdbPath, "replication-id", deviceUuid, "--data", dbPath))
   }
 
-  fun dumpTable(table: String, suffix: String): ProcessOutput {
-    return blockingRun(
+  fun dumpTable(table: String, suffix: String, legacySchema: Boolean): ProcessOutput {
+    val pb =
         ProcessBuilder(
-            ENV.skdbPath, "dump-table", table, "--data", dbPath, "--table-suffix", suffix))
+            ENV.skdbPath, "dump-table", table, "--data", dbPath, "--table-suffix", suffix)
+    if (legacySchema) {
+      pb.command().add("--legacy-schema")
+    }
+    return blockingRun(pb)
   }
 
   fun dumpView(view: String): ProcessOutput {

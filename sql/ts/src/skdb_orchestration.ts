@@ -22,7 +22,7 @@ type ProtoQuery = {
 type ProtoQuerySchema = {
   type: "schema";
   name?: string;
-  scope: "all" | "table" | "view";
+  scope: "all" | "table" | "view" | "legacy_schema";
   suffix?: string;
 };
 
@@ -117,6 +117,7 @@ function encodeProtoMsg(msg: ProtoMsg): ArrayBuffer {
         ["all", 0x0],
         ["table", 0x1],
         ["view", 0x2],
+        ["legacy_schema", 0x3],
       ]);
       const scope = scopeLookup.get(msg.scope);
       if (scope === undefined) {
@@ -1767,7 +1768,16 @@ class SKDBServer implements RemoteSKDB {
         if (!this.client.tableExists(serverResponseTable(tableName))) {
           this.client.exec(createResponseTable);
         }
-        this.client.assertCanBeMirrored(remoteTable, expectedSchema);
+        try {
+          this.client.assertCanBeMirrored(remoteTable, expectedSchema);
+        } catch {
+	  const legacyView = await this.tableSchema(tableName, "", true);
+          this.client.assertCanBeMirrored(
+	    legacyView,
+            expectedSchema,
+          );
+        }
+
         this.mirroredTables.set(tableName, expectedSchema);
       }
     };
@@ -1816,11 +1826,15 @@ class SKDBServer implements RemoteSKDB {
     });
   }
 
-  async tableSchema(tableName: string, suffix: string = ""): Promise<string> {
+  async tableSchema(
+    tableName: string,
+    suffix: string = "",
+    legacySchema: boolean = false,
+  ): Promise<string> {
     return this.makeStringRequest({
       type: "schema",
       name: tableName,
-      scope: "table",
+      scope: legacySchema ? "legacy_schema" : "table",
       suffix: suffix,
     });
   }

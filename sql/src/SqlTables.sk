@@ -1305,15 +1305,39 @@ fun printDirDescr(dirDescr: DirDescr, suffix: ?String): void {
 }
 
 fun dumpTable(
-  origContext: readonly SKStore.Context,
+  origContext: mutable SKStore.Context,
   tableName: String,
   suffix: ?String,
+  legacySchema: Bool = false,
 ): void {
   context = SKStore.Context::fromSaved(origContext.clone());
-  getTableDir(context).maybeGet(context, SKStore.SID(tableName)) match {
+  tableDir = getTableDir(context);
+
+  dirDescrOpt = if (legacySchema) {
+    getExtractedColsDir(context)
+      .maybeGet(context, SKStore.SID::create(tableName))
+      .flatMap(ecFile -> {
+        legacy_sid = SKStore.SID::create(ecFile.legacyView.lower);
+        tableDir.maybeGet(context, legacy_sid).map(dd -> {
+          schema_with_pk = dd.schema.map(col ->
+            if (col.name == ecFile.pkCol.name) {
+              invariant(col == (ecFile.pkCol with {primary => None()}));
+              ecFile.pkCol
+            } else {
+              col
+            }
+          );
+          dd with {name => P.Name::create(tableName), schema => schema_with_pk}
+        })
+      })
+  } else {
+    tableDir.maybeGet(context, SKStore.SID::create(tableName))
+  };
+
+  dirDescrOpt match {
   | None() -> void
-  | Some(dirDescr) -> printDirDescr(dirDescr, suffix)
-  }
+  | Some(dd) -> printDirDescr(dd, suffix)
+  };
 }
 
 fun dumpTables(origContext: readonly SKStore.Context, suffix: ?String): void {

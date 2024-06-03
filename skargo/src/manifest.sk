@@ -300,7 +300,9 @@ private fun manifest_targets(
 
   srcs = FileSystem.readFilesRecursive(Path.join(package_root, "src"), f ->
     f.endsWith(".sk")
-  ).toArray();
+  )
+    .map(f -> f.stripPrefix(package_root + "/"))
+    .toArray();
 
   // TODO: Only do this for explicitly specified `[lib]` sections.
   res.push(Target(LibTarget(LibraryTypeSklib()), "lib", srcs));
@@ -312,8 +314,8 @@ private fun manifest_targets(
     res.push(Target(BinTarget(bin.main), bin.name, Array[]))
   };
 
-  build_script_path = Path.join(package_root, "build.sk");
-  if (FileSystem.exists(build_script_path)) {
+  build_script_path = "build.sk";
+  if (FileSystem.exists(Path.join(package_root, build_script_path))) {
     res.push(
       Target(
         CustomBuildTarget(),

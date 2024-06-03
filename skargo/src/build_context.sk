@@ -5,7 +5,7 @@ private class Package(
   manifest_path: String,
 ) uses Equality, Hashable {
   static fun read(manifest_path: String): Package {
-    Package(Manifest::read(manifest_path), manifest_path)
+    Package(Manifest::read(manifest_path), FileSystem.realpath(manifest_path))
   }
 
   fun name(): String {

@@ -10,6 +10,7 @@ mutable class ProcessBuilder{
   mutable process_cmd: String,
   process_args: mutable Vector<String> = mutable Vector[],
   process_env: mutable Map<String, String> = mutable Map[],
+  mutable process_cwd: ?String = None(),
 } {
   mutable fun cmd(value: String): void {
     this.!process_cmd = value
@@ -25,6 +26,10 @@ mutable class ProcessBuilder{
 
   mutable fun env(key: String, value: String): void {
     this.process_env![key] = value
+  }
+
+  mutable fun cwd(path: String): void {
+    this.!process_cwd = Some(path)
   }
 
   mutable fun clone(): mutable ProcessBuilder {
@@ -53,7 +58,13 @@ mutable class ProcessBuilder{
     stdout: (String) -> void = _ -> void,
     stderr: (String) -> void = _ -> void,
   ): System.CompletedProcess {
-    System.popen{args => this.get_argv(), env => this.get_env(), stdout, stderr}
+    System.popen{
+      args => this.get_argv(),
+      env => this.get_env(),
+      cwd => this.process_cwd,
+      stdout,
+      stderr,
+    }
   }
 }
 

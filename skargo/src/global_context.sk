@@ -27,10 +27,13 @@ class GlobalContext{
       console.error("cannot set both --verbose and --quiet");
       skipExit(3)
     };
-    target_dir = args.maybeGetString("target-dir", false);
+    cwd = getcwd();
+    target_dir = args.maybeGetString("target-dir", false).map(p ->
+      Path.join(cwd, p)
+    );
     config = findUserConfig();
 
-    GlobalContext{config, console, cwd => getcwd(), target_dir}
+    GlobalContext{config, console, cwd, target_dir}
   }
 }
 

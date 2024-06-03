@@ -43,7 +43,9 @@ fun build(): (Cli.Command, (GlobalContext, Cli.ParseResults) ~> void) {
 fun execBuild(gctx: GlobalContext, args: Cli.ParseResults): void {
   ws = workspace(args, gctx);
   opts = compile_options(args);
-  !opts.build_config.export_dir = args.maybeGetString("out-dir");
+  !opts.build_config.export_dir = args.maybeGetString("out-dir").map(p ->
+    Path.join(gctx.cwd, p)
+  );
   bctx = create_bctx(gctx, ws, opts);
   withTimer(
     () -> {

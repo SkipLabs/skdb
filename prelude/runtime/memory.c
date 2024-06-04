@@ -179,8 +179,6 @@ void* sk_malloc(size_t size) {
     SKIP_throw_cruntime(ERROR_OUT_OF_MEMORY);
   }
 
-  sk_lower_static(result);
-
 #ifdef MEMORY_CHECK
   static size_t alloc_count = 0;
   if (sk_init_over) {

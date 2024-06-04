@@ -269,11 +269,6 @@ void SKIP_unsetenv(char* name) {
 
 void SKIP_memory_init(int pargc, char** pargv);
 void sk_persist_consts();
-extern void* program_break;
-
-void __attribute__((constructor)) premain() {
-  program_break = sbrk(0);
-}
 
 int main(int pargc, char** pargv) {
   sk_saved_obstack_t* saved;

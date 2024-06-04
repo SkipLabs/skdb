@@ -107,7 +107,7 @@ fun buildCSVSchemaTransform(
   };
 
   schemaTransformation = target.map(targetCol -> {
-    source.indexOf(targetCol) match {
+    source.findIdx(col -> col.name == targetCol.name) match {
     | None() ->
       print_error(`Incompatible schema: unknown column ${targetCol.name}`);
       skipExit(2)
@@ -169,6 +169,7 @@ fun tailSub(
   userIDOpt: ?String,
   spec: (P.Name ~> TailSpec),
 ): Bool {
+  legacyTableNames: SortedMap<P.Name, P.Name> = SortedMap::create();
   sub = SKStore.withContext(gContext -> {
     // rebuild the sub with extra filtering as supported by tail
     gContext.sessions.maybeGet(sessionID) match {
@@ -181,14 +182,40 @@ fun tailSub(
         dirSubs => sub.dirSubs.map(dirSub -> {
           table = getSqlTableName(dirSub.dirName);
           tableName = P.Name::create(table);
+          tailSpec = spec(tableName);
+
           dirDescr = dirDescrs.maybeGet(tableName) match {
-          | Some(descr) -> descr
+          | Some(descr) ->
+            requiresLegacySchema = tailSpec.columns match {
+            | None() -> false
+            | Some(cols) -> cols.any(col -> !descr.schema.contains(col))
+            };
+            if (requiresLegacySchema) {
+              mCtx = gContext.mclone();
+              getExtractedColsDir(mCtx)
+                .maybeGet(mCtx, SKStore.SID::create(tableName.lower))
+                .flatMap(ecFile -> {
+                  !legacyTableNames = legacyTableNames.set(
+                    ecFile.legacyView,
+                    tableName,
+                  );
+                  dirDescrs.maybeGet(ecFile.legacyView)
+                }) match {
+              | None() ->
+                print_error(`Error: incompatible schema for ${tableName}`);
+                skipExit(2)
+              | Some(dd) -> dd
+              }
+            } else {
+              descr
+            }
           | None _ ->
             print_error(`Error: '${tableName}' not found`);
             skipExit(2)
           };
-          tailSpec = spec(tableName);
+
           dirSub with {
+            dirName => dirDescr.dirName,
             filter => buildTailFilter(
               gContext,
               options,
@@ -209,6 +236,8 @@ fun tailSub(
 
   tailWatermark: ?Int = None();
   init = true;
+
+  lookupSpec = (name) -> spec(legacyTableNames.maybeGet(name).default(name));
 
   loop {
     localObstack = SKStore.newObstack();
@@ -234,12 +263,12 @@ fun tailSub(
       writer = mutable Debug.BufferedWriter(print_raw, 4096);
 
       requestToRebuildEverything = !sub.dirSubs.any(ds -> {
-        since = tailFrom(spec, ds, tailWatermark);
+        since = tailFrom(lookupSpec, ds, tailWatermark);
         since.value > 0
       });
       oldestSubSince = sub.dirSubs.reduce(
         (acc, ds) -> {
-          since = tailFrom(spec, ds, tailWatermark);
+          since = tailFrom(lookupSpec, ds, tailWatermark);
           if (since < acc) {
             since
           } else {
@@ -273,7 +302,7 @@ fun tailSub(
         | SKDB.OFK_JS() -> SKStore.OJS(getFieldNames(context, dirName))
         | SKDB.OFK_Table() -> SKStore.OTable(getFieldNames(context, dirName))
         };
-        since = tailFrom(spec, dirSub, tailWatermark);
+        since = tailFrom(lookupSpec, dirSub, tailWatermark);
 
         (shouldRebuild, changes) = if (forceCompleteRebuild) {
           (true, Array[].iterator())

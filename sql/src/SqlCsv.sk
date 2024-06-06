@@ -344,6 +344,7 @@ fun applyDiffStrategy(
   checkpoint: ?Int,
   snapshot: ?Int,
   userFileOpt: ?SKDB.UserFile,
+  feedbackTable: Bool = true,
 ): ?((
   mutable SKStore.Context,
   mutable SKStore.Context,
@@ -391,14 +392,16 @@ fun applyDiffStrategy(
     | Some(val) if (val > 0) ->
       checkpointTick = SKStore.Tick(val);
       SKDB.setWatermark(context, table.name.lower, identity, checkpointTick);
-      delta.setGlobal(
-        "Ack",
-        SKDB.StdoutCheckpointAck(
-          table.name.origName,
-          checkpointTick,
-          delta.getGlobal("Ack").map(SKDB.StdoutCheckpointAck::type),
-        ),
-      )
+      if (feedbackTable) {
+        delta.setGlobal(
+          "Ack",
+          SKDB.StdoutCheckpointAck(
+            table.name.origName,
+            checkpointTick,
+            delta.getGlobal("Ack").map(SKDB.StdoutCheckpointAck::type),
+          ),
+        )
+      }
     | _ -> void
     }
   };
@@ -798,6 +801,7 @@ fun buildDiffChain(
             Some(checkpoint),
             None(),
             userFileOpt,
+            false,
           ),
         );
       }

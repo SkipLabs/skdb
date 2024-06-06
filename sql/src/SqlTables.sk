@@ -617,7 +617,7 @@ fun alterTableExtractColumn(
         | P.SelectExpr(
           P.VInt(1),
           Some(alias),
-        ) if (alias.toString() == "skdb_original" && !seen_orig) ->
+        ) if (alias == skdbOriginal && !seen_orig) ->
           (seen_data, seen_pk, seen_access, true)
         | P.SelectExpr(
           P.Identifier(ident, _),
@@ -691,7 +691,7 @@ fun alterTableExtractColumn(
         },
       ),
       groupBy => Some(Array[pkIdent]),
-      where => Some(P.Identifier(P.Name::create("skdb_original"), None())),
+      where => Some(P.Identifier(skdbOriginal, None())),
       having => None(),
       distinct => false,
     };
@@ -768,8 +768,8 @@ class ExtractedColumnsFile{
   pkCol: P.ColumnDefinition,
   // each pair in `extractedCols` is
   // (i0) a column extracted from some table and
-  // (i1) the create-table-as statement used to extract it
-  extractedCols: Array<(P.ColumnDefinition, P.CreateTableAs)>,
+  // (i1) the name of the table it's been extracted to
+  extractedCols: SortedMap<P.ColumnDefinition, P.Name>,
 } extends SKStore.File {
   static fun type(f: SKStore.File): ExtractedColumnsFile {
     f match {
@@ -848,18 +848,16 @@ private fun createLegacyView(
   extractedColsDir = getExtractedColsDir(context);
   colsFile = extractedColsDir.maybeGet(context, sid);
 
-  colsFile.each(file ->
-    file.extractedCols.each(col -> {
-      if (col.i0.name == column.name) {
-        error(
-          extractionStmt.pos,
-          `a column named ${
-            column.name
-          } has already been extracted from ${sourceTable}`,
-        )
-      }
-    })
-  );
+  colsFile.each(file -> {
+    if (file.extractedCols.keys().any(ec -> ec.name == column.name)) {
+      error(
+        extractionStmt.pos,
+        `a column named ${
+          column.name
+        } has already been extracted from ${sourceTable}`,
+      )
+    }
+  });
 
   extractedColsDir.writeArray(
     context,
@@ -868,9 +866,9 @@ private fun createLegacyView(
       ExtractedColumnsFile{
         legacyView => newName,
         pkCol,
-        extractedCols => colsFile.maybe(Array[(column, extractionStmt)], x ->
-          x.extractedCols.append((column, extractionStmt))
-        ),
+        extractedCols => colsFile
+          .maybe(SortedMap::create(), x -> x.extractedCols)
+          .set(column, extractionStmt.name),
       },
     ],
   );

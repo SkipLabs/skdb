@@ -946,7 +946,7 @@ async function testSchemaChanges(root: SKDB, skdb1: SKDB, skdb2: SKDB) {
   const tt_data = {
     table: "tt_data",
     expectedColumns:
-      "(id INTEGER, data TEXT, skdb_access TEXT, skdb_original TEXT)",
+      "(id INTEGER, data TEXT, skdb_access TEXT, skdb_original INTEGER)",
   };
 
   const rootRemote = await root.connectedRemote();

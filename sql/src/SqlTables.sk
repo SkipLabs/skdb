@@ -553,7 +553,7 @@ private fun dropAtIdx<T>(array: Array<T>, idx: Int): Array<T> {
 private fun alterTableDropColumn(
   context: mutable SKStore.Context,
   pos: Int,
-  name: P.Name,
+  tableName: P.Name,
   colIdx: Int,
   options: Options,
 ): void {
@@ -561,10 +561,11 @@ private fun alterTableDropColumn(
   transformRow = (_context, oldRow) -> {
     RowValues(dropAtIdx(oldRow.values, colIdx), oldRow.repeat)
   };
-  alterTable(context, pos, name, transformSchema, transformRow, options);
-  errorAllExistingSubs(context, SKStore.DirName::create("/" + name + "/"));
+  alterTable(context, pos, tableName, transformSchema, transformRow, options);
+  errorAllExistingSubs(context, SKStore.DirName::create("/" + tableName + "/"));
 }
 
+const skdbOriginal: P.Name = P.Name::create("skdb_original");
 // _Extract_ a column `c` from a table `t` with primary key column `id` to a
 // one-to-many relation in a new table `t_c`.
 fun alterTableExtractColumn(
@@ -874,6 +875,77 @@ private fun createLegacyView(
   );
 
   createViewStmt(colsFile.maybe(sourceTable, file -> file.legacyView));
+}
+
+fun propagateRowsToExtractedTables(
+  context: mutable SKStore.Context,
+  table: DirDescr,
+  legacySchema: Array<P.ColumnDefinition>,
+  rows: Array<RowValues>,
+): SortedMap<DirDescr, Array<RowValues>> {
+  colsFile = getExtractedColsDir(context).maybeGet(
+    context,
+    SKStore.SID::create(table.name.lower),
+  ) match {
+  | Some(f) -> f
+  | None() ->
+    print_error(
+      `Missing extracted-column metadata for schema with unknown column(s)`,
+    );
+    skipExit(1)
+  };
+
+  pkIdx = legacySchema
+    .indexOf(colsFile.pkCol)
+    .fromSome("Missing primary-key column in legacy schema");
+
+  accessIdx = legacySchema
+    .findIdx(col -> col.name == skdbAccessColName)
+    .fromSome("Missing skdb_access column in legacy schema");
+
+  legacySchema
+    .items()
+    .filter(item -> !table.schema.contains(item.i1))
+    .foldl(
+      (map, curr) -> {
+        (idx, extractedCol) = curr;
+        extractedTable = getTable(
+          context,
+          0,
+          colsFile.extractedCols.get(extractedCol),
+        );
+
+        translationIndices = extractedTable.schema.map(col -> {
+          if (col == extractedCol) {
+            Some(idx)
+          } else if (col.name == colsFile.pkCol.name) {
+            Some(pkIdx)
+          } else if (col.name == skdbAccessColName) {
+            Some(accessIdx)
+          } else if (col.name == skdbOriginal) {
+            None()
+          } else {
+            invariant_violation(
+              "Extracted table schema has unexpected column: " + col.name,
+            )
+          }
+        });
+
+        extractedTableRows = rows.map(row -> {
+          values: Array<?SKDB.CValue> = translationIndices.map(idxOpt ->
+            idxOpt match {
+            | Some(x) -> row.values[x]
+            | None() ->
+              Some(CInt(1)) // "true" skdb_original for all values on legacy schema
+            }
+          );
+          RowValues::create(values, row.repeat)
+        });
+
+        map.set(extractedTable, extractedTableRows)
+      },
+      SortedMap::create(),
+    )
 }
 
 /*****************************************************************************/

@@ -752,6 +752,7 @@ mutable class TableDiff(
 }
 
 fun buildDiffChain(
+  context: mutable SKStore.Context,
   userFileOpt: ?SKDB.UserFile,
   tableDiffs: Array<FinalTableDiff>,
   identity: Int,
@@ -761,21 +762,54 @@ fun buildDiffChain(
   mutable SKStore.Context,
   SKStore.Context,
 ) ~> void) {
-  strategies = tableDiffs.map(td -> {
-    applyDiffStrategy(
-      td.table,
-      identity,
-      td.rebuild,
-      td.rows,
-      td.sourceSchema,
-      Some(checkpoint),
-      td.snapshot,
-      userFileOpt,
+  strategies = Vector::mcreate();
+
+  tableDiffs.each(td -> {
+    strategies.push(
+      applyDiffStrategy(
+        td.table,
+        identity,
+        td.rebuild,
+        td.rows,
+        td.sourceSchema,
+        Some(checkpoint),
+        td.snapshot,
+        userFileOpt,
+      ),
     );
+
+    td.sourceSchema match {
+    | Some(schema) if (!schema.all(x -> td.table.schema.contains(x))) ->
+      extractedTableWrites = SKDB.propagateRowsToExtractedTables(
+        context,
+        td.table,
+        schema,
+        td.rows,
+      );
+      for (diff in extractedTableWrites.items()) {
+        (descr, rows) = diff;
+        strategies.push(
+          applyDiffStrategy(
+            descr,
+            identity,
+            td.rebuild,
+            rows,
+            None(),
+            Some(checkpoint),
+            None(),
+            userFileOpt,
+          ),
+        );
+      }
+    | _ -> void
+    }
   });
+
+  strategiesArray = strategies.toArray();
+
   Some((newRoot, delta, root) ~> {
     try {
-      for (strategy in strategies) {
+      for (strategy in strategiesArray) {
         if (strategy is Some _) {
           strategy.fromSome()(newRoot, delta, root)
         }
@@ -866,6 +900,7 @@ fun replayDiff(
 
         break SKStore.CContinue(
           buildDiffChain(
+            context,
             userFileOpt,
             tableDiffs.map(td -> td.freeze()).toArray(),
             identity,

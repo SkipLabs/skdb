@@ -167,10 +167,18 @@ fun reasonSchemaUnsupported(
 ): ?String {
   context = SKStore.Context::fromSaved(origContext.clone());
 
-  (tableName, actualSchema) = P.Parser::create(table).parseCreate() match {
-  | P.CreateTableSchema{name, schema} ->
+  parseResult = try {
+    Some(P.Parser::create(table).parseCreate())
+  } catch {
+  | _ -> None()
+  };
+  (tableName, actualSchema) = parseResult match {
+  | Some(P.CreateTableSchema{name, schema}) ->
     (SKStore.SID(name.lower), schema.columns)
-  | _ -> return Some("Malformed create-table statement given.")
+  | _ ->
+    return Some(
+      "Malformed create-table statement given: " + inspect(table).toString(),
+    )
   };
 
   if (SKDB.getTableDir(context).maybeGet(context, tableName) is None()) {

@@ -12,7 +12,11 @@ class TailSpec{
 fun buildTailFilter(
   context: readonly SKStore.Context,
   options: SKDB.Options,
-  dirSub: SKStore.DirSub,
+  replicationFilter: (
+    SKStore.Context,
+    Bool,
+    SKStore.DirName,
+  ) ~> (SKStore.Key -> Bool),
   userId: ?String,
   tailSpec: TailSpec,
   sqlTable: SKDB.DirDescr,
@@ -219,7 +223,7 @@ fun tailSub(
             filter => buildTailFilter(
               gContext,
               options,
-              dirSub,
+              dirSub.filter,
               userIDOpt,
               tailSpec,
               dirDescr,

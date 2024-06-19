@@ -882,13 +882,12 @@ mutable class Context{
           };
           ctx = this.clone();
           producedOutput = dir.writeDiff(
-            ctx,
             shouldRebuild,
             changes,
             writer,
             dirSub.entity,
             dirSub.format,
-            dirSub.filter,
+            dirSub.filter(ctx, false),
             dirSub.getDestinationWatermark(ctx),
           );
           !producedAnyOutput = producedAnyOutput || producedOutput

@@ -2250,13 +2250,12 @@ fun printContext(context: mutable SKStore.Context): void {
       edir = context.unsafeGetEagerDir(dirsub.dirName);
       (shouldRebuild, changes) = edir.getChangesAfter(tick);
       producedOutput = edir.writeDiff(
-        context,
         shouldRebuild,
         changes.iterator(),
         writer,
         dirsub.entity,
         dirsub.format,
-        dirsub.filter,
+        dirsub.filter(context.clone(), false, dirsub.dirName),
         dirsub.getDestinationWatermark(context),
       );
       !producedAnyOutput = producedAnyOutput || producedOutput

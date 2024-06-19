@@ -341,16 +341,14 @@ fun tailSub(
         };
 
         producedOutput = edir.writeDiff(
-          context,
           shouldRebuild,
           changes.iterator(),
           writer,
           dirSub.entity,
           format,
-          dirSub.filter,
+          dirSub.filter(context, since.value < 1), //send everything if client has nothing, i.e. since.value == 0
           dirSub.getDestinationWatermark(context),
           checkpointInterval,
-          since.value < 1, // the client has nothing, so send everything
         );
         !producedAnyOutput = producedAnyOutput || producedOutput;
         !couldFollowChanges = couldFollowChanges && !shouldRebuild;

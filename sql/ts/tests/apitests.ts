@@ -966,42 +966,59 @@ async function testSchemaChanges(root: SKDB, skdb1: SKDB, skdb2: SKDB) {
     "INSERT INTO tt (data, id, skdb_access, more_data) VALUES ('one', 1, 'read-write', 'a'), ('two', 2, 'read-write', 'b');",
   );
 
-  // TODO assert that root has skdb1's insert here
-  console.log(await rootRemote!.exec("SELECT * FROM tt;"));
-
   await skdb2.mirror(tt_extracted, tt_data);
 
-  await skdb2.exec(
-    "INSERT INTO tt (id, skdb_access, more_data) VALUES (3, 'read-write', 'c');",
-  );
-  await skdb2.exec(
-    "INSERT INTO tt_data (id, data, skdb_access, skdb_original) VALUES (3, 'three', 'read-write', true), (3, 'III', 'read-write', false);",
-  );
+  await skdb2.exec("INSERT INTO tt (id, skdb_access, more_data) VALUES (3, 'read-write', 'c');");
+  await skdb2.exec("INSERT INTO tt_data (id, data, skdb_access, skdb_original) VALUES (3, 'three', 'read-write', true), (3, 'III', 'read-write', false);");
 
   await skdb1.exec(
     "INSERT INTO tt (data, id, skdb_access, more_data) VALUES ('four', 4, 'read-write', 'd');",
   );
 
-  //TODO assert that skdb1 sees:
+  await skdb2.exec(
+    "INSERT INTO tt (id, skdb_access, more_data) VALUES (5, 'read-write', 'e');",
+  );
+  await skdb2.exec(
+    "INSERT INTO tt_data (id, data, skdb_access, skdb_original) VALUES (5, 'five', 'read-write', true), (5, 'V', 'read-write', false);",
+  );
+
+  // skdb1 (on pre-extraction schema) should see tt:
   // 'one',   1, 'read-write', 'a'
   // 'two',   2, 'read-write', 'b'
   // 'three', 3, 'read-write', 'c'
   // 'four',  4, 'read-write', 'd'
-  // and skdb2 sees:
+  // 'five',  5, 'read-write', 'e'
+
+  // skdb2 (on post-extraction schema) should see tt:
   // 1, 'read-write', 'a'
   // 2, 'read-write', 'b'
   // 3, 'read-write', 'c'
   // 4, 'read-write', 'd'
-  // along with
+  // 5, 'read-write', 'e'
+  // along with tt_data
   // 1, 'one',   'read-write', 1
   // 2, 'two',   'read-write', 1
   // 3, 'three', 'read-write', 1
   // 3, 'III',   'read-write', 0
   // 4, 'four',  'read-write', 1
+  // 5, 'five',  'read-write', 1
+  // 3, 'V',     'read-write', 0
 
-  console.log(await skdb1.exec("SELECT * FROM tt;"));
-  console.log(await skdb2.exec("SELECT * FROM tt;"));
-  console.log(await skdb2.exec("SELECT * FROM tt_data;"));
+  expect(
+    await waitSynch(skdb1, "SELECT * FROM tt;", (rows) => rows.length == 5),
+  ).toHaveLength(5);
+
+  expect(
+    await waitSynch(skdb2, "SELECT * FROM tt;", (rows) => rows.length == 5),
+  ).toHaveLength(5);
+
+  expect(
+    await waitSynch(
+      skdb2,
+      "SELECT * FROM tt_data;",
+      (rows) => rows.length == 7,
+    ),
+  ).toHaveLength(7);
 }
 
 export const apitests = (asWorker) => {

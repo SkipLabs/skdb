@@ -1732,6 +1732,11 @@ class EagerDir{
       return this;
     };
 
+    if (context.writerOverride.isSome()) {
+      !origSource = context.writerOverride.fromSome();
+      !writer = context.writerOverride.fromSome()
+    };
+
     context.writeChecker match {
     | Some(checker) if (!force) ->
       checker.tables.maybeGet(this.dirName) match {

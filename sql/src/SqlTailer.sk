@@ -20,9 +20,9 @@ fun buildTailFilter(
   userId: ?String,
   tailSpec: TailSpec,
   sqlTable: SKDB.DirDescr,
-): (SKStore.Context, Bool) ~> (SKStore.Key -> Bool) {
+): (SKStore.Context, Bool, SKStore.DirName) ~> (SKStore.Key -> Bool) {
   filter = tailSpec.filter match {
-  | None() -> dirSub.filter
+  | None() -> replicationFilter
   | Some(strCond) ->
     compiler = SKDB.Compiler::create(false, options, 0, tailSpec.params);
     ast = P.Parser::create(strCond).parseExpr();
@@ -37,9 +37,9 @@ fun buildTailFilter(
       print_error("Unexpected type for filter expression");
       skipExit(2)
     };
-    (context, isReset) ~> {
+    (context, isReset, dirName) ~> {
       mcontext = context.mclone();
-      conditionFilter = dirSub.filter(context, isReset);
+      conditionFilter = replicationFilter(context, isReset, dirName);
       baseName -> {
         inputRow = baseName match {
         | rowKey @ SKDB.RowKey _ -> rowKey.getRowValues()
@@ -65,9 +65,9 @@ fun buildTailFilter(
   userId match {
   | None() -> filter
   | Some(userID) ->
-    (context, isReset) ~> {
+    (context, isReset, dirName) ~> {
       user = SKDB.UserFile::create(context, userID);
-      oldFilter = filter(context, isReset);
+      oldFilter = filter(context, isReset, dirName);
 
       baseName -> {
         oldFilter(baseName) &&
@@ -350,7 +350,7 @@ fun tailSub(
           writer,
           dirSub.entity,
           format,
-          dirSub.filter(context, since.value < 1), //send everything if client has nothing, i.e. since.value == 0
+          dirSub.filter(context, since.value < 1, dirName), //send everything if client has nothing, i.e. since.value == 0
           dirSub.getDestinationWatermark(context),
           checkpointInterval,
         );

@@ -41,7 +41,8 @@ class DirSub(
   // lock-step.
   getDestinationWatermark: (readonly SKStore.Context) ~> ?SKStore.Tick,
   // this is a dir-specific filter
-  filter: (SKStore.Context, Bool) ~> (Key -> Bool) = (_, _) ~> (_ -> true),
+  filter: (SKStore.Context, Bool, DirName) ~> (Key -> Bool) = (_, _, _) ~>
+    (_ -> true),
 )
 
 /*****************************************************************************/
@@ -887,7 +888,7 @@ mutable class Context{
             writer,
             dirSub.entity,
             dirSub.format,
-            dirSub.filter(ctx, false),
+            dirSub.filter(ctx, false, dirName),
             dirSub.getDestinationWatermark(ctx),
           );
           !producedAnyOutput = producedAnyOutput || producedOutput

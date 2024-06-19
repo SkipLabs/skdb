@@ -1040,11 +1040,11 @@ fun getSubsDirs(
         };
         alwaysTrue = (_baseName ~> true);
         filter = request.destinationSource match {
-        | None() -> (_context, _isReset) ~> alwaysTrue
+        | None() -> (_context, _isReset, _dirName) ~> alwaysTrue
         | Some(inputSrc) ->
-          (context, isReset) ~> {
+          (context, isReset, dirName) ~> {
             if (isReset) return alwaysTrue;
-            tdir = context.unsafeGetEagerDir(dirDescr.dirName);
+            tdir = context.unsafeGetEagerDir(dirName);
             ignoredSrc = SKStore.Path(dirDescr.dirName, SKStore.IID(inputSrc));
             (file: SKStore.Key) -> {
               rows = tdir.getAllDataIter(context.mclone(), file).collect(Array);

@@ -968,8 +968,12 @@ async function testSchemaChanges(root: SKDB, skdb1: SKDB, skdb2: SKDB) {
 
   await skdb2.mirror(tt_extracted, tt_data);
 
-  await skdb2.exec("INSERT INTO tt (id, skdb_access, more_data) VALUES (3, 'read-write', 'c');");
-  await skdb2.exec("INSERT INTO tt_data (id, data, skdb_access, skdb_original) VALUES (3, 'three', 'read-write', true), (3, 'III', 'read-write', false);");
+  await skdb2.exec(
+    "INSERT INTO tt (id, skdb_access, more_data) VALUES (3, 'read-write', 'c');",
+  );
+  await skdb2.exec(
+    "INSERT INTO tt_data (id, data, skdb_access, skdb_original) VALUES (3, 'three', 'read-write', true), (3, 'III', 'read-write', false);",
+  );
 
   await skdb1.exec(
     "INSERT INTO tt (data, id, skdb_access, more_data) VALUES ('four', 4, 'read-write', 'd');",

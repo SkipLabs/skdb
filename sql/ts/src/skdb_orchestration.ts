@@ -1771,11 +1771,8 @@ class SKDBServer implements RemoteSKDB {
         try {
           this.client.assertCanBeMirrored(remoteTable, expectedSchema);
         } catch {
-	  const legacyView = await this.tableSchema(tableName, "", true);
-          this.client.assertCanBeMirrored(
-	    legacyView,
-            expectedSchema,
-          );
+          const legacyView = await this.tableSchema(tableName, "", true);
+          this.client.assertCanBeMirrored(legacyView, expectedSchema);
         }
 
         this.mirroredTables.set(tableName, expectedSchema);

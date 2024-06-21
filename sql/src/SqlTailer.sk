@@ -346,7 +346,7 @@ fun tailSub(
 
         producedOutput = edir.writeDiff(
           shouldRebuild,
-          changes.iterator(),
+          changes,
           writer,
           dirSub.entity,
           format,

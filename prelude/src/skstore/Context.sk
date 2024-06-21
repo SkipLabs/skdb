@@ -335,7 +335,7 @@ mutable class Context{
   mutable writeChecker: ?(mutable WriteChecker) = None(),
   mutable purgeFrom: (mutable Context, Dir) ~> Tick = (ctx, _) ~>
     Tick(ctx.tick.value - 1000),
-  mutable writerOverride: ?Path = None(),
+  mutable sourceOverride: ?Path = None(),
 } {
   readonly fun isWithSharedSubDirs(dirName: DirName): Bool {
     this.dirsWithSharedSubDirs.contains(dirName)
@@ -434,7 +434,7 @@ mutable class Context{
       sharedSubDirsRefCount => this.sharedSubDirsRefCount,
       writeChecker => this.writeChecker.map(x -> x.clone()),
       purgeFrom => this.purgeFrom,
-      writerOverride => this.writerOverride,
+      sourceOverride => this.sourceOverride,
     }
   }
 
@@ -472,7 +472,7 @@ mutable class Context{
       sharedSubDirsRefCount => this.sharedSubDirsRefCount,
       writeChecker => this.writeChecker.map(x -> x.mclone()),
       purgeFrom => this.purgeFrom,
-      writerOverride => this.writerOverride,
+      sourceOverride => this.sourceOverride,
     }
   }
 
@@ -510,7 +510,7 @@ mutable class Context{
       sharedSubDirsRefCount => ctx.sharedSubDirsRefCount,
       writeChecker => ctx.writeChecker.map(x -> x.mclone()),
       purgeFrom => ctx.purgeFrom,
-      writerOverride => ctx.writerOverride,
+      sourceOverride => ctx.sourceOverride,
     }
   }
 
@@ -547,7 +547,7 @@ mutable class Context{
     this.!sharedSubDirsRefCount = ctx.sharedSubDirsRefCount;
     this.!writeChecker = ctx.writeChecker.map(x -> x.mclone());
     this.!purgeFrom = ctx.purgeFrom;
-    this.!writerOverride = ctx.writerOverride;
+    this.!sourceOverride = ctx.sourceOverride;
   }
 
   mutable fun getReads(): SortedSet<Path> {

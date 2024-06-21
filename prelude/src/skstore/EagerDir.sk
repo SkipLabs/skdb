@@ -1728,9 +1728,9 @@ class EagerDir{
       return this;
     };
 
-    if (context.writerOverride.isSome()) {
-      !origSource = context.writerOverride.fromSome();
-      !writer = context.writerOverride.fromSome()
+    if (context.sourceOverride.isSome()) {
+      !origSource = context.sourceOverride.fromSome();
+      !writer = context.sourceOverride.fromSome()
     };
 
     context.writeChecker match {

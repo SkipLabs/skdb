@@ -352,7 +352,7 @@ fun applyDiffStrategy(
   checkpoint: ?Int,
   snapshot: ?Int,
   userFileOpt: ?SKDB.UserFile,
-  writerOverride: ?SKStore.Path = None(),
+  sourceOverride: ?SKStore.Path = None(),
 ): ?((
   mutable SKStore.Context,
   mutable SKStore.Context,
@@ -400,9 +400,9 @@ fun applyDiffStrategy(
     | Some(val) if (val > 0) ->
       checkpointTick = SKStore.Tick(val);
       SKDB.setWatermark(context, table.name.lower, identity, checkpointTick);
-      // if there is a writerOverride, the client doesn't know about this table,
+      // if there is a sourceOverride, the client doesn't know about this table,
       // and we've already ack'ed the table they are aware of.
-      if (writerOverride.isNone()) {
+      if (sourceOverride.isNone()) {
         delta.setGlobal(
           "Ack",
           SKDB.StdoutCheckpointAck(
@@ -472,8 +472,8 @@ fun applyDiffStrategy(
     if (!privacyIsOk(newRoot)) {
       throw PrivacyWriteViolation()
     };
-    if (writerOverride.isSome()) {
-      newRoot.!writerOverride = writerOverride
+    if (sourceOverride.isSome()) {
+      newRoot.!sourceOverride = sourceOverride
     };
 
     rows = sourceSchema match {
@@ -528,7 +528,7 @@ fun applyDiffStrategy(
 
     newRoot.setDir(dir.dirName, dir);
     newRoot.update();
-    newRoot.!writerOverride = None();
+    newRoot.!sourceOverride = None();
     checkpointAndAck(newRoot, delta)
   });
 
@@ -544,8 +544,8 @@ fun applyDiffStrategy(
     if (!privacyIsOk(newRoot)) {
       throw PrivacyWriteViolation()
     };
-    if (writerOverride.isSome()) {
-      newRoot.!writerOverride = writerOverride
+    if (sourceOverride.isSome()) {
+      newRoot.!sourceOverride = sourceOverride
     };
 
     rows = sourceSchema match {
@@ -611,7 +611,7 @@ fun applyDiffStrategy(
 
     newRoot.setDir(dir.dirName, dir);
     newRoot.update();
-    newRoot.!writerOverride = None();
+    newRoot.!sourceOverride = None();
     checkpointAndAck(newRoot, delta)
   });
 

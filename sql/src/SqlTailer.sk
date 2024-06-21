@@ -240,8 +240,12 @@ fun tailSub(
 
   tailWatermark: ?Int = None();
   init = true;
-
-  lookupSpec = (name) -> spec(legacyTableNames.maybeGet(name).default(name));
+  lookupSpec = (name) -> {
+    legacyTableNames.maybeGet(name) match {
+    | Some(table) -> spec(table)
+    | None() -> spec(name)
+    }
+  };
 
   loop {
     localObstack = SKStore.newObstack();

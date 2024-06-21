@@ -196,14 +196,14 @@ fun tailSub(
             };
             if (requiresLegacySchema) {
               mCtx = gContext.mclone();
-              getExtractedColsDir(mCtx)
+              getLegacyViewsDir(mCtx)
                 .maybeGet(mCtx, SKStore.SID::create(tableName.lower))
-                .flatMap(ecFile -> {
+                .flatMap(lvFile -> {
                   !legacyTableNames = legacyTableNames.set(
-                    ecFile.legacyView,
+                    lvFile.legacyView,
                     tableName,
                   );
-                  dirDescrs.maybeGet(ecFile.legacyView)
+                  dirDescrs.maybeGet(lvFile.legacyView)
                 }) match {
               | None() ->
                 print_error(`Error: incompatible schema for ${tableName}`);

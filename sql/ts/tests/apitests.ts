@@ -1023,6 +1023,25 @@ async function testSchemaChanges(root: SKDB, skdb1: SKDB, skdb2: SKDB) {
       (rows) => rows.length == 7,
     ),
   ).toHaveLength(7);
+
+  // Delete should also propagate to extracted-column tables and legacy view
+  await skdb1.exec("DELETE FROM tt where id=1;");
+
+  expect(
+    await waitSynch(skdb1, "SELECT * FROM tt;", (rows) => rows.length == 4),
+  ).toHaveLength(4);
+
+  expect(
+    await waitSynch(skdb2, "SELECT * FROM tt;", (rows) => rows.length == 4),
+  ).toHaveLength(4);
+
+  expect(
+    await waitSynch(
+      skdb2,
+      "SELECT * FROM tt_data;",
+      (rows) => rows.length == 6,
+    ),
+  ).toHaveLength(6);
 }
 
 export const apitests = (asWorker) => {

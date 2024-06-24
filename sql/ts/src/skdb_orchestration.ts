@@ -1743,6 +1743,9 @@ class SKDBServer implements RemoteSKDB {
         this.tableSchema(tableName),
         this.tableSchema(tableName, server_response_suffix),
       ]);
+      if (remoteTable == "") {
+        throw new Error("Table " + tableName + " does not exist");
+      }
 
       const [createTable, createResponseTable] =
         expectedSchema == "*"

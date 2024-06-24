@@ -1688,7 +1688,7 @@ fun withRegion<T>(
     optSaved match {
     | Some(saved) ->
       cexn = destroyObstackWithValue(saved, List[exn]).getHead();
-      saveExn(cexn);
+      replaceExn(cexn);
       throw cexn
     | _ -> throw exn
     }
@@ -1706,7 +1706,7 @@ fun withRegionVoid<T>(f: () ~> void): void {
     optSaved match {
     | Some(saved) ->
       cexn = destroyObstackWithValue(saved, List[exn]).getHead();
-      saveExn(cexn);
+      replaceExn(cexn);
       throw cexn
     | _ -> throw exn
     }
@@ -1725,7 +1725,7 @@ fun withRegionValue<T>(f: () ~> T): T {
     optSaved match {
     | Some(saved) ->
       cexn = destroyObstackWithValue(saved, List[exn]).getHead();
-      saveExn(cexn);
+      replaceExn(cexn);
       throw cexn
     | _ -> throw exn
     }
@@ -1799,7 +1799,7 @@ fun withRegionFold<K, T>(
     optSaved match {
     | Some(saved) ->
       cexn = destroyObstackWithValue(saved, List[exn]).getHead();
-      saveExn(cexn);
+      replaceExn(cexn);
       throw cexn
     | _ -> throw exn
     }
@@ -1882,7 +1882,7 @@ fun withRegionFoldRecHelp<K, T>(
     optSaved match {
     | Some(saved) ->
       cexn = destroyObstackWithValue(saved, List[exn]).getHead();
-      saveExn(cexn);
+      replaceExn(cexn);
       throw cexn
     | _ -> throw exn
     }

@@ -1,6 +1,11 @@
 export type float = number;
 export type int = number;
 export type ptr = number;
+export type ErrorObject = {
+  message: string;
+  stack?: string[];
+  cause?: ErrorObject;
+};
 
 export type Opt<T> = T | null;
 
@@ -35,7 +40,7 @@ class SkRuntimeExit extends Error {
   }
 }
 
-class SkException extends Error {
+class SkError extends Error {
   constructor(msg: string) {
     super(msg);
   }
@@ -184,6 +189,7 @@ interface Exported {
   SKIP_initializeSkip: () => void;
   SKIP_skfs_end_of_init: () => void;
   SKIP_callWithException: (fnc: ptr, exc: int) => ptr;
+  SKIP_getExceptionId: (exn: ptr) => ptr;
   SKIP_getExceptionMessage: (skExc: ptr) => ptr;
   SKIP_get_persistent_size: () => int;
   SKIP_get_version: () => number;
@@ -213,7 +219,8 @@ export class Utils {
   private stderr: Array<string>;
   private stddebug: Array<string>;
   private mainFn?: string;
-  private exceptions: Error[];
+  private exception?: Error;
+  private stacks: Map<ptr, string>;
 
   exit = (code: int) => {
     let message =
@@ -222,7 +229,7 @@ export class Utils {
   };
 
   constructor(exports: WebAssembly.Exports, env: Environment, mainFn?: string) {
-    this.exceptions = [];
+    this.stacks = new Map();
     this.states = new Map();
     this.args = new Array();
     this.current_stdin = 0;
@@ -256,24 +263,13 @@ export class Utils {
     new_stdin: string = "",
   ) => {
     this.args = [this.mainFn ?? "main"].concat(new_args);
-    this.exceptions = [];
+    this.exception = undefined;
+    this.stacks = new Map();
     this.current_stdin = 0;
     this.stdin = utf8Encode(new_stdin);
     this.stdout = new Array();
     this.stderr = new Array();
     this.stddebug = new Array();
-  };
-
-  exnCause = () => {
-    let cause: Error | undefined = undefined;
-    while (this.exceptions.length > 0) {
-      let exc = this.exceptions.pop();
-      if (cause) {
-        (exc as any).cause = cause;
-      }
-      cause = exc;
-    }
-    return cause;
   };
 
   runCheckError = <T>(fn: () => T) => {
@@ -284,7 +280,7 @@ export class Utils {
     }
     if (this.stderr.length > 0) {
       let error = new Error(this.stderr.join(""));
-      (error as any).cause = this.exnCause();
+      (error as any).cause = this.exception;
       throw error;
     }
     return res;
@@ -304,7 +300,8 @@ export class Utils {
       if (exn instanceof SkRuntimeExit) {
         exitCode = exn.code;
       } else {
-        (exn as any).cause = this.exnCause();
+        if (this.exception && this.exception != exn)
+          (exn as any).cause = this.exception;
         throw exn;
       }
     }
@@ -344,7 +341,7 @@ export class Utils {
       }
       message = lines.join("\n");
       let error = new SkRuntimeExit(exitCode, message?.trim());
-      (error as any).cause = this.exnCause();
+      (error as any).cause = this.exception;
       throw error;
     }
     return this.stdout.join("");
@@ -482,21 +479,28 @@ export class Utils {
     this.exports.SKIP_skfs_end_of_init();
   };
   etry = (f: ptr, exn_handler: ptr) => {
+    let err: Error | null = null;
     try {
       return this.call(f);
-    } catch (exn) {
-      this.exceptions.push(exn as Error);
-      let exception =
-        exn instanceof SkException
-          ? null
-          : new Exception(exn as Error, this.state);
+    } catch (exn: any) {
+      if (this.exception && this.exception != exn) exn.cause = this.exception;
+      err = exn as Error;
+      this.exception = err;
+      let exception: Exception | null = null;
+      if (!(err instanceof SkError)) {
+        exception = new Exception(err, this.state);
+      }
       return this.callWithException(exn_handler, exception);
+    } finally {
+      if (this.exception == err) {
+        this.exception = undefined;
+      }
     }
   };
   ethrow = (skExc: ptr, rethrow: boolean) => {
     if (this.env && this.env.onException) this.env.onException();
-    if (rethrow && this.exceptions.length > 0) {
-      throw this.exceptions.pop();
+    if (rethrow && this.exception) {
+      throw this.exception;
     } else {
       let skMessage =
         skExc != null && skExc != 0
@@ -517,9 +521,18 @@ export class Utils {
           message = "SKFS Internal error";
         }
       }
-      throw new SkException(message);
+      const err = new SkError(message);
+      if (err.stack) this.stacks.set(skExc, err.stack);
+      throw err;
     }
   };
+  replace_exn(oldex: ptr, newex: ptr) {
+    const stack = this.stacks.get(oldex);
+    if (stack) {
+      this.stacks.delete(oldex);
+      this.stacks.set(newex, stack);
+    }
+  }
   deleteException = (exc: int) => {
     this.state.exceptions.delete(exc);
   };
@@ -529,6 +542,64 @@ export class Utils {
       return this.state.exceptions.get(exc)!.err.message;
     } else {
       return "Unknown";
+    }
+  };
+
+  getExceptionStack = (exc: int) => {
+    if (this.state.exceptions.has(exc)) {
+      return this.state.exceptions.get(exc)!.err.stack ?? "";
+    } else {
+      return "";
+    }
+  };
+
+  getErrorObject: (skExc: ptr) => ErrorObject = (skExc: ptr) => {
+    let skMessage =
+      skExc != null && skExc != 0
+        ? this.exports.SKIP_getExceptionMessage(skExc)
+        : null;
+    let message =
+      skMessage != null && skMessage != 0
+        ? this.importString(skMessage)
+        : "SKFS Internal error";
+    let errStack = this.stacks.get(skExc);
+    let lines = message.split("\n");
+    if (lines[0].startsWith("external:")) {
+      let external = lines.shift()!;
+      message = lines.join("\n");
+      let id = parseInt(external.substring(9));
+      if (this.state.exceptions.has(id)) {
+        const exception = this.state.exceptions.get(id);
+        if (exception) {
+          message = exception.err.message;
+          errStack = exception.err.stack;
+        } else {
+          message = "Unknown error";
+        }
+      } else if (message.trim() == "") {
+        message = "SKFS Internal error";
+      }
+    }
+    const toObject: (error: Error) => ErrorObject = (error?: Error) => {
+      const errcause = (error as any).cause;
+      const errstack = (error as any).stack?.split("\n") as string[];
+      if (errstack) {
+        return errcause
+          ? { message, cause: errcause, stack: errstack }
+          : { message, stack: errstack };
+      } else {
+        return errcause ? { message, cause: errcause } : { message };
+      }
+    };
+    if (errStack) {
+      const stack: string[] = errStack.split("\n") as string[];
+      return this.exception
+        ? { message, cause: toObject(this.exception), stack }
+        : { message, stack };
+    } else {
+      return this.exception
+        ? { message, cause: toObject(this.exception) }
+        : { message };
     }
   };
 

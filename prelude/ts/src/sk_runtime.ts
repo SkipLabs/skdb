@@ -9,17 +9,12 @@ import type {
 } from "./sk_types.js";
 import { Stream } from "./sk_types.js";
 
-interface Env extends Environment {
-  window: () => Window | null;
-  throwRuntime: (code: int) => void;
-}
-
 class LinksImpl implements Links {
-  env: Env | undefined;
+  env: Environment | undefined;
   lineBuffer!: Array<int>;
   lastTime!: int;
 
-  constructor(env?: Env) {
+  constructor(env?: Environment) {
     this.env = env;
   }
 
@@ -36,6 +31,7 @@ class LinksImpl implements Links {
   SKIP_print_string!: (strPtr: ptr) => void;
   SKIP_etry!: (f: ptr, exn_handler: ptr) => ptr;
   js_throw!: (strPtr: ptr, rethrow: int) => void;
+  js_replace_exn!: (oldex: ptr, newex: int) => void;
   SKIP_throw_cruntime!: (code: int) => void;
   SKIP_JS_timeStamp!: () => float;
 
@@ -84,6 +80,8 @@ class LinksImpl implements Links {
       utils.sklog(msg, Stream.OUT, true);
     };
     this.js_throw = (exc: ptr, rethrow: int) => utils.ethrow(exc, rethrow != 0);
+    this.js_replace_exn = (oldex: ptr, newex: ptr) =>
+      utils.replace_exn(oldex, newex);
     this.SKIP_throw_cruntime = utils.exit;
     this.SKIP_print_char = (c: int) => {
       var str = String.fromCharCode(c);
@@ -156,8 +154,8 @@ class LinksImpl implements Links {
 }
 
 class Manager implements ToWasmManager {
-  env: Env | undefined;
-  constructor(env?: Env) {
+  env: Environment | undefined;
+  constructor(env?: Environment) {
     this.env = env;
   }
 
@@ -190,6 +188,8 @@ class Manager implements ToWasmManager {
     };
     toWasm.js_throw = (strPtr: ptr, rethrow: int) =>
       links.js_throw(strPtr, rethrow);
+    toWasm.js_replace_exn = (oldex: ptr, newex: int) =>
+      links.js_replace_exn(oldex, newex);
     toWasm.SKIP_throw_cruntime = (code: int) => links.SKIP_throw_cruntime(code);
     toWasm.cos = Math.cos;
     toWasm.sin = Math.sin;
@@ -250,6 +250,7 @@ interface ToWasm {
   __setErrNo: (err: ptr) => void;
   __cxa_throw: (exn: ptr, infi: ptr, dest: ptr) => void;
   js_throw: (strPtr: ptr, rethrow: int) => void;
+  js_replace_exn: (oldex: ptr, newex: int) => void;
   SKIP_throw_cruntime: (code: int) => void;
   SKIP_JS_timeStamp: () => float;
   cos: (v: float) => float;
@@ -293,5 +294,5 @@ interface ToWasm {
 
 /** @sk runtime */
 export function init(env?: Environment) {
-  return Promise.resolve(new Manager(env ? (env as Env) : undefined));
+  return Promise.resolve(new Manager(env));
 }

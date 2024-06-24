@@ -86,6 +86,9 @@ fun call0(f: () -> void): void {
 @cpp_runtime
 native fun saveExn(exn: Exception): void;
 
+@cpp_extern
+native fun replaceExn(exn: Exception): void;
+
 class ExternalException(
   private eptr: SKStore.ExternalPointer,
 ) extends Exception {

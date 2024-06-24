@@ -162,7 +162,7 @@ class EReducer<V2, V3: File>{
   type: File ~> V3,
   canReset: Bool,
   init: (mutable Iterator<V2> ~> Array<V3>),
-  update: (Array<V3>, Array<V2>, Array<V3>) ~> ?Array<V3>,
+  update: (Array<V3>, Array<V2>, Array<V2>) ~> ?Array<V3>,
 }
 
 /*****************************************************************************/
@@ -250,6 +250,29 @@ base class Handle<K: Key, +V: File> {
       invariant_violation(msg);
     };
     values[0]
+  }
+
+  fun maybeGet(context: mutable Context, key: K): ?V {
+    values = this.getArray(context, key);
+    if (values.size() == 0) return None();
+    Some(values[0])
+  }
+
+  fun unsafeGetArray(context: mutable Context, key: K): Array<V> {
+    dir = context.unsafeGetDir(this.getDirName());
+    dir.getArrayRaw(key).map(this.getType())
+  }
+
+  fun unsafeGet(context: mutable Context, key: K): V {
+    arr = this.unsafeGetArray(context, key);
+    invariant(arr.size() == 1);
+    arr[0]
+  }
+
+  fun unsafeMaybeGet(context: mutable Context, key: K): ?V {
+    values = this.unsafeGetArray(context, key);
+    if (values.size() == 0) return None();
+    Some(values[0])
   }
 }
 
@@ -457,7 +480,7 @@ class EHandle<K: Key, V: File>(
             reducer.update(
               state.map(reducer.type),
               old.map(typeOutput),
-              new.map(reducer.type),
+              new.map(typeOutput),
             ),
         },
       ),
@@ -582,23 +605,6 @@ class EHandle<K: Key, V: File>(
 
   fun containsKey(context: mutable Context, key: K): Bool {
     this.getArray(context, key).size() > 0
-  }
-
-  fun maybeGet(context: mutable Context, key: K): ?V {
-    values = this.getArray(context, key);
-    if (values.size() == 0) return None();
-    Some(values[0])
-  }
-
-  fun unsafeGetArray(context: mutable Context, key: K): Array<V> {
-    dir = context.unsafeGetDir(this.getDirName());
-    dir.getArrayRaw(key).map(this.getType())
-  }
-
-  fun unsafeGet(context: mutable Context, key: K): V {
-    arr = this.unsafeGetArray(context, key);
-    invariant(arr.size() == 1);
-    arr[0]
   }
 }
 

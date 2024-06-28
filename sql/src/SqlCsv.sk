@@ -167,10 +167,18 @@ fun reasonSchemaUnsupported(
 ): ?String {
   context = SKStore.Context::fromSaved(origContext.clone());
 
-  (tableName, actualSchema) = P.Parser::create(table).parseCreate() match {
-  | P.CreateTableSchema{name, schema} ->
+  parseResult = try {
+    Some(P.Parser::create(table).parseCreate())
+  } catch {
+  | _ -> None()
+  };
+  (tableName, actualSchema) = parseResult match {
+  | Some(P.CreateTableSchema{name, schema}) ->
     (SKStore.SID(name.lower), schema.columns)
-  | _ -> return Some("Malformed create-table statement given.")
+  | _ ->
+    return Some(
+      "Malformed create-table statement given: " + inspect(table).toString(),
+    )
   };
 
   if (SKDB.getTableDir(context).maybeGet(context, tableName) is None()) {
@@ -344,6 +352,7 @@ fun applyDiffStrategy(
   checkpoint: ?Int,
   snapshot: ?Int,
   userFileOpt: ?SKDB.UserFile,
+  sourceOverride: ?SKStore.Path = None(),
 ): ?((
   mutable SKStore.Context,
   mutable SKStore.Context,
@@ -391,14 +400,18 @@ fun applyDiffStrategy(
     | Some(val) if (val > 0) ->
       checkpointTick = SKStore.Tick(val);
       SKDB.setWatermark(context, table.name.lower, identity, checkpointTick);
-      delta.setGlobal(
-        "Ack",
-        SKDB.StdoutCheckpointAck(
-          table.name.origName,
-          checkpointTick,
-          delta.getGlobal("Ack").map(SKDB.StdoutCheckpointAck::type),
-        ),
-      )
+      // if there is a sourceOverride, the client doesn't know about this table,
+      // and we've already ack'ed the table they are aware of.
+      if (sourceOverride.isNone()) {
+        delta.setGlobal(
+          "Ack",
+          SKDB.StdoutCheckpointAck(
+            table.name.origName,
+            checkpointTick,
+            delta.getGlobal("Ack").map(SKDB.StdoutCheckpointAck::type),
+          ),
+        )
+      }
     | _ -> void
     }
   };
@@ -459,6 +472,10 @@ fun applyDiffStrategy(
     if (!privacyIsOk(newRoot)) {
       throw PrivacyWriteViolation()
     };
+    if (sourceOverride.isSome()) {
+      newRoot.!sourceOverride = sourceOverride
+    };
+
     rows = sourceSchema match {
     | None() -> sourceRows.iterator()
     | Some(schema) ->
@@ -511,6 +528,7 @@ fun applyDiffStrategy(
 
     newRoot.setDir(dir.dirName, dir);
     newRoot.update();
+    newRoot.!sourceOverride = None();
     checkpointAndAck(newRoot, delta)
   });
 
@@ -526,6 +544,10 @@ fun applyDiffStrategy(
     if (!privacyIsOk(newRoot)) {
       throw PrivacyWriteViolation()
     };
+    if (sourceOverride.isSome()) {
+      newRoot.!sourceOverride = sourceOverride
+    };
+
     rows = sourceSchema match {
     | None() -> sourceRows.iterator()
     | Some(schema) ->
@@ -589,6 +611,7 @@ fun applyDiffStrategy(
 
     newRoot.setDir(dir.dirName, dir);
     newRoot.update();
+    newRoot.!sourceOverride = None();
     checkpointAndAck(newRoot, delta)
   });
 
@@ -752,6 +775,7 @@ mutable class TableDiff(
 }
 
 fun buildDiffChain(
+  context: mutable SKStore.Context,
   userFileOpt: ?SKDB.UserFile,
   tableDiffs: Array<FinalTableDiff>,
   identity: Int,
@@ -761,21 +785,55 @@ fun buildDiffChain(
   mutable SKStore.Context,
   SKStore.Context,
 ) ~> void) {
-  strategies = tableDiffs.map(td -> {
-    applyDiffStrategy(
-      td.table,
-      identity,
-      td.rebuild,
-      td.rows,
-      td.sourceSchema,
-      Some(checkpoint),
-      td.snapshot,
-      userFileOpt,
+  strategies = Vector::mcreate();
+
+  tableDiffs.each(td -> {
+    strategies.push(
+      applyDiffStrategy(
+        td.table,
+        identity,
+        td.rebuild,
+        td.rows,
+        td.sourceSchema,
+        Some(checkpoint),
+        td.snapshot,
+        userFileOpt,
+      ),
     );
+
+    td.sourceSchema match {
+    | Some(schema) if (!schema.all(x -> td.table.schema.contains(x))) ->
+      extractedTableWrites = SKDB.propagateRowsToExtractedTables(
+        context,
+        td.table,
+        schema,
+        td.rows,
+      );
+      for (diff in extractedTableWrites.items()) {
+        (descr, rows) = diff;
+        strategies.push(
+          applyDiffStrategy(
+            descr,
+            identity,
+            td.rebuild,
+            rows,
+            None(),
+            Some(checkpoint),
+            td.snapshot,
+            userFileOpt,
+            Some(SKStore.Path(td.table.dirName, SKStore.IID(identity))),
+          ),
+        );
+      }
+    | _ -> void
+    }
   });
+
+  strategiesArray = strategies.toArray();
+
   Some((newRoot, delta, root) ~> {
     try {
-      for (strategy in strategies) {
+      for (strategy in strategiesArray) {
         if (strategy is Some _) {
           strategy.fromSome()(newRoot, delta, root)
         }
@@ -866,6 +924,7 @@ fun replayDiff(
 
         break SKStore.CContinue(
           buildDiffChain(
+            context,
             userFileOpt,
             tableDiffs.map(td -> td.freeze()).toArray(),
             identity,

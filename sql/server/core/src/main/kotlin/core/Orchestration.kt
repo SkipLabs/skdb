@@ -38,6 +38,7 @@ enum class SchemaScope {
   ALL,
   TABLE,
   VIEW,
+  LEGACY_SCHEMA,
 }
 
 data class ProtoSchemaQuery(
@@ -199,6 +200,7 @@ fun encodeProtoMsg(msg: ProtoMessage): ByteBuffer {
             SchemaScope.ALL -> 0x0
             SchemaScope.TABLE -> 0x1
             SchemaScope.VIEW -> 0x2
+            SchemaScope.LEGACY_SCHEMA -> 0x3
           })
       val pos = buf.position()
       buf.putShort(0x0)

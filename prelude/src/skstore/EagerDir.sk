@@ -730,16 +730,14 @@ class EagerDir{
   }
 
   fun writeDiff(
-    context: readonly SKStore.Context,
     isReset: Bool,
     changes: mutable Iterator<SKStore.Key>,
     writer: mutable Debug.BufferedWriter,
     entity: String, // the name that this dir goes under during replication
     format: OutputFormat,
-    filter: (SKStore.Context, Bool) ~> (SKStore.Key -> Bool),
+    filter: (SKStore.Key -> Bool),
     destinationTime: ?Tick,
     checkpointInterval: Int = Int::max,
-    sendEverything: Bool = false,
   ): Bool {
     if (isReset) {
       theirTime = destinationTime match {
@@ -751,12 +749,10 @@ class EagerDir{
       return true
     };
 
-    filterFun = filter(context.clone(), sendEverything);
-
     changesWritten = 0;
 
     for (key in changes) {
-      if (!filterFun(key)) continue;
+      if (!filter(key)) continue;
       if (changesWritten % checkpointInterval == 0) {
         // output a header for the dir
         theirTime = destinationTime match {
@@ -1730,6 +1726,11 @@ class EagerDir{
 
     if (native_eq(rvalues, oldValues) == 0) {
       return this;
+    };
+
+    if (context.sourceOverride.isSome()) {
+      !origSource = context.sourceOverride.fromSome();
+      !writer = context.sourceOverride.fromSome()
     };
 
     context.writeChecker match {

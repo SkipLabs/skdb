@@ -357,172 +357,6 @@ fun getLatestIndexDescr(
   }
 }
 
-// Recompile and reevaluate any views that depend upon any of the altered directories
-private fun resetReactiveViews(
-  context: mutable SKStore.Context,
-  alteredDirs: SortedSet<P.Name>,
-  options: Options,
-): void {
-  viewsDir = context.unsafeGetEagerDir(getViewsDir(context).dirName);
-  viewsToReset = viewsDir
-    .unsafeGetFileIter()
-    .flatMap((x) ->
-      x.i1.filter((file) ->
-        SelectFile::type(file).cselect.from.any((from) ->
-          alteredDirs.contains(from.i0.name)
-        )
-      )
-    )
-    .collect(Array);
-
-  for (childView in viewsToReset) {
-    selectFile = SelectFile::type(childView);
-    newCSelect = SKDB.Compiler::create(
-      false,
-      options with {reactive => true},
-      selectFile.select.pos,
-      selectFile.queryParams,
-    ).compileSelect(context, selectFile.select, selectFile.name, true);
-    dirName = SKStore.DirName::create("/" + selectFile.name + "/");
-
-    tableDir = context.unsafeGetEagerDir(getTableDir(context).dirName);
-    fileName = SKStore.SID::create(selectFile.name.lower);
-    tableDir.getArrayRaw(fileName).each((x) -> {
-      table = context.unsafeGetEagerDir(DirDescr::type(x).dirName);
-      clearData: (
-        (SKStore.Key, mutable Iterator<SKStore.File>),
-      ) -> mutable Iterator<
-        (SKStore.Key, (SKStore.Path, SKStore.Path, Array<SKStore.File>)),
-      > = (row) -> {
-        key = row.i0;
-        for (datum in table.unsafeGetAllDataIter(key)) {
-          (_tick, source, writer, _value) = datum;
-          yield (key, (source, writer, Array[]))
-        }
-      };
-      table.writeArraySourceMany(
-        context,
-        table.unsafeGetFileIter().flatMap(clearData),
-      );
-    });
-
-    _ = SKDB.evalSelect(context, newCSelect, None());
-
-    dirDescr = SKDB.Compiler::getDirDescr(
-      context,
-      (selectFile.select.core as P.SelectCoreQuery _).params,
-      newCSelect.from,
-      newCSelect.params,
-      newCSelect.id,
-      dirName,
-      true,
-    );
-    tableDir.writeArray(context, fileName, Array[dirDescr]);
-  };
-}
-
-fun alterTableAddColumn(
-  context: mutable SKStore.Context,
-  pos: Int,
-  name: P.Name,
-  newCol: P.ColumnDefinition,
-  options: Options,
-): void {
-  if (PredefinedTable::isReservedName(name)) {
-    error(pos, "Can't add column to predefined table")
-  };
-  if (newCol.notNull is Some _ && newCol.default is None _) {
-    error(pos, "ADD COLUMN must either be nullable or provide a default value");
-  };
-  if (newCol.unique is Some _ || newCol.primary is Some _) {
-    error(pos, "ADD COLUMN must not impose a uniqueness or PK constraint")
-  };
-
-  tableDir = getTableDir(context);
-  sid = SKStore.SID::create(name.lower);
-
-  oldDescr = tableDir.maybeGet(context, sid) match {
-  | None() -> error(pos, "Table '" + name + "' does not exist")
-  | Some(descr) -> getLatestDirDescr(context, descr)
-  };
-  dirName = oldDescr.dirName;
-  dir = context.unsafeGetEagerDir(dirName);
-  oldNCols = oldDescr.schema.size();
-
-  newSchema = Array::fillBy(oldNCols + 1, i ->
-    if (i < oldNCols) oldDescr.schema[i] else newCol
-  );
-  newKinds = newSchema.mapWithIndex((idx, col) -> (idx, P.IASC(), col.ty));
-
-  convertToNewSchema: (
-    (SKStore.Key, mutable Iterator<SKStore.File>),
-  ) -> mutable Iterator<
-    (SKStore.Key, (SKStore.Path, SKStore.Path, Array<SKStore.File>)),
-  > = (kv) -> {
-    (key, rowIter) = kv;
-    rowIter.next() match {
-    | Some(oldRow @ RowValues _) ->
-      repeat = oldRow.repeat;
-      rowIter.each(r ->
-        r match {
-        | RowValues(_, rr) -> !repeat = repeat + rr
-        | _ -> invariant_violation("Invalid SKDB row")
-        }
-      );
-
-      newVals = RowValues(
-        Array::fillBy(oldNCols + 1, i ->
-          if (i < oldNCols) oldRow.getValue(i) else {
-            newCol.default.flatMap(def -> evaluateDefault(context, def.expr))
-          }
-        ),
-        repeat,
-      );
-      newKey = RowKey(newVals, newKinds);
-      newSource = SKStore.Path::create(dirName, newKey);
-
-      // Since schema/kinds information is encoded in SKDB.RowKeys, we have to both null
-      // out the old row(s) and write the new row. (instead of just overwriting the old key)
-      for (x in dir.unsafeGetAllDataIter(key)) {
-        (_tick, source, writer, _row) = x;
-        yield (key, (source, writer, Array[]))
-      };
-      yield (newKey, (newSource, newSource, Array[newVals]))
-
-    | None() -> void
-    | Some(_) -> invariant_violation("Invalid SKDB row")
-    };
-  };
-
-  modifications = dir.unsafeGetFileIter().flatMap(convertToNewSchema);
-
-  dir.writeArraySourceMany(context, modifications);
-
-  newDescr = DirDescr::create{
-    name,
-    schema => newSchema,
-    dirName,
-    alias => oldDescr.alias,
-    isInput => true,
-  };
-
-  tableDir.writeArray(context, sid, Array[newDescr]);
-
-  transitiveChildren = context.transitiveChildDirs(dirName);
-
-  context.canReuse match {
-  | SKStore.CRAlways(except) ->
-    context.!canReuse = SKStore.CRAlways(except.union(transitiveChildren))
-  | _ -> void
-  };
-
-  resetReactiveViews(
-    context,
-    transitiveChildren.map((x) -> P.Name::create(x.dirName)),
-    options,
-  );
-}
-
 /*****************************************************************************/
 /* Sharding stats for joins. */
 /*****************************************************************************/
@@ -615,11 +449,11 @@ fun getSubsDirs(
         };
         alwaysTrue = (_baseName ~> true);
         filter = request.destinationSource match {
-        | None() -> (_context, _isReset) ~> alwaysTrue
+        | None() -> (_context, _isReset, _dirName) ~> alwaysTrue
         | Some(inputSrc) ->
-          (context, isReset) ~> {
+          (context, isReset, dirName) ~> {
             if (isReset) return alwaysTrue;
-            tdir = context.unsafeGetEagerDir(dirDescr.dirName);
+            tdir = context.unsafeGetEagerDir(dirName);
             ignoredSrc = SKStore.Path(dirDescr.dirName, SKStore.IID(inputSrc));
             (file: SKStore.Key) -> {
               rows = tdir.getAllDataIter(context.mclone(), file).collect(Array);
@@ -950,15 +784,39 @@ fun printDirDescr(dirDescr: DirDescr, suffix: ?String): void {
 }
 
 fun dumpTable(
-  origContext: readonly SKStore.Context,
+  origContext: mutable SKStore.Context,
   tableName: String,
   suffix: ?String,
+  legacySchema: Bool = false,
 ): void {
   context = SKStore.Context::fromSaved(origContext.clone());
-  getTableDir(context).maybeGet(context, SKStore.SID(tableName)) match {
+  tableDir = getTableDir(context);
+
+  dirDescrOpt = if (legacySchema) {
+    getLegacyViewsDir(context)
+      .maybeGet(context, SKStore.SID::create(tableName))
+      .flatMap(lvFile -> {
+        legacy_sid = SKStore.SID::create(lvFile.legacyView.lower);
+        tableDir.maybeGet(context, legacy_sid).map(dd -> {
+          schema_with_pk = dd.schema.map(col ->
+            if (col.name == lvFile.pkCol.name) {
+              invariant(col == (lvFile.pkCol with {primary => None()}));
+              lvFile.pkCol
+            } else {
+              col
+            }
+          );
+          dd with {name => P.Name::create(tableName), schema => schema_with_pk}
+        })
+      })
+  } else {
+    tableDir.maybeGet(context, SKStore.SID::create(tableName))
+  };
+
+  dirDescrOpt match {
   | None() -> void
-  | Some(dirDescr) -> printDirDescr(dirDescr, suffix)
-  }
+  | Some(dd) -> printDirDescr(dd, suffix)
+  };
 }
 
 fun dumpTables(origContext: readonly SKStore.Context, suffix: ?String): void {

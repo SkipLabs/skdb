@@ -356,4 +356,9 @@ if cat test/unit/test_qualified_select_star.sql| $SKDB --always-allow-joins | tr
     pass "QUALIFIED SELECT-STAR"
 else
     fail "QUALIFIED SELECT-STAR"
+
+if cat test/unit/test_alter_table_extract_col.sql | $SKDB --always-allow-joins | tr '\n' 'S' | grep -q '5|1|10|15S20|1|30|40S1|11S1|15S3|40S'; then
+    pass "EXTRACT COLUMN"
+else
+    fail "EXTRACT COLUMN"
 fi

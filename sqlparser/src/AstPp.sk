@@ -47,15 +47,15 @@ extension base class Stmt {
   | Insert{onConflict, name, alias, paramsOpt, values} ->
     "INSERT " +
       (if (onConflict is Some _ && !(onConflict is Some(OCUpdate _))) {
-        onConflict.fromSome().toString()
+        onConflict.fromSome().toString() + " "
       } else {
         ""
       }) +
-      " " +
+      "INTO " +
       name.toString() +
-      (if (alias is Some _) ` AS ${alias.fromSome()} ` else "") +
+      (if (alias is Some _) ` AS ${alias.fromSome()} ` else " ") +
       (if (paramsOpt is Some _) {
-        "(" + paramsOpt.fromSome().map(p -> p.toString()).join(",") + ")"
+        "(" + paramsOpt.fromSome().map(p -> p.toString()).join(",") + ") "
       } else {
         ""
       }) +

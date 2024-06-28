@@ -41,7 +41,8 @@ class DirSub(
   // lock-step.
   getDestinationWatermark: (readonly SKStore.Context) ~> ?SKStore.Tick,
   // this is a dir-specific filter
-  filter: (SKStore.Context, Bool) ~> (Key -> Bool) = (_, _) ~> (_ -> true),
+  filter: (SKStore.Context, Bool, DirName) ~> (Key -> Bool) = (_, _, _) ~>
+    (_ -> true),
 )
 
 /*****************************************************************************/
@@ -334,6 +335,7 @@ mutable class Context{
   mutable writeChecker: ?(mutable WriteChecker) = None(),
   mutable purgeFrom: (mutable Context, Dir) ~> Tick = (ctx, _) ~>
     Tick(ctx.tick.value - 1000),
+  mutable sourceOverride: ?Path = None(),
 } {
   readonly fun isWithSharedSubDirs(dirName: DirName): Bool {
     this.dirsWithSharedSubDirs.contains(dirName)
@@ -432,6 +434,7 @@ mutable class Context{
       sharedSubDirsRefCount => this.sharedSubDirsRefCount,
       writeChecker => this.writeChecker.map(x -> x.clone()),
       purgeFrom => this.purgeFrom,
+      sourceOverride => this.sourceOverride,
     }
   }
 
@@ -469,6 +472,7 @@ mutable class Context{
       sharedSubDirsRefCount => this.sharedSubDirsRefCount,
       writeChecker => this.writeChecker.map(x -> x.mclone()),
       purgeFrom => this.purgeFrom,
+      sourceOverride => this.sourceOverride,
     }
   }
 
@@ -506,6 +510,7 @@ mutable class Context{
       sharedSubDirsRefCount => ctx.sharedSubDirsRefCount,
       writeChecker => ctx.writeChecker.map(x -> x.mclone()),
       purgeFrom => ctx.purgeFrom,
+      sourceOverride => ctx.sourceOverride,
     }
   }
 
@@ -542,6 +547,7 @@ mutable class Context{
     this.!sharedSubDirsRefCount = ctx.sharedSubDirsRefCount;
     this.!writeChecker = ctx.writeChecker.map(x -> x.mclone());
     this.!purgeFrom = ctx.purgeFrom;
+    this.!sourceOverride = ctx.sourceOverride;
   }
 
   mutable fun getReads(): SortedSet<Path> {
@@ -877,13 +883,12 @@ mutable class Context{
           };
           ctx = this.clone();
           producedOutput = dir.writeDiff(
-            ctx,
             shouldRebuild,
             changes,
             writer,
             dirSub.entity,
             dirSub.format,
-            dirSub.filter,
+            dirSub.filter(ctx, false, dirName),
             dirSub.getDestinationWatermark(ctx),
           );
           !producedAnyOutput = producedAnyOutput || producedOutput

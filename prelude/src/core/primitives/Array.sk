@@ -285,6 +285,15 @@ mutable native class .Array<+T>
     }
   }
 
+  readonly fun findIdx(p: T -> Bool): ?Int {
+    for (i in Range(0, this.size())) {
+      x = this.unsafe_get(i);
+      if (p(x)) break Some(i);
+    } else {
+      None()
+    }
+  }
+
   readonly fun all(p: T -> Bool): Bool {
     for (x in this) {
       if (!p(x)) break false
@@ -452,6 +461,11 @@ mutable native class .Array<+T>
     (static : Concrete<Array<T2>>)::fillBy(n + m, i ->
       if (i < n) (this : readonly Array<T2>)[i] else other[i - n]
     )
+  }
+
+  readonly fun append<T2>[T: T2](elt: T2): Array<T2> {
+    n = this.size();
+    Array::fillBy(n + 1, i -> if (i < n) this[i] else elt)
   }
 
   readonly fun reversed(): Array<T> {

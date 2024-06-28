@@ -327,7 +327,9 @@ Where not specified, strings are UTF-8.
 - schema
   - type = 0x4
   - reserved (4) - must be zeroed
-  - scope enum (4) - 0 if all, 1 if table, 2 if view, other values are reserved
+  - scope enum (4)
+    - 0 if all, 1 if table, 2 if view, 3 if legacy-schema table
+    - other values are reserved
     - if all, then there is no name nor name_length, nor suffix_length, nor suffix
   - name_length (16) - in bytes
   - name (name_length * 8)

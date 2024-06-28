@@ -12,13 +12,17 @@ class TailSpec{
 fun buildTailFilter(
   context: readonly SKStore.Context,
   options: SKDB.Options,
-  dirSub: SKStore.DirSub,
+  replicationFilter: (
+    SKStore.Context,
+    Bool,
+    SKStore.DirName,
+  ) ~> (SKStore.Key -> Bool),
   userId: ?String,
   tailSpec: TailSpec,
   sqlTable: SKDB.DirDescr,
-): (SKStore.Context, Bool) ~> (SKStore.Key -> Bool) {
+): (SKStore.Context, Bool, SKStore.DirName) ~> (SKStore.Key -> Bool) {
   filter = tailSpec.filter match {
-  | None() -> dirSub.filter
+  | None() -> replicationFilter
   | Some(strCond) ->
     compiler = SKDB.Compiler::create(false, options, 0, tailSpec.params);
     ast = P.Parser::create(strCond).parseExpr();
@@ -33,9 +37,9 @@ fun buildTailFilter(
       print_error("Unexpected type for filter expression");
       skipExit(2)
     };
-    (context, isReset) ~> {
+    (context, isReset, dirName) ~> {
       mcontext = context.mclone();
-      conditionFilter = dirSub.filter(context, isReset);
+      conditionFilter = replicationFilter(context, isReset, dirName);
       baseName -> {
         inputRow = baseName match {
         | rowKey @ SKDB.RowKey _ -> rowKey.getRowValues()
@@ -61,9 +65,9 @@ fun buildTailFilter(
   userId match {
   | None() -> filter
   | Some(userID) ->
-    (context, isReset) ~> {
+    (context, isReset, dirName) ~> {
       user = SKDB.UserFile::create(context, userID);
-      oldFilter = filter(context, isReset);
+      oldFilter = filter(context, isReset, dirName);
 
       baseName -> {
         oldFilter(baseName) &&
@@ -107,7 +111,7 @@ fun buildCSVSchemaTransform(
   };
 
   schemaTransformation = target.map(targetCol -> {
-    source.indexOf(targetCol) match {
+    source.findIdx(col -> col.name == targetCol.name) match {
     | None() ->
       print_error(`Incompatible schema: unknown column ${targetCol.name}`);
       skipExit(2)
@@ -169,6 +173,7 @@ fun tailSub(
   userIDOpt: ?String,
   spec: (P.Name ~> TailSpec),
 ): Bool {
+  legacyTableNames: SortedMap<P.Name, P.Name> = SortedMap::create();
   sub = SKStore.withContext(gContext -> {
     // rebuild the sub with extra filtering as supported by tail
     gContext.sessions.maybeGet(sessionID) match {
@@ -181,18 +186,44 @@ fun tailSub(
         dirSubs => sub.dirSubs.map(dirSub -> {
           table = getSqlTableName(dirSub.dirName);
           tableName = P.Name::create(table);
+          tailSpec = spec(tableName);
+
           dirDescr = dirDescrs.maybeGet(tableName) match {
-          | Some(descr) -> descr
+          | Some(descr) ->
+            requiresLegacySchema = tailSpec.columns match {
+            | None() -> false
+            | Some(cols) -> cols.any(col -> !descr.schema.contains(col))
+            };
+            if (requiresLegacySchema) {
+              mCtx = gContext.mclone();
+              getLegacyViewsDir(mCtx)
+                .maybeGet(mCtx, SKStore.SID::create(tableName.lower))
+                .flatMap(lvFile -> {
+                  !legacyTableNames = legacyTableNames.set(
+                    lvFile.legacyView,
+                    tableName,
+                  );
+                  dirDescrs.maybeGet(lvFile.legacyView)
+                }) match {
+              | None() ->
+                print_error(`Error: incompatible schema for ${tableName}`);
+                skipExit(2)
+              | Some(dd) -> dd
+              }
+            } else {
+              descr
+            }
           | None _ ->
             print_error(`Error: '${tableName}' not found`);
             skipExit(2)
           };
-          tailSpec = spec(tableName);
+
           dirSub with {
+            dirName => dirDescr.dirName,
             filter => buildTailFilter(
               gContext,
               options,
-              dirSub,
+              dirSub.filter,
               userIDOpt,
               tailSpec,
               dirDescr,
@@ -209,6 +240,12 @@ fun tailSub(
 
   tailWatermark: ?Int = None();
   init = true;
+  lookupSpec = (name) -> {
+    legacyTableNames.maybeGet(name) match {
+    | Some(table) -> spec(table)
+    | None() -> spec(name)
+    }
+  };
 
   loop {
     localObstack = SKStore.newObstack();
@@ -234,12 +271,12 @@ fun tailSub(
       writer = mutable Debug.BufferedWriter(print_raw, 4096);
 
       requestToRebuildEverything = !sub.dirSubs.any(ds -> {
-        since = tailFrom(spec, ds, tailWatermark);
+        since = tailFrom(lookupSpec, ds, tailWatermark);
         since.value > 0
       });
       oldestSubSince = sub.dirSubs.reduce(
         (acc, ds) -> {
-          since = tailFrom(spec, ds, tailWatermark);
+          since = tailFrom(lookupSpec, ds, tailWatermark);
           if (since < acc) {
             since
           } else {
@@ -273,7 +310,7 @@ fun tailSub(
         | SKDB.OFK_JS() -> SKStore.OJS(getFieldNames(context, dirName))
         | SKDB.OFK_Table() -> SKStore.OTable(getFieldNames(context, dirName))
         };
-        since = tailFrom(spec, dirSub, tailWatermark);
+        since = tailFrom(lookupSpec, dirSub, tailWatermark);
 
         (shouldRebuild, changes) = if (forceCompleteRebuild) {
           (true, Array[].iterator())
@@ -312,16 +349,14 @@ fun tailSub(
         };
 
         producedOutput = edir.writeDiff(
-          context,
           shouldRebuild,
-          changes.iterator(),
+          changes,
           writer,
           dirSub.entity,
           format,
-          dirSub.filter,
+          dirSub.filter(context, since.value < 1, dirName), //send everything if client has nothing, i.e. since.value == 0
           dirSub.getDestinationWatermark(context),
           checkpointInterval,
-          since.value < 1, // the client has nothing, so send everything
         );
         !producedAnyOutput = producedAnyOutput || producedOutput;
         !couldFollowChanges = couldFollowChanges && !shouldRebuild;

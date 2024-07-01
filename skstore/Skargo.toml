@@ -1,0 +1,11 @@
+[package]
+name = "skstore"
+version = "0.1.0"
+
+[dependencies]
+skdb = { path = "../sql" }
+
+[[bin]]
+name = "skstore"
+main = "undefined"
+

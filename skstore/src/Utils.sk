@@ -1,0 +1,240 @@
+module alias P = SQLParser;
+
+module SKStore;
+
+const kCACHE_NAME: String = "_sk_c/";
+const kWatchesId: String = "SKStore.WatchesFile";
+
+class Watch(
+  name: String,
+  id: Int,
+  init: FnHandle,
+  optUpdate: ?FnHandle = None(),
+)
+
+class WatchesFile(value: List<Watch> = List.Nil()) extends File {
+  fun add(watch: Watch): WatchesFile {
+    !this.value = List.Cons(watch, this.value);
+    this
+  }
+}
+
+base class Accumulator<V1: frozen, V2: frozen>(default: V2) {
+  fun getType(): File ~> V2;
+  fun accumulate(acc: V2, value: V1): V2;
+  fun dismiss(cumul: V2, value: V1): ?V2;
+}
+
+class Types<K: Key, V: File>(key: Key ~> K, file: File ~> V)
+
+fun eagerMap<K: Key, V: File, K2: Key, V2: File>(
+  handle: EHandle<K, V>,
+  keyConv: Key ~> K2,
+  fileConv: File ~> V2,
+  name: String,
+  context: mutable Context,
+  compute: (
+    mutable Context,
+    mutable TWriter<K2, V2>,
+    K,
+    mutable NonEmptyIterator<V>,
+  ) ~> void,
+): EHandle<K2, V2> {
+  dirName = subDirName(context, name);
+  handle.map(keyConv, fileConv, context, dirName, compute);
+}
+
+fun eagerMultiMap<K: Key, V: File, K2: Key, V2: File>(
+  keyConv: Key ~> K2,
+  fileConv: File ~> V2,
+  name: String,
+  context: mutable Context,
+  mappings: Array<
+    (
+      EHandle<K, V>,
+      (
+        mutable Context,
+        mutable TWriter<K2, V2>,
+        K,
+        mutable NonEmptyIterator<V>,
+      ) ~> void,
+    ),
+  >,
+): EHandle<K2, V2> {
+  dirName = subDirName(context, name);
+  EHandle::multiMap(
+    keyConv,
+    fileConv,
+    context,
+    mappings.map(m -> (m.i0, (m.i1, None()))),
+    dirName,
+  )
+}
+
+fun eagerMapReduce<K: Key, V: File, K2: Key, V2: File, V3: File>(
+  handle: EHandle<K, V>,
+  keyConv: Key ~> K2,
+  fileConv: File ~> V2,
+  name: String,
+  context: mutable Context,
+  compute: (
+    mutable Context,
+    mutable TWriter<K2, V2>,
+    K,
+    mutable NonEmptyIterator<V>,
+  ) ~> void,
+  accumulator: Accumulator<V2, V3>,
+): EHandle<K2, V3> {
+  dirName = subDirName(context, name);
+  handle.mapReduce(
+    keyConv,
+    fileConv,
+    context,
+    dirName,
+    compute,
+    accReducer(accumulator),
+  )
+}
+
+fun eagerMultiMapReduce<K: Key, V: File, K2: Key, V2: File, V3: File>(
+  keyConv: Key ~> K2,
+  fileConv: File ~> V2,
+  name: String,
+  context: mutable Context,
+  mappings: Array<
+    (
+      EHandle<K, V>,
+      (
+        mutable Context,
+        mutable TWriter<K2, V2>,
+        K,
+        mutable NonEmptyIterator<V>,
+      ) ~> void,
+    ),
+  >,
+  accumulator: Accumulator<V2, V3>,
+): EHandle<K2, V3> {
+  dirName = subDirName(context, name);
+  EHandle::multiMapReduce(
+    keyConv,
+    fileConv,
+    context,
+    mappings.map(m -> (m.i0, (m.i1, None()))),
+    dirName,
+    accReducer(accumulator),
+  )
+}
+
+fun makeInput<K: Key, V: File>(
+  convKey: Key ~> K,
+  convValue: File ~> V,
+  context: mutable Context,
+  name: String,
+  content: Array<(K, V)> = Array[],
+): String {
+  dirName = subDirName(context, name);
+  _ = context.mkdir(convKey, convValue, dirName, content);
+  dirName.toString()
+}
+
+fun makeLazy<K: Key, V: File>(
+  convKey: Key ~> K,
+  convValue: File ~> V,
+  context: mutable Context,
+  name: String,
+  f: (mutable Context, LHandle<K, V>, K) ~> Array<V>,
+  collect: Bool = true,
+): String {
+  dirName = subDirName(context, name);
+  _ = LHandle::create(convKey, convValue, context, dirName, f, collect);
+  dirName.toString()
+}
+
+fun accReducer<V1: File, V2: File>(
+  accumulator: Accumulator<V1, V2>,
+): EReducer<V1, V2> {
+  EReducer{
+    type => accumulator.getType(),
+    canReset => true,
+    init => iter ~> {
+      acc = accumulator.default;
+      for (x in iter) {
+        !acc = accumulator.accumulate(acc, x)
+      };
+      Array[acc]
+    },
+    update => (state, old, new) ~> {
+      acc = state[0];
+      for (x in old) {
+        accumulator.dismiss(acc, x) match {
+        | Some(v) -> !acc = v
+        | _ -> return None()
+        }
+      };
+      for (x in new) {
+        !acc = accumulator.accumulate(acc, x)
+      };
+      Some(Array[acc])
+    },
+  }
+}
+
+fun subDirName(context: mutable Context, name: String): DirName {
+  path = context.currentArrow() match {
+  | Some(arrow) ->
+    b64 = base64(arrow.key);
+    `${arrow.childName}${b64}/${name}/`
+  | None() -> `/sk/${name}/`
+  };
+  DirName::create(path)
+}
+
+fun parentName(context: mutable Context): DirName {
+  path = context.currentArrow() match {
+  | Some(arrow) -> `${arrow.childName}${base64(arrow.key)}/`
+  | None() -> `/sk/`
+  };
+  DirName::create(path)
+}
+
+fun addWatch(context: mutable Context, watch: Watch): void {
+  watchesFile = context.getGlobal(kWatchesId) match {
+  | Some(v) -> WatchesFile::type(v)
+  | _ -> WatchesFile()
+  };
+  context.setGlobal(kWatchesId, watchesFile.add(watch));
+}
+
+fun setArray<K: Key, V: File>(
+  context: mutable Context,
+  handle: EHandle<K, V>,
+  key: Key,
+  value: Array<V>,
+): void {
+  dirName = handle.getDirName();
+  if (context.currentArrow().isSome()) {
+    context.postpone(ToWrite(dirName, key, _ctx ~> value))
+  } else {
+    context.maybeGetEagerDir(dirName) match {
+    | None() ->
+      invariant_violation(`Could not find input directory: ${dirName}`)
+    | Some(dir) ->
+      if (!dir.isInput()) {
+        invariant_violation(`Not an input Dir: ${dirName}`)
+      };
+      dir.writeArray(context, key, value)
+    }
+  }
+}
+
+fun base64(toEncode: Key): String {
+  encoded = `b64_${Base64.encodeString(toEncode.toString(), true)}`;
+  encoded.searchRight(ch ~> ch != '=') match {
+  | Some(i) ->
+    _ = i.next();
+    encoded.getIter().substring(i)
+  | None() -> ""
+  }
+}
+
+module end; /* SKStore */

@@ -1,0 +1,518 @@
+module SKStore;
+
+const kSessionDir: DirName = DirName::create("/sk_prv/sessions/");
+const kGraphDir: DirName = DirName::create("/sk_prv/graph/");
+
+const kJSONTypes: Types<JSONID, JSONFile> = Types(
+  JSONID::keyType,
+  JSONFile::type,
+);
+
+class JSONID(value: SKJSON.CJSON) extends Key {
+  //
+  fun toString(): String {
+    this.value.prettyPrint()
+  }
+}
+
+class JSONFile(value: SKJSON.CJSON) extends File
+
+@cpp_extern
+@debug
+native fun applyMapFun(
+  fn: UInt32,
+  context: mutable Context,
+  writer: mutable TWriter<JSONID, JSONFile>,
+  key: SKJSON.CJSON,
+  values: mutable NonEmptyIterator<JSONFile>,
+): void;
+
+@cpp_extern
+@debug
+native fun applyConvertToRowFun(
+  fn: UInt32,
+  key: SKJSON.CJSON,
+  values: mutable NonEmptyIterator<JSONFile>,
+): SKJSON.CJSON;
+
+@cpp_extern
+@debug
+native fun applyMapTableFun(
+  fn: UInt32,
+  context: mutable Context,
+  writer: mutable TWriter<JSONID, JSONFile>,
+  key: SKJSON.CJArray,
+  occ: Float,
+): void;
+
+@cpp_extern
+@debug
+native fun init(context: mutable Context): void;
+
+@cpp_extern
+@debug
+native fun applyWatchInitFun(fn: UInt32, values: SKJSON.CJArray): void;
+
+@cpp_extern
+@debug
+native fun applyWatchUpdateFun(
+  fn: UInt32,
+  added: SKJSON.CJArray,
+  removed: SKJSON.CJArray,
+): void;
+
+@cpp_extern
+@debug
+native fun applyLazyFun(
+  fn: UInt32,
+  context: mutable Context,
+  self: LHandle<JSONID, JSONFile>,
+  key: SKJSON.CJSON,
+): SKJSON.CJSON;
+
+@cpp_extern
+@debug
+native fun detachHandle(fn: UInt32): void;
+
+@cpp_extern
+@debug
+native fun applyAccumulate(
+  fn: UInt32,
+  acc: SKJSON.CJSON,
+  value: SKJSON.CJSON,
+): SKJSON.CJSON;
+
+@cpp_extern
+@debug
+native fun applyDismiss(
+  fn: UInt32,
+  acc: SKJSON.CJSON,
+  value: SKJSON.CJSON,
+): ?SKJSON.CJSON;
+
+@cpp_extern
+@debug
+native fun getArrayValue(index: UInt32): SKJSON.CJSON;
+
+@cpp_extern
+@debug
+native fun getErrorHdl(exn: .Exception): Float;
+
+// Exports
+
+@export("SKIP_SKStore_writerSetValues")
+fun writerSetValues(
+  writer: mutable TWriter<JSONID, JSONFile>,
+  key: SKJSON.CJSON,
+  size: UInt32,
+): void {
+  writer.setArray(
+    JSONID(key),
+    Array::fillBy(size.toInt(), idx ~>
+      JSONFile(getArrayValue(UInt32::truncate(idx)))
+    ),
+  )
+}
+
+@export("SKIP_SKStore_writerSet")
+fun writerSet(
+  writer: mutable TWriter<JSONID, JSONFile>,
+  key: SKJSON.CJSON,
+  value: SKJSON.CJSON,
+): void {
+  writer.set(JSONID(key), JSONFile(value))
+}
+
+@export("SKIP_SKStore_writerRemove")
+fun writerRemove(
+  writer: mutable TWriter<JSONID, JSONFile>,
+  key: SKJSON.CJSON,
+): void {
+  writer.remove(JSONID(key))
+}
+
+@export("SKIP_SKStore_iteratorFirst")
+fun iteratorFirst(values: mutable NonEmptyIterator<JSONFile>): SKJSON.CJSON {
+  values.first.value
+}
+
+@export("SKIP_SKStore_iteratorUniqueValue")
+fun iteratorUniqueValue(
+  values: mutable NonEmptyIterator<JSONFile>,
+): ?SKJSON.CJSON {
+  value = values.next().map(v -> v.value);
+  if (values.next().isSome()) None() else value
+}
+
+@export("SKIP_SKStore_iteratorNext")
+fun iteratorNext(values: mutable NonEmptyIterator<JSONFile>): ?SKJSON.CJSON {
+  values.next().map(v -> v.value)
+}
+
+class FnHandle private (eptr: SKStore.ExternalPointer) extends File {
+  static fun make(id: UInt32): this {
+    static(SKStore.ExternalPointer::create(id, detachHandle))
+  }
+
+  fun getId(): UInt32 {
+    this.eptr.value
+  }
+
+  fun map(
+    context: mutable Context,
+    writer: mutable TWriter<JSONID, JSONFile>,
+    key: JSONID,
+    values: mutable NonEmptyIterator<JSONFile>,
+  ): void {
+    applyMapFun(this.getId(), context, writer, key.value, values)
+  }
+
+  fun lazy(
+    context: mutable Context,
+    self: LHandle<JSONID, JSONFile>,
+    key: JSONID,
+  ): Array<JSONFile> {
+    Array[JSONFile(applyLazyFun(this.getId(), context, self, key.value))]
+  }
+
+  fun mapTable(
+    context: mutable Context,
+    writer: mutable TWriter<JSONID, JSONFile>,
+    row: SKDB.RowValues,
+  ): void {
+    applyMapTableFun(
+      this.getId(),
+      context,
+      writer,
+      SKDBStore.toCJArray(row),
+      row.repeat.toFloat(),
+    )
+  }
+
+  fun toRow(
+    key: JSONID,
+    values: mutable NonEmptyIterator<JSONFile>,
+  ): SKJSON.CJSON {
+    applyConvertToRowFun(this.getId(), key.value, values)
+  }
+}
+
+class ExternAccumulator(
+  accumulator: FnHandle,
+) extends Accumulator<JSONFile, JSONFile> {
+  //
+  fun getType(): File ~> JSONFile {
+    JSONFile::type
+  }
+
+  fun accumulate(acc: JSONFile, value: JSONFile): JSONFile {
+    JSONFile(applyAccumulate(this.accumulator.getId(), acc.value, value.value))
+  }
+
+  fun dismiss(cumul: JSONFile, value: JSONFile): ?JSONFile {
+    applyDismiss(this.accumulator.getId(), cumul.value, value.value).map(v ->
+      JSONFile(v)
+    )
+  }
+}
+
+@export("SKIP_SKStore_map")
+fun map(
+  context: mutable Context,
+  handleId: String,
+  name: String,
+  fnPtr: UInt32,
+): String {
+  eager = EHandle(JSONID::keyType, JSONFile::type, DirName::create(handleId));
+  mapHandle = FnHandle::make(fnPtr);
+  eagerMap(eager, JSONID::keyType, JSONFile::type, name, context, mapHandle.map)
+    .getDirName()
+    .toString()
+}
+
+@export("SKIP_SKStore_mapReduce")
+fun mapReduce(
+  context: mutable Context,
+  handleId: String,
+  name: String,
+  fnPtr: UInt32,
+  accumulator: UInt32,
+  default: SKJSON.CJSON,
+): String {
+  eager = EHandle(JSONID::keyType, JSONFile::type, DirName::create(handleId));
+  mapHandle = FnHandle::make(fnPtr);
+  accumulatorHandle = FnHandle::make(accumulator);
+  eagerMapReduce(
+    eager,
+    JSONID::keyType,
+    JSONFile::type,
+    name,
+    context,
+    mapHandle.map,
+    ExternAccumulator(accumulatorHandle, JSONFile(default)),
+  )
+    .getDirName()
+    .toString()
+}
+
+@export("SKIP_SKStore_multimap")
+fun multimap(
+  context: mutable Context,
+  name: String,
+  mappings: SKJSON.CJArray,
+): String {
+  skmappings = mappings match {
+  | SKJSON.CJArray(v) ->
+    v.map(e -> {
+      mapping = SKJSON.expectArray(e);
+      handleId = SKJSON.asString(mapping[0]);
+      eager = EHandle(
+        JSONID::keyType,
+        JSONFile::type,
+        DirName::create(handleId),
+      );
+      mapHandle = FnHandle::make(
+        UInt32::truncate(SKJSON.asFloat(mapping[1]).toInt()),
+      );
+      return (eager, mapHandle.map)
+    })
+  };
+  eagerMultiMap(JSONID::keyType, JSONFile::type, name, context, skmappings)
+    .getDirName()
+    .toString()
+}
+
+@export("SKIP_SKStore_multimapReduce")
+fun multimapReduce(
+  context: mutable Context,
+  name: String,
+  mappings: SKJSON.CJArray,
+  accumulator: UInt32,
+  default: SKJSON.CJSON,
+): String {
+  accumulatorHandle = FnHandle::make(accumulator);
+  skmappings = mappings match {
+  | SKJSON.CJArray(v) ->
+    v.map(e -> {
+      mapping = SKJSON.expectArray(e);
+      handleId = SKJSON.asString(mapping[0]);
+      eager = EHandle(
+        JSONID::keyType,
+        JSONFile::type,
+        DirName::create(handleId),
+      );
+      mapHandle = FnHandle::make(
+        UInt32::truncate(SKJSON.asFloat(mapping[1]).toInt()),
+      );
+      return (eager, mapHandle.map)
+    })
+  };
+  eagerMultiMapReduce(
+    JSONID::keyType,
+    JSONFile::type,
+    name,
+    context,
+    skmappings,
+    ExternAccumulator(accumulatorHandle, JSONFile(default)),
+  )
+    .getDirName()
+    .toString()
+}
+
+@export("SKIP_SKStore_fromSkdb")
+fun mapTable(
+  context: mutable Context,
+  table: String,
+  name: String,
+  fnPtr: UInt32,
+): String {
+  mapHandle = FnHandle::make(fnPtr);
+  SKDBStore.mapTable(table, name, context, mapHandle.mapTable)
+}
+
+@export("SKIP_SKStore_toSkdb")
+fun toSkdb(
+  context: mutable Context,
+  handleId: String,
+  table: String,
+  convPtr: UInt32,
+): void {
+  eager = EHandle(JSONID::keyType, JSONFile::type, DirName::create(handleId));
+  mapHandle = FnHandle::make(convPtr);
+  SKDBStore.toTable(eager, table, context, mapHandle.toRow)
+}
+
+@export("SKIP_SKStore_set")
+fun set(
+  context: mutable Context,
+  handleId: String,
+  key: SKJSON.CJSON,
+  value: SKJSON.CJSON,
+): void {
+  eager = EHandle(JSONID::keyType, JSONFile::type, DirName::create(handleId));
+  setArray(context, eager, JSONID(key), Array[JSONFile(value)])
+}
+
+@export("SKIP_SKStore_remove")
+fun remove(
+  context: mutable Context,
+  handleId: String,
+  key: SKJSON.CJSON,
+): void {
+  eager = EHandle(JSONID::keyType, JSONFile::type, DirName::create(handleId));
+  setArray(context, eager, JSONID(key), Array[])
+}
+
+@export("SKIP_SKStore_get")
+fun get(
+  context: mutable Context,
+  handleId: String,
+  key: SKJSON.CJSON,
+): SKJSON.CJSON {
+  eager = EHandle(JSONID::keyType, JSONFile::type, DirName::create(handleId));
+  eager.get(context, JSONID(key)).value
+}
+
+@export("SKIP_SKStore_getFromTable")
+fun getFromTable(
+  _context: mutable Context,
+  _table: String,
+  _key: SKJSON.CJSON,
+  _index: SKJSON.CJSON,
+): SKJSON.CJSON {
+  invariant_violation("TODO")
+}
+
+@export("SKIP_SKStore_maybeGet")
+fun maybeGet(
+  context: mutable Context,
+  handleId: String,
+  key: SKJSON.CJSON,
+): SKJSON.CJSON {
+  eager = EHandle(JSONID::keyType, JSONFile::type, DirName::create(handleId));
+  eager
+    .maybeGet(context, JSONID(key))
+    .map(v -> v.value)
+    .default(SKJSON.CJNull())
+}
+
+@export("SKIP_SKStore_getLazy")
+fun getLazy(
+  context: mutable Context,
+  handleId: String,
+  key: SKJSON.CJSON,
+): SKJSON.CJSON {
+  lazy = LHandle(JSONID::keyType, JSONFile::type, DirName::create(handleId));
+  getSelf(context, lazy, key)
+}
+
+@export("SKIP_SKStore_getSelf")
+fun getSelf(
+  context: mutable Context,
+  handle: LHandle<JSONID, JSONFile>,
+  key: SKJSON.CJSON,
+): SKJSON.CJSON {
+  handle.get(context, JSONID(key)).value
+}
+
+@export("SKIP_SKStore_size")
+fun size(context: mutable Context, handleId: String): Float {
+  eager = EHandle(JSONID::keyType, JSONFile::type, DirName::create(handleId));
+  eager.size(context).toFloat()
+}
+
+@export("SKIP_SKStore_input")
+fun input(
+  context: mutable Context,
+  name: String,
+  values: SKJSON.CJArray,
+): String {
+  makeInput(
+    JSONID::keyType,
+    JSONFile::type,
+    context,
+    name,
+    SKJSON.expectArray(values).map(v -> {
+      a = SKJSON.expectArray(v);
+      (JSONID(a[0]), JSONFile(a[1]))
+    }),
+  )
+}
+
+@export("SKIP_SKStore_lazy")
+fun lazy(context: mutable Context, name: String, lazyFunPtr: UInt32): String {
+  lazyHandle = FnHandle::make(lazyFunPtr);
+  makeLazy(JSONID::keyType, JSONFile::type, context, name, lazyHandle.lazy)
+}
+
+fun initCtx(): Context {
+  Context{}
+}
+
+@export("SKIP_SKStore_createFor")
+fun createFor(session: String): Float {
+  if (SKStore.gHasContext() == 0) {
+    SKStore.gContextInit(initCtx());
+  };
+  SKStore.runLockedWithResult(context ~> {
+    if (context.unsafeMaybeGetEagerDir(kSessionDir) is None()) {
+      sessionHdl = context.mkdir(
+        IID::keyType,
+        StringFile::type,
+        kSessionDir,
+        Array[(IID(0), StringFile(session))],
+      );
+      _ = sessionHdl.map(
+        IID::keyType,
+        StringFile::type,
+        context,
+        kGraphDir,
+        (ctx, writer, key, it) ~> {
+          init(ctx);
+          writer.set(key, it.first)
+        },
+      )
+    } else {
+      EHandle(IID::keyType, StringFile::type, kSessionDir).writeArray(
+        context,
+        IID(0),
+        Array[StringFile(session)],
+      );
+    };
+    context.update();
+  }) match {
+  | Success _ -> 1.0
+  | Failure(err) -> -getErrorHdl(err)
+  };
+}
+
+fun runLockedWithResult<T>(
+  f: mutable Context ~> T,
+  sync: Bool = false,
+): Result<T, .Exception> {
+  gGlobalLock();
+  try {
+    root = gContextGetNoLock();
+    start = root.tick;
+    context = Context::fromSaved(root);
+    res = f(context);
+    newRoot = gContextSyncNoLock(
+      root.tick,
+      root,
+      context.clone(),
+      None(),
+      if (sync) UInt32::truncate(1) else UInt32::truncate(0),
+      None(),
+    );
+    gGlobalUnlock();
+    newRoot.notifyAll(start);
+    gUnsafeFree(newRoot);
+    Success(res)
+  } catch {
+  | exn ->
+    gGlobalUnlock();
+    Failure(exn)
+  }
+}
+
+module end; /* SKStore */

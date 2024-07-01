@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2021",
+    "outDir": "../dist/src",
+    "baseUrl": ".",
+    "paths": {
+      "#std/*": ["../../../prelude/ts/src/*"],
+      "#skdb/*": ["../../../sql/ts/src/*"]
+    },
+    "strictNullChecks": true,
+    "module": "node16",
+    "strict": true,
+    "verbatimModuleSyntax": true,
+    "declaration": true,
+    "sourceMap": true,
+    "declarationMap": true,
+    "moduleResolution": "Node16",
+    "incremental": true,
+    "noEmit": true
+  }
+}

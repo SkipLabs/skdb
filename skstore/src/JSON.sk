@@ -1,0 +1,223 @@
+module SKJSON;
+
+const kUndefined: Int = 0;
+const kNull: Int = 1;
+const kInt: Int = 2;
+const kFloat: Int = 3;
+const kBoolean: Int = 4;
+const kString: Int = 5;
+const kArray: Int = 6;
+const kObject: Int = 7;
+
+@cpp_extern
+@debug
+native fun console(value: CJSON): void;
+
+@cpp_extern
+@debug
+native fun error(value: CJSON): void;
+
+fun log(msg: String): void {
+  console(CJString(msg))
+}
+
+@export("SKIP_SKJSON_typeOf")
+fun typeOf(json: CJSON): Float {
+  (json match {
+  | CJNull() -> kNull
+  | CJBool _ -> kBoolean
+  | CJInt _ -> kInt
+  | CJFloat _ -> kFloat
+  | CJString _ -> kString
+  | CJArray _ -> kArray
+  | CJObject _ -> kObject
+  }).toFloat()
+}
+
+@export("SKIP_SKJSON_asInt")
+fun asInt(json: CJSON): Float {
+  json match {
+  | CJInt(v) -> v.toFloat()
+  | _ -> invariant_violation("Must be an Int value.")
+  }
+}
+
+@export("SKIP_SKJSON_asFloat")
+fun asFloat(json: CJSON): Float {
+  json match {
+  | CJFloat(v) -> v
+  | _ -> invariant_violation("Must be a Float value.")
+  }
+}
+
+@export("SKIP_SKJSON_asBoolean")
+fun asBoolean(json: CJSON): Int32 {
+  json match {
+  | CJBool(v) -> Int32::truncate(if (v) 1 else 0)
+  | _ -> invariant_violation("Must be a Boolean value.")
+  }
+}
+
+@export("SKIP_SKJSON_asString")
+fun asString(json: CJSON): String {
+  json match {
+  | CJString(v) -> v
+  | _ -> invariant_violation("Must be a String value.")
+  }
+}
+
+@export("SKIP_SKJSON_asArray")
+fun asArray(json: CJSON): CJArray {
+  json match {
+  | v @ CJArray _ -> v
+  | _ -> invariant_violation("Must be a Array value.")
+  }
+}
+
+fun expectArray(json: CJSON): Array<CJSON> {
+  json match {
+  | CJArray(v) -> v
+  | _ -> invariant_violation("Must be a Array value.")
+  }
+}
+
+@export("SKIP_SKJSON_asObject")
+fun asObject(json: CJSON): CJObject {
+  json match {
+  | v @ CJObject _ -> v
+  | _ -> invariant_violation("Must be a Object value.")
+  }
+}
+
+@export("SKIP_SKJSON_fieldAt")
+fun fieldAt(object: CJObject, idx: Float): ?String {
+  object match {
+  | CJObject(fields) -> fields.cols.maybeGet(idx.toInt())
+  }
+}
+
+@export("SKIP_SKJSON_get")
+fun get(object: CJObject, idx: Float): ?CJSON {
+  object match {
+  | CJObject(fields) -> fields.values.maybeGet(idx.toInt())
+  }
+}
+
+@export("SKIP_SKJSON_objectSize")
+fun objectSize(object: CJObject): Float {
+  object match {
+  | CJObject(fields) -> fields.cols.size().toFloat()
+  }
+}
+
+@export("SKIP_SKJSON_at")
+fun at(array: CJArray, idx: Float): ?CJSON {
+  array match {
+  | CJArray(values) -> values.maybeGet(idx.toInt())
+  }
+}
+
+@export("SKIP_SKJSON_arraySize")
+fun arraySize(array: CJArray): Float {
+  array match {
+  | CJArray(values) -> values.size().toFloat()
+  }
+}
+
+@export("SKIP_SKJSON_startCJObject")
+fun startCJObject(): mutable Vector<(String, CJSON)> {
+  mutable Vector[]
+}
+
+@export("SKIP_SKJSON_addToCJObject")
+fun addToCJObject(
+  object: mutable Vector<(String, CJSON)>,
+  name: String,
+  value: CJSON,
+): void {
+  object.push((name, value))
+}
+
+@export("SKIP_SKJSON_endCJObject")
+fun endCJObject(object: mutable Vector<(String, CJSON)>): CJObject {
+  fields = object.toArray();
+  CJObject(CJFields::create(fields.sortedBy(x ~> x.i0), x -> x))
+}
+
+@export("SKIP_SKJSON_startCJArray")
+fun startCJArray(): mutable Vector<CJSON> {
+  mutable Vector<CJSON>[]
+}
+
+@export("SKIP_SKJSON_addToCJArray")
+fun addToCJArray(array: mutable Vector<CJSON>, value: CJSON): void {
+  array.push(value)
+}
+
+@export("SKIP_SKJSON_endCJArray")
+fun endCJArray(array: mutable Vector<CJSON>): CJArray {
+  CJArray(array.toArray())
+}
+
+@export("SKIP_SKJSON_createCJNull")
+fun createCJNull(): CJNull {
+  CJNull()
+}
+
+@export("SKIP_SKJSON_createCJInt")
+fun createCJInt(value: UInt32): CJInt {
+  CJInt(value.toInt())
+}
+
+@export("SKIP_SKJSON_createCJFloat")
+fun createCJFloat(value: Float): CJFloat {
+  CJFloat(value)
+}
+
+@export("SKIP_SKJSON_createCJString")
+fun createCJString(value: String): CJString {
+  CJString(value)
+}
+
+@export("SKIP_SKJSON_createCJBool")
+fun createCJBool(value: Bool): CJBool {
+  CJBool(value)
+}
+
+fun getValue(obj: CJObject, field: String): ?CJSON {
+  obj match {
+  | CJObject(fields) ->
+    start = 0;
+    end = fields.cols.size() - 1;
+    while (start <= end) {
+      idx = (start + end) / 2;
+      fields.cols[idx].compare(field) match {
+      | EQ() -> break Some(fields.values[idx])
+      | LT() -> !start = idx + 1
+      | GT() -> !end = idx - 1
+      }
+    } else {
+      None()
+    }
+  }
+}
+
+fun getString(obj: CJObject, field: String): ?String {
+  getValue(obj, field).flatMap(v ->
+    v match {
+    | CJString(s) -> Some(s)
+    | _ -> None()
+    }
+  )
+}
+
+fun getObject(obj: CJObject, field: String): ?CJObject {
+  getValue(obj, field).flatMap(v ->
+    v match {
+    | fobj @ CJObject _ -> Some(fobj)
+    | _ -> None()
+    }
+  )
+}
+
+module end;

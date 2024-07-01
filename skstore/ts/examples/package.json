@@ -1,0 +1,10 @@
+{
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "^20.14.6"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "socket.io": "^4.7.5"
+  }
+}

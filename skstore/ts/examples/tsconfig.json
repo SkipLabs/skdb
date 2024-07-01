@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2021",
+    "outDir": "../dist/src",
+    "baseUrl": ".",
+    "paths": {},
+    "strictNullChecks": true,
+    "module": "node16",
+    "strict": true,
+    "verbatimModuleSyntax": true,
+    "declaration": true,
+    "sourceMap": true,
+    "declarationMap": true,
+    "moduleResolution": "Node16",
+    "incremental": true,
+    "noEmit": true
+  }
+}

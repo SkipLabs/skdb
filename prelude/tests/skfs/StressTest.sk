@@ -409,8 +409,7 @@ fun compareContext(
           | None()
           | Some(SKStore.LAbsent())
           | Some(SKStore.LRemoved _)
-          | Some(SKStore.LCycle _)
-          | Some(SKStore.LDelayed()) ->
+          | Some(SKStore.LCycle _) ->
             print_string("EMPTY DATA")
           | Some(SKStore.LDefined(files, _)) ->
             intFiles = files.map(file -> SKStore.IntFile::type(file));

@@ -121,7 +121,7 @@ fun testCount(): void {
   for (i in Range(0, size)) {
     files = Array[SKStore.StringFile(i.toString())];
     write(context, dirSInput, SKStore.IID(i), files);
-    _ = context.updateWithStatus(0);
+    _ = context.updateWithStatus();
     T.expectEq(
       Array<SKStore.File>[SKStore.IntFile(if (i < 2) 2 else i + 1)],
       getData(context, countDir.dirName, SKStore.IID(0)),
@@ -131,7 +131,7 @@ fun testCount(): void {
 
   for (j in Range(0, size / 2)) {
     write(context, dirSInput, SKStore.IID(size - j - 1), Array[]);
-    _ = context.updateWithStatus(0);
+    _ = context.updateWithStatus();
     T.expectEq(
       Array<SKStore.File>[SKStore.IntFile(size - j - 1)],
       getData(context, countDir.dirName, SKStore.IID(0)),
@@ -146,7 +146,7 @@ fun testCount(): void {
       SKStore.IID(size - j - 1),
       Array[SKStore.StringFile("x")],
     );
-    _ = context.updateWithStatus(0);
+    _ = context.updateWithStatus();
     T.expectEq(
       Array<SKStore.File>[SKStore.IntFile(size / 2 + j + 1)],
       getData(context, countDir.dirName, SKStore.IID(0)),
@@ -156,7 +156,7 @@ fun testCount(): void {
 
   for (j in Range(0, size / 2)) {
     write(context, dirSInput, SKStore.IID(size - j - 1), Array[]);
-    _ = context.updateWithStatus(0);
+    _ = context.updateWithStatus();
     T.expectEq(
       Array<SKStore.File>[SKStore.IntFile(size - j - 1)],
       getData(context, countDir.dirName, SKStore.IID(0)),
@@ -166,7 +166,7 @@ fun testCount(): void {
 
   for (j in Range(0, size / 2)) {
     write(context, dirSInput, SKStore.IID(size - j - 1), Array[]);
-    _ = context.updateWithStatus(0);
+    _ = context.updateWithStatus();
     T.expectEq(
       Array<SKStore.File>[SKStore.IntFile(size / 2)],
       getData(context, countDir.dirName, SKStore.IID(0)),
@@ -181,7 +181,7 @@ fun testCount(): void {
       SKStore.IID(size - j - 1),
       Array[SKStore.StringFile("x")],
     );
-    _ = context.updateWithStatus(0);
+    _ = context.updateWithStatus();
     T.expectEq(
       Array<SKStore.File>[SKStore.IntFile(size / 2 + j + 1)],
       getData(context, countDir.dirName, SKStore.IID(0)),
@@ -202,7 +202,7 @@ fun testCount(): void {
   for (i in Range(0, size)) {
     files = Array[SKStore.StringFile(i.toString())];
     write(context, dirSumInput, SKStore.IID(i), files);
-    _ = context.updateWithStatus(0);
+    _ = context.updateWithStatus();
     T.expectEq(
       Array<SKStore.File>[SKStore.IntFile(if (i == 0) 1 else i * (i + 1) / 2)],
       getData(context, sumDir.dirName, SKStore.IID(0)),
@@ -215,7 +215,7 @@ fun testCount(): void {
   for (i in Range(0, size / 2)) {
     write(context, dirSumInput, SKStore.IID(size - i - 1), Array[]);
     !sum = sum - (size - i - 1);
-    _ = context.updateWithStatus(0);
+    _ = context.updateWithStatus();
     T.expectEq(
       Array<SKStore.File>[SKStore.IntFile(sum)],
       getData(context, sumDir.dirName, SKStore.IID(0)),

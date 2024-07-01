@@ -15,7 +15,6 @@ base class LazyResult {
   | LRemoved(Array<Path>)
   | LCycle()
   | LAbsent()
-  | LDelayed()
 }
 
 class LazyDir{
@@ -163,7 +162,6 @@ class LazyDir{
   fun unsafeGetArray(
     context: mutable Context,
     key: Key,
-    isAsync: Bool = false,
     throwOnCycle: Bool = true,
   ): Array<File> {
     if (this.collect) {
@@ -177,13 +175,7 @@ class LazyDir{
       if (x is Some(LRemoved _) && context.debugMode) {
         print_string("LRemoved: " + Path::create(this.dirName, key).toString())
       };
-      if (isAsync) {
-        context.pushAsync(Path::create(this.dirName, key));
-        LDelayed()
-      } else {
-        this.lazyFun(context, key)
-      }
-    | Some(LDelayed()) if (!isAsync) -> this.lazyFun(context, key)
+      this.lazyFun(context, key)
     | Some(x) -> x
     };
     lazyResult match {
@@ -195,18 +187,17 @@ class LazyDir{
   fun getArray(context: mutable Context, key: Key): Array<File> {
     path = Path::create(this.dirName, key);
     context.addDep(path);
-    this.unsafeGetArray(context, key, false, true)
+    this.unsafeGetArray(context, key, true)
   }
 
   fun getArrayWithOptions(
     context: mutable Context,
     key: Key,
-    isAsync: Bool = false,
     throwOnCycle: Bool = true,
   ): Array<File> {
     path = Path::create(this.dirName, key);
     context.addDep(path);
-    this.unsafeGetArray(context, key, isAsync, throwOnCycle)
+    this.unsafeGetArray(context, key, throwOnCycle)
   }
 
   fun getIter(context: mutable Context, key: Key): mutable Iterator<File> {

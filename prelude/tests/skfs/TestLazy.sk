@@ -44,37 +44,6 @@ fun testLazy(): void {
       },
     );
 
-    adir1 = SKStore.LHandle::createAsync(
-      SKStore.IID::keyType,
-      SKStore.IntFile::type,
-      context,
-      SKStore.DirName::create("/alazy1/"),
-      (context, _self, x) ~> {
-        Some(
-          Array[
-            SKStore.IntFile(
-              x match {
-              | SKStore.IID(v) ->
-                dirInput.getArray(context, SKStore.IID(0))[0].value + v
-              },
-            ),
-          ],
-        )
-      },
-    );
-    _adir2 = SKStore.LHandle::createAsync(
-      SKStore.IID::keyType,
-      SKStore.IntFile::type,
-      context,
-      SKStore.DirName::create("/alazy2/"),
-      (context, _self, key) ~> {
-        arr = adir1.getArrayAsync(context, key);
-        if (arr.size() == 0) None() else {
-          Some(Array[SKStore.IntFile(arr[0].value)])
-        }
-      },
-    );
-
     _dir3 = dirInput2.map(
       SKStore.IID::keyType,
       SKStore.IntFile::type,
@@ -88,30 +57,9 @@ fun testLazy(): void {
 
   input = SKStore.DirName::create("/input/");
   dir2 = SKStore.DirName::create("/lazy2/");
-  adir2 = SKStore.DirName::create("/alazy2/");
   dir3 = SKStore.DirName::create("/eager/");
 
-  T.expectEq(
-    Array<SKStore.File>[],
-    getLazyData(context, adir2, SKStore.IID(0), true),
-    "Async Lazy basic",
-  );
-
-  _ = context.updateWithStatus(0);
-
-  T.expectEq(
-    Array<SKStore.File>[],
-    getLazyData(context, adir2, SKStore.IID(0), true),
-    "Async Lazy basic with interruption",
-  );
-
-  _ = context.updateWithStatus(30);
-
-  T.expectEq(
-    Array<SKStore.File>[SKStore.IntFile(23)],
-    getLazyData(context, adir2, SKStore.IID(0), true),
-    "Async Lazy basic without interruption",
-  );
+  _ = context.updateWithStatus();
 
   T.expectEq(
     Array<SKStore.File>[SKStore.IntFile(23)],
@@ -119,7 +67,7 @@ fun testLazy(): void {
     "Lazy basic",
   );
   write(context, input, SKStore.IID(0), Array[SKStore.IntFile(22)]);
-  _status = context.updateWithStatus(10);
+  _status = context.updateWithStatus();
 
   T.expectEq(
     Array<SKStore.File>[SKStore.IntFile(22)],

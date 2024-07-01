@@ -306,44 +306,18 @@ class LHandle<K: Key, +V: File>(
     LHandle(typeKey, type, dir.getDirName())
   }
 
-  static fun createAsync<K: Key, V: File>(
-    typeKey: Key ~> K,
-    type: File ~> V,
-    context: mutable Context,
-    dirName: DirName,
-    f: (mutable Context, LHandle<K, V>, K) ~> ?Array<V>,
-    collect: Bool = true,
-  ): LHandle<K, V> {
-    dir = LazyDir::create(
-      context,
-      dirName,
-      (context, dirName, key) ~> {
-        f(context, LHandle(typeKey, type, dirName), typeKey(key));
-      },
-      collect,
-    );
-    LHandle(typeKey, type, dir.getDirName())
-  }
-
   fun getKeyType(): SKStore.Key ~> K {
     this.typeKey
-  }
-
-  fun getArrayAsync(context: mutable Context, key: Key): Array<V> {
-    dir = context.unsafeGetLazyDir(this.getDirName());
-    results = dir.getArrayAsync(context, key).map(this.getType());
-    results
   }
 
   fun getArrayWithOptions(
     context: mutable Context,
     key: Key,
-    isAsync: Bool,
     throwOnCycle: Bool,
   ): Array<V> {
     dir = context.unsafeGetLazyDir(this.getDirName());
     results = dir
-      .getArrayWithOptions(context, key, isAsync, throwOnCycle)
+      .getArrayWithOptions(context, key, throwOnCycle)
       .map(this.getType());
     results
   }

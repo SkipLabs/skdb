@@ -1261,10 +1261,6 @@ class Evaluator{options: Options, user: ?UserFile} {
         dirNameStr = "/" + name + "/";
         dirName = SKStore.DirName::create(dirNameStr);
         context.removeDir(dirName);
-        context.setDir(
-          dirName,
-          SKStore.DeletedDir{dirName, time => context.timeStamp()},
-        );
         errorAllExistingSubs(context, dirName)
       })
     | P.Delete{pos, name, where, alias, indexed} ->

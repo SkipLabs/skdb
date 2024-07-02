@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2021",
+    "outDir": "../dist",
+    "baseUrl": ".",
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "strict": true,
+    "verbatimModuleSyntax": true,
+    "strictNullChecks": true,
+    "noEmit": true,
+    "paths": {
+      "#std/*": ["../../../prelude/ts/src/*"],
+      "#skmonitor/*": ["./*"]
+    }
+  }
+}

@@ -1,0 +1,35 @@
+module SKMonitor;
+
+@debug
+@cpp_extern
+native fun move(from: String, to: String): void;
+
+fun flush(span: readonly Span): void {
+  trace = span.toJSON().toString();
+  if (!FileSystem.exists("/tmp/skmonitor")) {
+    print_debug(trace)
+  } else {
+    id = `${span.traceId}_${span.rootId()}`;
+    name = `/tmp/${id}`;
+    dstFile = IO.File::open(
+      name,
+      IO.OpenOptions{write => true, create => true, append => true},
+    );
+    _ = dstFile.write(trace.bytes());
+    _ = dstFile.write("\n".bytes());
+    dstFile.close();
+    if (span.optParent.isNone()) {
+      move(name, `/tmp/skmonitor/${id}`)
+    }
+  }
+}
+
+fun traceIdOpt(): ?String {
+  Environ.varOpt("SK_MONITORING_TRACE_ID")
+}
+
+fun monitoringOpt(): ?String {
+  Environ.varOpt("SK_MONITORING")
+}
+
+module end;

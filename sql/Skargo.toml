@@ -8,6 +8,7 @@ skdate = { path = "../skdate" }
 cli = { path = "../cli" }
 skjson = { path = "../skjson" }
 sqlparser = { path = "../sqlparser" }
+skmonitor = { path = "../skmonitor" }
 
 [dev-dependencies]
 sktest = { path = "../sktest" }

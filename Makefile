@@ -10,6 +10,7 @@ SKDB_WASM=sql/target/wasm32-unknown-unknown/$(SKARGO_PROFILE)/skdb.wasm
 SKDB_BIN=sql/target/host/$(SKARGO_PROFILE)/skdb
 SKNPM_BIN=sknpm/target/host/$(SKARGO_PROFILE)/sknpm
 SDKMAN_DIR?=$(HOME)/.sdkman
+SKDB_METRICS?=$(shell realpath ./sql/monitoring/metrics.json)
 
 ifndef PLAYWRIGHT_JUNIT_OUTPUT_NAME
 SKNPM_FLAG=
@@ -204,3 +205,27 @@ test-bun: npm
 	rm -r build/bun/node_modules/skdb
 	cp -r build/package/skdb build/bun/node_modules/
 	cd build/bun && bun bun.js true && bun bun.js false
+
+.PHONY: build-collector
+build-collector: $(SDKMAN_DIR)
+	bash -c 'source $(HOME)/.sdkman/bin/sdkman-init.sh && cd skmonitor/kotlin && gradle --console plain build'
+
+build/skmonitor.jar: build-collector skmonitor/kotlin/collector/build/libs/collector.jar
+	mkdir -p build
+	cp skmonitor/kotlin/collector/build/libs/collector.jar $@
+
+.PHONY: collect
+collect: build/skmonitor.jar $(eval MPROCESSES:=$(shell bash -c 'source $(HOME)/.sdkman/bin/sdkman-init.sh && jps' | grep skmonitor.jar | awk '{print $$1}'))
+ifeq ($(MPROCESSES),)
+	bash -c 'source $(HOME)/.sdkman/bin/sdkman-init.sh && java -jar $^ $(SKDB_METRICS) &'
+else
+	@echo "Already running."
+endif
+
+.PHONY: stop-collecting
+stop-collecting: $(eval MPROCESSES:=$(shell bash -c 'source $(HOME)/.sdkman/bin/sdkman-init.sh && jps' | grep skmonitor.jar | awk '{print $$1}'))
+ifneq ($(MPROCESSES),)
+	kill $(MPROCESSES)
+endif
+
+

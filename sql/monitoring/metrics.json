@@ -1,0 +1,201 @@
+[
+  {
+    "name": "skdb.statement.success",
+    "unit": "{statement}",
+    "description": "Number of succeed statement executed by the database",
+    "mode": "count",
+    "spans": ["skdb.statement"],
+    "status": "!ERROR"
+  },
+  {
+    "name": "skdb.statement.failure",
+    "unit": "{statement}",
+    "description": "Number of failed statement executed by the database",
+    "mode": "count",
+    "spans": ["skdb.statement"],
+    "status": "ERROR"
+  },
+  {
+    "name": "skdb.transaction.success",
+    "unit": "{transaction}",
+    "description": "Number of succeed transaction executed by the database",
+    "mode": "count",
+    "spans": ["skdb.transaction"],
+    "status": "!ERROR"
+  },
+  {
+    "name": "skdb.transaction.failure",
+    "unit": "{transaction}",
+    "description": "Number of failed transaction executed by the database",
+    "mode": "count",
+    "spans": ["skdb.transaction"],
+    "status": "ERROR"
+  },
+  {
+    "name": "skdb.transaction.s",
+    "unit": "s",
+    "description": "Duration in seconds of each transaction executed by the database",
+    "mode": "duration",
+    "spans": ["skdb.transaction"],
+    "kind": "histogram",
+    "floatValue": true
+  },
+  {
+    "name": "skdb.statement.s",
+    "unit": "s",
+    "description": "Duration in seconds of each statement executed by the database",
+    "mode": "duration",
+    "spans": ["skdb.statement"],
+    "kind": "histogram",
+    "floatValue": true
+  },
+  {
+    "name": "skdb.replication.table.count",
+    "unit": "{table}",
+    "description": "Number of table involved durring replication",
+    "mode": "count",
+    "spans": ["skdb.replication.table"]
+  },
+  {
+    "name": "skdb.replication.batch.handling.count",
+    "unit": "{batch}",
+    "description": "Number of replication batch handled by the database",
+    "mode": "count",
+    "spans": ["skdb.replication.batch.handling"]
+  },
+  {
+    "name": "skdb.replication.batch.handling.s",
+    "unit": "s",
+    "description": "Duration in seconds of each replication batch handled by the database",
+    "mode": "duration",
+    "spans": ["skdb.replication.batch.handling"],
+    "kind": "histogram",
+    "floatValue": true
+  },
+  {
+    "name": "skdb.tail.count",
+    "unit": "tail",
+    "description": "Number of tail handled by the database",
+    "mode": "count",
+    "spans": ["skdb.tail"]
+  },
+  {
+    "name": "skdb.tail.s",
+    "unit": "s",
+    "description": "Duration in seconds of tail handled by the database",
+    "mode": "duration",
+    "spans": ["skdb.tail"],
+    "kind": "histogram",
+    "floatValue": true
+  },
+  {
+    "name": "skdb.tail.table.count",
+    "unit": "{table}",
+    "description": "Number of table involved durring tail",
+    "mode": "count",
+    "spans": ["skdb.tail.table"]
+  },
+  {
+    "name": "skdb.replication.reboot.count",
+    "unit": "{reboot}",
+    "description": "Number of reboot event occurs durring replication",
+    "mode": "event",
+    "key": "skdb.replication.reboot"
+  },
+  {
+    "name": "skdb.replication.rebuild.count",
+    "unit": "{rebuild}",
+    "description": "Number of rebuild event occurs durring replication",
+    "mode": "event",
+    "key": "skdb.replication.rebuild"
+  },
+  {
+    "name": "skdb.tail.reboot.count",
+    "unit": "{reboot}",
+    "description": "Number of reboot event occurs durring tail",
+    "mode": "event",
+    "key": "skdb.tail.reboot"
+  },
+  {
+    "name": "skdb.tail.rebuild.count",
+    "unit": "{reboot}",
+    "description": "Number of rebuild event occurs durring tail",
+    "mode": "event",
+    "key": "skdb.tail.rebuild"
+  },
+  {
+    "name": "skdb.replication.row.updates",
+    "unit": "{row}",
+    "description": "Number of row updates found durring a table replication",
+    "mode": "attribute",
+    "spans": ["skdb.replication.table"],
+    "key": "skdb.replication.row.updates",
+    "kind": "histogram"
+  },
+  {
+    "name": "skdb.replication.rejected.rows",
+    "unit": "{row}",
+    "description": "Number of rejected rows durring a table replication",
+    "mode": "attribute",
+    "spans": ["skdb.replication.table", "skdb.replication.batch.handling"],
+    "key": "skdb.replication.rejected.rows",
+    "kind": "histogram"
+  },
+  {
+    "name": "skdb.tail.rows",
+    "unit": "{row}",
+    "description": "Number of notified row changes durring a table tail",
+    "mode": "attribute",
+    "spans": ["skdb.tail.table"],
+    "key": "skdb.tail.changes",
+    "kind": "histogram"
+  },
+  {
+    "name": "skruntime.memory.persistent",
+    "unit": "bytes",
+    "description": "The persistent size used by sktore runtime",
+    "mode": "attribute",
+    "key": "skruntime.memory.persistent",
+    "kind": "histogram"
+  },
+  {
+    "name": "skruntime.memory.freetable",
+    "unit": "bytes",
+    "description": "The size of free table used by sktore runtime",
+    "mode": "attribute",
+    "key": "skruntime.memory.freetable",
+    "kind": "histogram"
+  },
+  {
+    "name": "skruntime.obstack.peak",
+    "unit": "bytes",
+    "description": "The obstack memory size peak used by sktore runtime",
+    "mode": "attribute",
+    "key": "skruntime.obstack.peak",
+    "kind": "histogram"
+  },
+  {
+    "name": "skmonitor.memory",
+    "unit": "bytes",
+    "description": "The obstack memory size used by the span itself",
+    "mode": "attribute",
+    "key": "skmonitor.memory",
+    "kind": "histogram"
+  },
+  {
+    "name": "skdb.bytes.read",
+    "unit": "bytes",
+    "description": "The number of bytes read durring a skdb operation",
+    "mode": "attribute",
+    "key": "skdb.bytes.read",
+    "kind": "histogram"
+  },
+  {
+    "name": "skdb.bytes.written",
+    "unit": "bytes",
+    "description": "The number of bytes written durring a skdb operation",
+    "mode": "attribute",
+    "key": "skdb.bytes.written",
+    "kind": "histogram"
+  }
+]

@@ -1,0 +1,94 @@
+module alias T = SKTest;
+module alias M = SKMonitor;
+
+module SKMonitorTest;
+
+const kFIRST_TRACE_ID: String = "00000000000000000000000000000061";
+const kSECOND_TRACE_ID: String = "ff000000000000000000000000000041";
+const kFIRST_SPAN_ID: String = "0000000000000061";
+const kSECOND_SPAN_ID: String = "ff00000000000041";
+
+@test
+fun traceId_invalid(): void {
+  T.expectEq(M.TraceId::getInvalid(), "00000000000000000000000000000000");
+}
+
+@test
+fun traceId_isValid(): void {
+  T.expectFalse(M.TraceId::isValid("001"));
+  T.expectFalse(M.TraceId::isValid("000000000000004z0000000000000016"));
+  T.expectFalse(M.TraceId::isValid(M.TraceId::getInvalid()));
+  T.expectTrue(M.TraceId::isValid(kFIRST_TRACE_ID));
+  T.expectTrue(M.TraceId::isValid(kSECOND_TRACE_ID));
+}
+
+@test
+fun traceId_fromHighAndLow(): void {
+  T.expectEq(M.TraceId::fromHighAndLow(0, 0), M.TraceId::getInvalid());
+  T.expectEq(M.TraceId::fromHighAndLow(0, 0x61), kFIRST_TRACE_ID);
+  T.expectEq(
+    M.TraceId::fromHighAndLow(0xff00000000000000, 0x41),
+    kSECOND_TRACE_ID,
+  );
+  T.expectEq(
+    M.TraceId::fromHighAndLow(0xff01020304050600, 0xff0a0b0c0d0e0f00),
+    "ff01020304050600ff0a0b0c0d0e0f00",
+  );
+}
+
+@test
+fun traceId_fromBytes(): void {
+  traceId = "0102030405060708090a0b0c0d0e0f00";
+  T.expectEq(
+    M.TraceId::fromBytes(M.bytesFromBase16(traceId, M.TraceId::getLength())),
+    traceId,
+  );
+}
+
+@test
+fun traceId_invalid_fromBytes(): void {
+  T.expectEq(
+    M.TraceId::fromBytes(Array[0, 1, 2, 3, 4].map(UInt8::truncate)),
+    M.TraceId::getInvalid(),
+  );
+}
+
+@test
+fun spanId_invalid(): void {
+  T.expectEq(M.SpanId::getInvalid(), "0000000000000000");
+}
+
+@test
+fun spanId_isValid(): void {
+  T.expectFalse(M.SpanId::isValid("001"));
+  T.expectFalse(M.SpanId::isValid("000000000000z000"));
+  T.expectFalse(M.SpanId::isValid(M.TraceId::getInvalid()));
+  T.expectTrue(M.SpanId::isValid(kFIRST_SPAN_ID));
+  T.expectTrue(M.SpanId::isValid(kSECOND_SPAN_ID));
+}
+
+@test
+fun spanId_fromInt(): void {
+  T.expectEq(M.SpanId::fromInt(0), M.SpanId::getInvalid());
+  T.expectEq(M.SpanId::fromInt(0x61), kFIRST_SPAN_ID);
+  T.expectEq(M.SpanId::fromInt(0xff00000000000041), kSECOND_SPAN_ID);
+}
+
+@test
+fun spanId_fromBytes(): void {
+  spanId = "090a0b0c0d0e0f00";
+  T.expectEq(
+    M.SpanId::fromBytes(M.bytesFromBase16(spanId, M.SpanId::getLength())),
+    spanId,
+  )
+}
+
+@test
+fun spanId_invalid_fromBytes(): void {
+  T.expectEq(
+    M.SpanId::fromBytes(Array[0, 1, 2, 3, 4].map(UInt8::truncate)),
+    M.SpanId::getInvalid(),
+  );
+}
+
+module end;

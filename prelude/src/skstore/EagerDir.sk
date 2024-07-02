@@ -694,6 +694,7 @@ class EagerDir{
   reducer: ?Reducer = None(),
   purgeCount: Int = 0,
   tombLimit: ?Tick = None(),
+  optCopy: ?DirName = None(),
 } extends Dir {
   fun reset(
     context: mutable SKStore.Context,
@@ -1856,7 +1857,25 @@ class EagerDir{
       !purgeCount = 0;
     };
 
+    this.optCopy.each(target ->
+      context.unsafeMaybeGetEagerDir(target).each(targetDir -> {
+        tCopy = targetDir.writeEntry(
+          context,
+          origSource,
+          writer,
+          k,
+          rvalues,
+          force,
+        );
+        context.setDir(target, tCopy);
+      })
+    );
+
     this with {childDirs, slices, purgeCount}
+  }
+
+  fun copyTo(context: mutable Context, target: DirName): void {
+    context.setDir(this.dirName, this with {optCopy => Some(target)});
   }
 
   fun purgeSlices(

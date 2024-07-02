@@ -17,6 +17,13 @@ void SKIP_saveExn(void* exc) {
   exn = exc;
 }
 
+void js_replace_exn(void* old, void* new);
+
+void SKIP_replaceExn(void* exc) {
+  js_replace_exn(exn, exc);
+  exn = exc;
+}
+
 void* SKIP_getExn() {
   return exn;
 }

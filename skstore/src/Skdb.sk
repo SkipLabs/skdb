@@ -1,0 +1,182 @@
+module alias P = SQLParser;
+
+module SKDBStore;
+
+class TypeError(msg: String) extends Exception {
+  fun getMessage(): String {
+    this.msg
+  }
+}
+
+class Filter(query: String, params: ?SKJSON.CJObject) uses Orderable {
+  static fun fromJSON(json: SKJSON.CJSON): ?Filter {
+    json match {
+    | obj @ SKJSON.CJObject _ ->
+      SKJSON.getString(obj, "query").map(query ->
+        Filter(query, SKJSON.getObject(obj, "params"))
+      )
+    | _ -> None()
+    }
+  }
+}
+
+class FilterKey(value: Filter) extends SKStore.Key
+
+class FilterFile(value: Filter) extends SKStore.File
+
+class JSONHandle(
+  value: SKStore.EHandle<SKStore.JSONID, SKStore.JSONFile>,
+) extends SKStore.File
+
+fun mapTable(
+  table: String,
+  name: String,
+  context: mutable SKStore.Context,
+  compute: (
+    mutable SKStore.Context,
+    mutable SKStore.TWriter<SKStore.JSONID, SKStore.JSONFile>,
+    SKDB.RowValues,
+  ) ~> void,
+): String {
+  dirDescr = SKDB.getTable(context, 0, P.Name::create(table));
+  handle = SKStore.EHandle(
+    SKDB.RowKey::keyType,
+    SKDB.RowValues::type,
+    dirDescr.dirName,
+  );
+  dirName = SKStore.subDirName(context, name);
+  _ = handle.map(
+    SKStore.JSONID::keyType,
+    SKStore.JSONFile::type,
+    context,
+    dirName,
+    (context, writer, _, rit) ~> {
+      compute(context, writer, rit.first)
+    },
+  );
+  dirName.toString();
+}
+
+fun toTable(
+  handle: SKStore.EHandle<SKStore.JSONID, SKStore.JSONFile>,
+  table: String,
+  context: mutable SKStore.Context,
+  conv: (
+    SKStore.JSONID,
+    mutable SKStore.NonEmptyIterator<SKStore.JSONFile>,
+  ) ~> SKJSON.CJSON,
+): void {
+  dirDescr = SKDB.getTable(context, 0, P.Name::create(table));
+  dirName = SKStore.subDirName(context, "outputs/" + table);
+  converted = handle.map(
+    SKDB.RowKey::keyType,
+    SKDB.RowValues::type,
+    context,
+    dirName,
+    (context, writer, key, it) ~> {
+      computed = conv(key, it);
+      rowValues = toRowValues(context, dirDescr, computed);
+      rowKey = SKDB.RowKey(rowValues, dirDescr.kinds);
+      writer.set(rowKey, rowValues)
+    },
+  );
+  context.maybeGetEagerDir(converted.getDirName()).each(dir ->
+    dir.copyTo(context, dirDescr.dirName)
+  )
+}
+
+fun decodeParams(input: SKJSON.CJObject): Map<String, P.Value> {
+  params = mutable Map<String, P.Value>[];
+  input match {
+  | SKJSON.CJObject(fields) ->
+    fields.cols.eachWithIndex((idx, field) -> {
+      key = field.stripPrefix("@");
+      lit = fields.values[idx] match {
+      | SKJSON.CJNull() -> P.VNull()
+      | SKJSON.CJInt(v) -> P.VInt(v)
+      | SKJSON.CJBool(v) -> if (v) P.VInt(1) else P.VInt(0)
+      | SKJSON.CJFloat(v) -> P.VFloat(v)
+      | SKJSON.CJString(v) -> P.VString(v)
+      | v -> P.VString(v.toJSON().toString())
+      };
+      params.set(key, lit)
+    })
+  };
+  params.chill()
+}
+
+fun toRowValues(
+  context: mutable SKStore.Context,
+  table: SKDB.DirDescr,
+  row: SKJSON.CJSON,
+): SKDB.RowValues {
+  row match {
+  | SKJSON.CJArray(values) -> computeRowValues(context, values, table)
+  | _ -> throw TypeError("Row value must be an array.")
+  }
+}
+
+fun computeRowValues(
+  context: mutable SKStore.Context,
+  vals: Array<SKJSON.CJSON>,
+  table: SKDB.DirDescr,
+): SKDB.RowValues {
+  values = vals.mapWithIndex((idx, v) -> convertValue(v, table.kinds[idx].i2));
+  SKDB.computeInsertRow(context, 0, None(), values, table, 1)
+}
+
+fun convertValue(v: SKJSON.CJSON, ty: P.Type): ?SKDB.CValue {
+  (ty, v) match {
+  | (_, SKJSON.CJNull()) -> None()
+  | (P.SCHEMA(), _) -> None()
+  | (P.TEXT(), SKJSON.CJString(str)) -> Some(SKDB.CString(str))
+  | (P.TEXT(), _) -> Some(SKDB.CString(v.toJSON().toString()))
+  | (P.FLOAT(), SKJSON.CJFloat(vf)) -> Some(SKDB.CFloat(vf))
+  | (P.FLOAT(), SKJSON.CJInt(vi)) -> Some(SKDB.CFloat(vi.toFloat()))
+  | (P.FLOAT(), SKJSON.CJBool(true)) -> Some(SKDB.CFloat(1.0))
+  | (P.FLOAT(), SKJSON.CJBool(false)) -> Some(SKDB.CFloat(0.0))
+  | (P.FLOAT(), SKJSON.CJString(str)) ->
+    str.toIntOption() match {
+    | Some(x) -> Some(SKDB.CFloat(x.toFloat()))
+    | _ ->
+      str.toFloatOption() match {
+      | Some(f) -> Some(SKDB.CFloat(f))
+      | _ -> None()
+      }
+    }
+  | (P.FLOAT(), _) -> None()
+  | (P.INTEGER(), SKJSON.CJInt(vi)) -> Some(SKDB.CInt(vi))
+  | (P.INTEGER(), SKJSON.CJFloat(vf)) -> Some(SKDB.CInt(vf.toInt()))
+  | (P.INTEGER(), SKJSON.CJBool(true)) -> Some(SKDB.CInt(1))
+  | (P.INTEGER(), SKJSON.CJBool(false)) -> Some(SKDB.CInt(0))
+  | (P.INTEGER(), SKJSON.CJString(str)) ->
+    str.toIntOption() match {
+    | Some(x) -> Some(SKDB.CInt(x))
+    | _ ->
+      str.toFloatOption() match {
+      | Some(f) -> Some(SKDB.CInt(f.toInt()))
+      | _ -> None()
+      }
+    }
+  | (P.INTEGER(), _) -> None()
+  | (P.JSON(), js) -> Some(SKDB.CJSON(js))
+  };
+}
+
+fun toCJArray(row: SKDB.RowValues): SKJSON.CJArray {
+  SKJSON.CJArray(
+    row.values.map(cell ->
+      cell match {
+      | Some(SKDB.CInt(value)) -> SKJSON.CJInt(value)
+      | Some(SKDB.CFloat(value)) -> SKJSON.CJFloat(value)
+      | Some(SKDB.CString(value)) -> SKJSON.CJString(value)
+      | Some(SKDB.CJSON(value)) -> value
+      | Some(SKDB.CType _)
+      | None() ->
+        SKJSON.CJNull()
+      }
+    ),
+  )
+}
+
+module end;

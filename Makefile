@@ -204,3 +204,8 @@ test-bun: npm
 	rm -r build/bun/node_modules/skdb
 	cp -r build/package/skdb build/bun/node_modules/
 	cd build/bun && bun bun.js true && bun bun.js false
+
+launch-%: build/sknpm
+	cd skstore/ts/examples && bun install
+	cd skstore && ../build/sknpm b -r --out-dir ts/examples/node_modules/skstore
+	bun run skstore/ts/examples/$*.ts -m io

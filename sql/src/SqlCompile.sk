@@ -522,6 +522,13 @@ mutable class Compiler{
           | v @ CSExpr(_) -> (n, v)
           | _ -> errorNbr(2, pos, "Incompatible types for set")
           }
+        | (CJExpr(CJGetFrom(0, n))) ->
+          this.compileExpr(context, e) match {
+          | CGNull() -> (n, CGNull())
+          | CSExpr(v) -> (n, CJExpr(CJJSON(v)))
+          | v @ CJExpr(_) -> (n, v)
+          | _ -> errorNbr(2, pos, "Incompatible types for set")
+          }
         | _ -> errorNbr(3, pos, "Invalid set")
         };
       })

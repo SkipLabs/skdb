@@ -213,6 +213,10 @@ void SKIP_saveExn(void* e) {
   exn = e;
 }
 
+void SKIP_replaceExn(void* e) {
+  exn = e;
+}
+
 static int argc = 0;
 static char** argv = NULL;
 extern char** environ;

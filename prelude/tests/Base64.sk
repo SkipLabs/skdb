@@ -1,0 +1,43 @@
+module alias T = SKTest;
+
+module Base64Test;
+
+@test
+fun base64Encode(): void {
+  Base64().encode();
+}
+
+@test
+fun base64Decode(): void {
+  Base64().decode();
+}
+
+class Base64() {
+  const cases: Array<(String, String)> = Array[
+    ("aaaaaaaaaaaaaaaaa", "YWFhYWFhYWFhYWFhYWFhYWE="),
+    ("Hello World", "SGVsbG8gV29ybGQ="),
+    ("foobar", "Zm9vYmFy"),
+    ("fooba", "Zm9vYmE="),
+    ("foob", "Zm9vYg=="),
+    ("foo", "Zm9v"),
+    ("fo", "Zm8="),
+    ("f", "Zg=="),
+    ("", ""),
+  ];
+
+  fun encode(): void {
+    static::cases.each(case -> {
+      (decoded, encoded) = case;
+      T.expectEq(Base64.encodeString(decoded), encoded)
+    });
+  }
+
+  fun decode(): void {
+    static::cases.each(case -> {
+      (decoded, encoded) = case;
+      T.expectEq(Base64.decodeString(encoded), decoded)
+    });
+  }
+}
+
+module end;

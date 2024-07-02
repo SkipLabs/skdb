@@ -32,6 +32,7 @@ class Env implements Environment {
   storage: () => Storage;
   onException: () => void;
   base64Decode: (base64: string) => Uint8Array;
+  base64Encode: (toEncode: string, url?: boolean) => string;
   createSocket: (uri: string) => WebSocket;
   createWorker: (url: URL, options?: WorkerOptions) => Wrk;
   createWorkerWrapper: (worker: Worker) => Wrk;
@@ -79,6 +80,10 @@ class Env implements Environment {
     this.encodeUTF8 = (str: string) => encoder.encode(str);
     this.base64Decode = (base64: string) =>
       Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+    this.base64Encode = (toEncode: string, url: boolean = false) => {
+      const base64 = btoa(toEncode);
+      return url ? base64.replaceAll("+", "-").replaceAll("/", "_") : base64;
+    };
     this.storage = () => localStorage;
     this.onException = () => {};
     this.createSocket = (uri: string) => new WebSocket(uri);

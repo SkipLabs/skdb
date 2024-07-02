@@ -43,6 +43,7 @@ class Env implements Environment {
   decodeUTF8: (utf8: ArrayBuffer) => string;
   encodeUTF8: (str: string) => Uint8Array;
   base64Decode: (base64: string) => Uint8Array;
+  base64Encode: (toEncode: string, url?: boolean) => string;
   environment: Array<string>;
   throwRuntime: (code: int) => void;
   createSocket: (uri: string) => WebSocket;
@@ -87,6 +88,8 @@ class Env implements Environment {
     this.encodeUTF8 = (v) => encoder.encode(v);
     this.environment = environment ?? [];
     this.base64Decode = (base64) => Buffer.from(base64, "base64");
+    this.base64Encode = (toEncode: string, url: boolean = false) =>
+      Buffer.from(toEncode).toString(url ? "base64url" : "base64");
     this.throwRuntime = (code: int) => {
       this.onException();
       process.exit(code);

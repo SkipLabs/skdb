@@ -595,7 +595,7 @@ const watchChangesTests: (asWorker: boolean) => Test[] = (
         return result;
       },
       check: (res) => {
-        let expected = [];
+        let expected = [{ init: [] }];
         expect(res).toEqual(expected);
       },
     },

@@ -162,7 +162,7 @@ class EReducer<V2, V3: File>{
   type: File ~> V3,
   canReset: Bool,
   init: (mutable Iterator<V2> ~> Array<V3>),
-  update: (Array<V3>, Array<V2>, Array<V3>) ~> ?Array<V3>,
+  update: (Array<V3>, Array<V2>, Array<V2>) ~> ?Array<V3>,
 }
 
 /*****************************************************************************/
@@ -251,6 +251,29 @@ base class Handle<K: Key, +V: File> {
     };
     values[0]
   }
+
+  fun maybeGet(context: mutable Context, key: K): ?V {
+    values = this.getArray(context, key);
+    if (values.size() == 0) return None();
+    Some(values[0])
+  }
+
+  fun unsafeGetArray(context: mutable Context, key: K): Array<V> {
+    dir = context.unsafeGetDir(this.getDirName());
+    dir.getArrayRaw(key).map(this.getType())
+  }
+
+  fun unsafeGet(context: mutable Context, key: K): V {
+    arr = this.unsafeGetArray(context, key);
+    invariant(arr.size() == 1);
+    arr[0]
+  }
+
+  fun unsafeMaybeGet(context: mutable Context, key: K): ?V {
+    values = this.unsafeGetArray(context, key);
+    if (values.size() == 0) return None();
+    Some(values[0])
+  }
 }
 
 /*****************************************************************************/
@@ -283,44 +306,18 @@ class LHandle<K: Key, +V: File>(
     LHandle(typeKey, type, dir.getDirName())
   }
 
-  static fun createAsync<K: Key, V: File>(
-    typeKey: Key ~> K,
-    type: File ~> V,
-    context: mutable Context,
-    dirName: DirName,
-    f: (mutable Context, LHandle<K, V>, K) ~> ?Array<V>,
-    collect: Bool = true,
-  ): LHandle<K, V> {
-    dir = LazyDir::create(
-      context,
-      dirName,
-      (context, dirName, key) ~> {
-        f(context, LHandle(typeKey, type, dirName), typeKey(key));
-      },
-      collect,
-    );
-    LHandle(typeKey, type, dir.getDirName())
-  }
-
   fun getKeyType(): SKStore.Key ~> K {
     this.typeKey
-  }
-
-  fun getArrayAsync(context: mutable Context, key: Key): Array<V> {
-    dir = context.unsafeGetLazyDir(this.getDirName());
-    results = dir.getArrayAsync(context, key).map(this.getType());
-    results
   }
 
   fun getArrayWithOptions(
     context: mutable Context,
     key: Key,
-    isAsync: Bool,
     throwOnCycle: Bool,
   ): Array<V> {
     dir = context.unsafeGetLazyDir(this.getDirName());
     results = dir
-      .getArrayWithOptions(context, key, isAsync, throwOnCycle)
+      .getArrayWithOptions(context, key, throwOnCycle)
       .map(this.getType());
     results
   }
@@ -457,7 +454,7 @@ class EHandle<K: Key, V: File>(
             reducer.update(
               state.map(reducer.type),
               old.map(typeOutput),
-              new.map(reducer.type),
+              new.map(typeOutput),
             ),
         },
       ),
@@ -582,23 +579,6 @@ class EHandle<K: Key, V: File>(
 
   fun containsKey(context: mutable Context, key: K): Bool {
     this.getArray(context, key).size() > 0
-  }
-
-  fun maybeGet(context: mutable Context, key: K): ?V {
-    values = this.getArray(context, key);
-    if (values.size() == 0) return None();
-    Some(values[0])
-  }
-
-  fun unsafeGetArray(context: mutable Context, key: K): Array<V> {
-    dir = context.unsafeGetDir(this.getDirName());
-    dir.getArrayRaw(key).map(this.getType())
-  }
-
-  fun unsafeGet(context: mutable Context, key: K): V {
-    arr = this.unsafeGetArray(context, key);
-    invariant(arr.size() == 1);
-    arr[0]
   }
 }
 

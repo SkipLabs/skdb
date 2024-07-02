@@ -26,13 +26,12 @@ fun getLazyData(
   context: mutable SKStore.Context,
   dirName: SKStore.DirName,
   key: SKStore.Key,
-  isAsync: Bool = false,
 ): Array<SKStore.File> {
   context.unsafeGetDir(dirName) match {
   | SKStore.DeletedDir _ ->
     invariant_violation("Trying to write to an empty directory")
   | SKStore.EagerDir _ -> invariant_violation("Was expecting a Lazy dir")
-  | ldir @ SKStore.LazyDir _ -> ldir.unsafeGetArray(context, key, isAsync)
+  | ldir @ SKStore.LazyDir _ -> ldir.unsafeGetArray(context, key)
   }
 }
 

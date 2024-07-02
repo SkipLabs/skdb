@@ -1713,6 +1713,7 @@ fun check_tracking(
 
 fun check_args_length<T>(
   pos: FileRange,
+  fpos: FileRange,
   param_tya: Array<N.Type_>,
   args_tya: Array<T>,
 ): void {
@@ -1721,18 +1722,22 @@ fun check_args_length<T>(
   argssz.compare(paramsz) match {
   | EQ() -> void
   | GT() ->
-    SkipError.error(
-      pos,
-      `Too many arguments, expected ${paramsz} but got ${argssz}`,
+    SkipError.errorl(
+      List[
+        (pos, `Too many arguments, expected ${paramsz} but got ${argssz}`),
+        (fpos, "Definition is here"),
+      ],
     )
   | LT() ->
     for (i in Range(argssz, paramsz)) {
       param_tya[i] match {
       | (_, N.Tdefault(_)) -> void
       | _ ->
-        SkipError.error(
-          pos,
-          `Missing arguments, expected ${paramsz} but got ${argssz}`,
+        SkipError.errorl(
+          List[
+            (pos, `Missing arguments, expected ${paramsz} but got ${argssz}`),
+            (fpos, "Definition is here"),
+          ],
         )
       }
     }
@@ -1781,19 +1786,21 @@ fun call(
   context: mutable SKStore.Context,
   next_id: () -> Int,
   pos: FileRange,
+  fpos: FileRange,
   env: TUtils.Env,
   acc: TUtils.Acc,
   params_ty: Parameters<N.Type_>,
   args: Parameters<(Int, N.Type_, FileRange)>,
   invalid_arg_msg: String,
 ): (TUtils.Acc, Array<(?N.Name, TAst.Ordered_expr)>) {
-  call_(context, next_id, pos, env, acc, params_ty, args, invalid_arg_msg)
+  call_(context, next_id, pos, fpos, env, acc, params_ty, args, invalid_arg_msg)
 }
 
 fun call_(
   context: mutable SKStore.Context,
   next_id: () -> Int,
   pos: FileRange,
+  fpos: FileRange,
   env: TUtils.Env,
   acc: TUtils.Acc,
   params_ty: Parameters<N.Type_>,
@@ -1803,7 +1810,7 @@ fun call_(
   (params_ty, args) match {
   | (Positional(tyl), Positional(args1)) ->
     tyl1 = tyl.map(cur1 -> TUtils.contra_promote(context, env, acc, cur1));
-    check_args_length(pos, tyl1, args1);
+    check_args_length(pos, fpos, tyl1, args1);
     join_args(context, next_id, env, acc, tyl1, args1, invalid_arg_msg)
   | (Named(ty_map), Named(args1)) ->
     maxArg = args1.reduce((cur, _, i__) -> max(i__.i0, cur), 0);
@@ -1866,6 +1873,7 @@ fun tfun_call(
     context,
     next_id,
     pos,
+    tfun_ty.i0,
     env,
     acc,
     params_ty,
@@ -1936,6 +1944,7 @@ fun constructor_call(
     context,
     next_id,
     pos,
+    cd.name.i0,
     env,
     acc,
     params_ty.fromSome(),
@@ -2516,7 +2525,7 @@ fun expr_(
         );
         rty = TUtils.type_subst(subst, acc, fd.return_);
         origTy = (
-          pos1,
+          fd.name.i0,
           N.Tfun(
             Ast.Vnone(),
             (Array[N.Fpure()], tracking),
@@ -2624,6 +2633,7 @@ fun expr_(
       context,
       next_id,
       pos,
+      cd.name.i0,
       env,
       acc3,
       params_ty1,
@@ -5320,6 +5330,7 @@ fun lambda(
         context,
         next_id,
         lam_pos,
+        fpos,
         env,
         acc,
         params_ty,

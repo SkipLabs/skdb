@@ -5,3 +5,11 @@ Missing arguments, expected 1 but got 0
 20 |   f()
    |   ^^^
 21 | }
+
+File "tests/typechecking/invalid/default_arg_5.sk", line 18, characters 26-39:
+Definition is here
+16 |
+17 | fun foo(): void {
+18 |   f = if (p()) dpos else (a -> dpos(a));
+   |                          ^^^^^^^^^^^^^^
+19 |   f(0);

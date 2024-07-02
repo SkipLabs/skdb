@@ -6,13 +6,11 @@ You cannot capture this variable
   |             ^^^
 7 | }
 
-File "tests/typechecking/invalid/frozen_lambda_captures_untracked.sk", line 6, characters 13-15:
+File "tests/typechecking/invalid/frozen_lambda_captures_untracked.sk", line 1, characters 15-17:
 Mutable because of this position
-4 |
-5 | untracked fun main(): void {
-6 |   _ = () ~> foo();
-  |             ^^^
-7 | }
+1 | untracked fun foo(): Int {
+  |               ^^^
+2 |   0
 
 File "tests/typechecking/invalid/frozen_lambda_captures_untracked.sk", line 6, characters 7-17:
 Because this closure was declared as pure (~>)

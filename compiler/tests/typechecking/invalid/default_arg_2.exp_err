@@ -5,3 +5,9 @@ Missing arguments, expected 1 but got 0
 24 |   g()
    |   ^^^
 25 | }
+
+File "tests/typechecking/invalid/default_arg_2.sk", line 1, characters 5-8:
+Definition is here
+1 | fun dpos(x: Int = 42): void {
+  |     ^^^^
+2 |   _ = x;

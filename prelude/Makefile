@@ -80,5 +80,5 @@ $(OUT_DIR)/libstd.sklib: $(OUT_DIR)/libskip_runtime64.a $(OUT_DIR)/libbacktrace.
 clean:
 	rm -f $(OUT_DIR)/libbacktrace.a $(OUT_DIR)/libskip_runtime64.a $(OUT_DIR)/libstd.sklib
 	$(MAKE) -C runtime clean
-	(test ! -f libbacktrace/Makefile && echo "Warning: libbacktrace submodule or Makefile not initialized") || $(MAKE) -C libbacktrace clean
+	(test ! -f libbacktrace/Makefile && echo "Warning: libbacktrace submodule or Makefile not initialized") || $(MAKE) -C libbacktrace distclean
 	find . -name 'Skargo.toml' -print0 | sed 's|Skargo.toml|target|g' | xargs -0 rm -rf

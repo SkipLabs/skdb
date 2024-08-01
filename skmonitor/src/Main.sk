@@ -1,0 +1,35 @@
+module SKMonitor;
+
+untracked fun main(): void {
+  saved = SKStore.newObstack();
+  startSpan();
+  setName("skmonitor.test.trace");
+  incrIntAttribute("int.attribute", 2);
+  incrIntAttribute("int.attribute", 3);
+  setStringAttribute("string.attribute", "my value");
+  setFloatAttribute("float.attribute", 2.345);
+  setBoolAttribute("bool.attribute", false);
+  #log (debug, "Event debug message");
+  #log (info, "Event info message");
+  setStringArrayAttribute("string.array.attribute", Array["v1", "v2"]);
+  setErrorStatus("It's the error");
+  startSpan();
+  setName("skmonitor.test.child");
+  setStringAttribute("child.string.attribute", "I'm a child span.");
+  endSpan();
+  startSpan();
+  setName("skmonitor.test.skdb");
+  setIntAttribute("skdb.bytes.read", 256);
+  setIntAttribute("skdb.bytes.written", 8 * 1024);
+  setIntAttribute("skdb.replication.writes", 3);
+  setIntAttribute("skdb.replication.reads", 24);
+  count = 0;
+  while (count < 10000) {
+    !count = count + 1
+  };
+  endSpan();
+  endSpan();
+  SKStore.destroyObstack(saved);
+}
+
+module end;

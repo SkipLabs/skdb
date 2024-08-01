@@ -38,6 +38,10 @@ void reset_heap_end() {
   heap_end = real_heap_end;
 }
 
+uint64_t heap_end_diff() {
+  return real_heap_end - heap_end;
+}
+
 unsigned char* decr_heap_end(size_t size) {
   heap_end -= size;
   return heap_end;

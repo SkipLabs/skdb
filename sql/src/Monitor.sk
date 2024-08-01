@@ -1,0 +1,209 @@
+module alias P = SQLParser;
+
+module SKDBMonitor;
+
+const kReplicationRowUpdates: String = "skdb.replication.row.updates";
+const kReplicationRejectedRows: String = "skdb.replication.rejected.rows";
+const kReplicationReboot: String = "skdb.replication.reboot";
+const kReplicationRebuild: String = "skdb.replication.rebuild";
+const kReplicationFeedback: String = "skdb.replication.feedback";
+const kReplicationTable: String = "skdb.replication.table";
+const kReplicationBatchHandling: String = "skdb.replication.batch.handling";
+const kTailTable: String = "skdb.tail.table";
+const kTailReboot: String = "skdb.tail.reboot";
+const kTailRebuild: String = "skdb.tail.rebuild";
+const kTailCommit: String = "skdb.tail.commit";
+const kTailChanges: String = "skdb.tail.changes";
+const kExecuted: String = "skdb.executed";
+const kBytesRead: String = "skdb.bytes.read";
+const kBytesWritten: String = "skdb.bytes.written";
+const kDatabase: String = "db.namespace";
+const kUser: String = "db.user";
+const kSystem: String = "db.system";
+const kStmtType: String = "db.operation.name";
+const kStatement: String = "skdb.statement";
+const kTransaction: String = "skdb.transation";
+
+fun logStatement(stmt: P.Stmt): void {
+  SKMonitor.setStringAttribute(kStmtType, stmt.getClassName())
+}
+
+fun replicationReboot(): void {
+  SKMonitor.addEvent(kReplicationReboot, Map[])
+}
+
+fun replicationRebuild(): void {
+  SKMonitor.addEvent(kReplicationRebuild, Map[])
+}
+
+fun replicationFeedback(): void {
+  SKMonitor.addEvent(kReplicationFeedback, Map[])
+}
+
+fun tailReboot(): void {
+  SKMonitor.addEvent(kTailReboot, Map[])
+}
+
+fun tailRebuild(): void {
+  SKMonitor.addEvent(kTailRebuild, Map[])
+}
+
+fun tailCommit(): void {
+  SKMonitor.addEvent(kTailCommit, Map[])
+}
+
+fun addReplicationRowUpdates(rows: Int): void {
+  SKMonitor.incrIntAttribute(kReplicationRowUpdates, rows)
+}
+
+fun addReplicationRejectedRows(rows: Int): void {
+  SKMonitor.incrIntAttribute(kReplicationRejectedRows, rows)
+}
+
+fun addTailChanges(changes: Int): void {
+  SKMonitor.incrIntAttribute(kTailChanges, changes)
+}
+
+fun setName(name: String): void {
+  SKMonitor.setName(name)
+}
+
+fun setDatabase(name: String): void {
+  SKMonitor.setStringAttribute(kDatabase, name)
+}
+
+fun setUser(name: String): void {
+  SKMonitor.setStringAttribute(kUser, name)
+}
+
+fun addBytesRead(bytes: Int): void {
+  SKMonitor.incrIntAttribute(kBytesRead, bytes)
+}
+
+fun addBytesWritten(bytes: Int): void {
+  SKMonitor.incrIntAttribute(kBytesWritten, bytes)
+}
+
+fun start(): void {
+  // TODO set version when FIXED
+  // #env("SKARGO_PKG_VERSION")
+  SKMonitor.startSpan(Some(SKMonitor.Service("skdb", "0.1.0")));
+  SKMonitor.setStringAttribute(kSystem, "sql")
+}
+
+fun startTransaction(): void {
+  start();
+  setName(kTransaction)
+}
+
+fun startStatement(): void {
+  start();
+  setName(kStatement)
+}
+
+fun startReplicationTable(): void {
+  start();
+  setName(kReplicationTable)
+}
+
+fun startReplicationBatchHangling(): void {
+  start();
+  setName(kReplicationBatchHandling)
+}
+
+fun startTailTable(): void {
+  start();
+  setName(kTailTable)
+}
+
+fun end(): void {
+  SKMonitor.endSpan()
+}
+
+fun endTransaction(): void {
+  end()
+}
+
+fun endStatement(): void {
+  end()
+}
+
+fun endReplicationTable(): void {
+  end()
+}
+
+fun endReplicationBatchHangling(): void {
+  end()
+}
+
+fun endTailTable(): void {
+  end()
+}
+
+module end;
+
+module SKDB;
+
+fun skipExit<T>(res: Int): T {
+  SKDBMonitor.end();
+  SKStore.destroy_Obstack(None());
+  .skipExit(res)
+}
+
+fun byteSize(value: String): Int {
+  String.byteSize(value).toInt()
+}
+
+fun print_error(error: String): void {
+  SKDBMonitor.addBytesWritten(byteSize(error));
+  .print_error(error);
+}
+
+fun print_raw(str: String): void {
+  SKDBMonitor.addBytesWritten(byteSize(str).toInt());
+  .print_raw(str);
+}
+
+fun print_string<T: readonly Show>(value: T): void {
+  .print_raw(value.toString());
+  .print_newline()
+}
+
+fun read_to_end(): String {
+  text = .read_to_end();
+  SKDBMonitor.addBytesRead(byteSize(text));
+  text
+}
+
+fun read_line(): ?String {
+  .read_line().map(line -> {
+    SKDBMonitor.addBytesRead(byteSize(line));
+    line
+  })
+}
+
+module end;
+
+module SKCSV;
+
+fun read_line(): ?String {
+  SKDB.read_line()
+}
+
+fun skipExit<T>(res: Int): T {
+  SKDB.skipExit(res)
+}
+
+fun print_error(error: String): void {
+  SKDB.print_error(error)
+}
+
+fun print_raw(str: String): void {
+  SKDB.print_raw(str)
+}
+
+fun print_string<T: readonly Show>(value: T): void {
+  SKDB.print_string(value)
+}
+
+module end;

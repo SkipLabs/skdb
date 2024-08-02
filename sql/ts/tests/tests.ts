@@ -1643,13 +1643,15 @@ export const tests = (asWorker: boolean) => {
           { data: { field1: " \u2022 T" } },
         ];
         for (let i in objects) {
+          // @ts-ignore
           objects[i].data = JSON.stringify(objects[i].data);
+          // @ts-ignore
           await skdb.exec("insert into t1 values(@data)", objects[i]);
         }
         return await skdb.exec("select * from t1");
       },
       check: (res) => {
-        let all = res.map((x) => JSON.parse(x.a).field1).join("");
+        let all = res.map((x) => x.a.field1).join("");
         expect(all).toMatch(/x\u2019s re/);
         expect(all).toMatch(/y\u2013 1/);
         expect(all).toMatch(/z\u00ae b/);

@@ -17,6 +17,7 @@
 #endif
 
 #define STACK_INIT_CAPACITY (1024)
+#define DEFAULT_CAPACITY (1024L * 1024L * 1024L * 16L)
 
 typedef uint64_t SkipInt;
 
@@ -72,6 +73,8 @@ void sk_print_ctx_table();
 #define ERROR_MAPPING_VERSION 43
 #define ERROR_LOCKING 44
 #define ERROR_FILE_IO 45
+#define ERROR_MALLOC 46
+#define ERROR_MAPPING_CAPACITY 47
 #define ERROR_MEMORY_CHECK 88
 #define ERROR_CONTEXT_CHECK 102
 #define ERROR_ARG_PARSE 103
@@ -338,6 +341,7 @@ void SKIP_call_after_unlock(char*, char*);
 
 void SKIP_throw(void*);
 __attribute__((noreturn)) void SKIP_throw_cruntime(int32_t);
+__attribute__((noreturn)) void SKIP_throw_cruntime_with_message(int32_t, char*);
 
 void sk_commit(char*, uint32_t);
 char* SKIP_context_get_unsafe();

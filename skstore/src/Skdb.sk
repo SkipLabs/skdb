@@ -85,22 +85,20 @@ fun toTable(
   )
 }
 
-fun decodeParams(input: SKJSON.CJObject): Map<String, P.Value> {
+fun decodeParams(ps: Vector<(String, SKJSON.CJSON)>): Map<String, P.Value> {
   params = mutable Map<String, P.Value>[];
-  input match {
-  | SKJSON.CJObject(fields) ->
-    fields.cols.eachWithIndex((idx, field) -> {
-      key = field.stripPrefix("@");
-      lit = fields.values[idx] match {
-      | SKJSON.CJNull() -> P.VNull()
-      | SKJSON.CJInt(v) -> P.VInt(v)
-      | SKJSON.CJBool(v) -> if (v) P.VInt(1) else P.VInt(0)
-      | SKJSON.CJFloat(v) -> P.VFloat(v)
-      | SKJSON.CJString(v) -> P.VString(v)
-      | v -> P.VString(v.toJSON().toString())
-      };
-      params.set(key, lit)
-    })
+  for (param in ps) {
+    key = param.i0.stripPrefix("@");
+    lit = param.i1 match {
+    | SKJSON.CJNull() -> P.VNull()
+    | SKJSON.CJInt(v) -> P.VInt(v)
+    | SKJSON.CJBool(v) -> if (v) P.VInt(1) else P.VInt(0)
+    | SKJSON.CJFloat(v) if (v.toInt().toFloat() == v) -> P.VInt(v.toInt())
+    | SKJSON.CJFloat(v) -> P.VFloat(v)
+    | SKJSON.CJString(v) -> P.VString(v)
+    | v -> P.VString(v.toJSON().toString())
+    };
+    params.set(key, lit)
   };
   params.chill()
 }
@@ -178,5 +176,40 @@ fun toCJArray(row: SKDB.RowValues): SKJSON.CJArray {
     ),
   )
 }
+
+fun execQuery(
+  query: String,
+  params: Vector<(String, SKJSON.CJSON)>,
+): Result<void, .Exception> {
+  initBufferedLogger();
+  options = SKDB.Options{
+    backtrace => false,
+    alwaysAllowJoins => false,
+    sync => false,
+    showUsedIndexes => false,
+    format => SKDB.OFK_JS(),
+    expectQueryParams => true,
+  };
+  SKDB.eval(query, options, decodeParams(params)) match {
+  | Failure(err) ->
+    clearBufferedLogger();
+    Failure(err)
+  | Success _ ->
+    clearBufferedLogger();
+    Success(void)
+  }
+}
+
+@debug
+@cpp_extern("SKIP_initBufferedLogger")
+native fun initBufferedLogger(): void;
+
+@debug
+@cpp_extern("SKIP_endBufferedLogger")
+native fun endBufferedLogger(): String;
+
+@debug
+@cpp_extern("SKIP_clearBufferedLogger")
+native fun clearBufferedLogger(): void;
 
 module end;

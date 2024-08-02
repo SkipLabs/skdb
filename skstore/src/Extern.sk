@@ -253,7 +253,7 @@ fun multimap(
         DirName::create(handleId),
       );
       mapHandle = FnHandle::make(
-        UInt32::truncate(SKJSON.asFloat(mapping[1]).toInt()),
+        UInt32::truncate(SKJSON.asInt(mapping[1]).toInt()),
       );
       return (eager, mapHandle.map)
     })
@@ -283,7 +283,7 @@ fun multimapReduce(
         DirName::create(handleId),
       );
       mapHandle = FnHandle::make(
-        UInt32::truncate(SKJSON.asFloat(mapping[1]).toInt()),
+        UInt32::truncate(SKJSON.asInt(mapping[1]).toInt()),
       );
       return (eager, mapHandle.map)
     })
@@ -367,7 +367,9 @@ fun asyncResult(
     };
     context.update();
   }) match {
-  | Success _ -> 1.0
+  | Success _ ->
+    SKDB.jsNotifyAll();
+    1.0
   | Failure(err) -> -getErrorHdl(err)
   };
 }
@@ -546,12 +548,396 @@ fun tsCreateFor(session: String): Float {
   createFor(session)
 }
 
+@export("SKIP_SKStore_create")
+fun tsCreate(): Float {
+  obstack = newObstack();
+  res = createFor(Ksuid::create().toString());
+  SKStore.destroyObstack(obstack);
+  res;
+}
+
 fun previous(value: SKJSON.CJObject): ?SKJSON.CJSON {
   if (SKJSON.getString(value, "status") == Some("success")) {
     Some(SKJSON.filter(value, f ~> f == "playload" || f == "metadata"))
   } else {
     SKJSON.getValue(value, "previous")
   }
+}
+
+@cpp_export("SKIP_SKStore_nameForMeta")
+fun nameForMeta(script: String, line: Int, column: Int): String {
+  toEncode = `${script}:${line}:${column}`;
+  encoded = `b64_${Base64.encodeString(toEncode, true)}`;
+  encoded.searchRight(ch ~> ch != '=') match {
+  | Some(i) ->
+    _ = i.next();
+    encoded.getIter().substring(i)
+  | None() -> ""
+  }
+}
+
+fun toValues(
+  entry: Array<SKJSON.CJSON>,
+  prefix: String = "",
+): (String, Vector<(String, SKJSON.CJSON)>) {
+  exprs = mutable Vector<String>[];
+  params = mutable Vector<(String, SKJSON.CJSON)>[];
+  for (i in Range(0, entry.size())) {
+    field = entry[i];
+    field match {
+    | SKJSON.CJString _
+    | SKJSON.CJFloat _
+    | SKJSON.CJInt _
+    | SKJSON.CJBool _ ->
+      params.push((`${prefix}${i}`, field))
+    | _ ->
+      params.push((`${prefix}${i}`, SKJSON.CJString(field.toJSON().toString())))
+    };
+    exprs.push(`@${prefix}${i}`);
+  };
+  (exprs.join(" , "), params.chill());
+}
+
+fun toSelectWhere(
+  select: SKJSON.CJObject,
+  prefix: String = "",
+): (String, Vector<(String, SKJSON.CJSON)>) {
+  select match {
+  | SKJSON.CJObject(fields) ->
+    if (fields.isEmpty()) {
+      ("true", Vector[])
+    } else {
+      exprs = mutable Vector<String>[];
+      params = mutable Vector<(String, SKJSON.CJSON)>[];
+      fields.cols.eachWithIndex((idx, col) -> {
+        fields.values[idx] match {
+        | SKJSON.CJArray(arr) ->
+          inVal = mutable Vector<String>[];
+          for (jdx in Range(0, arr.size())) {
+            pName = `${prefix}${jdx}_${col}`;
+            params.push((pName, arr[jdx]));
+            inVal.push(`@${pName}`);
+          };
+          exprs.push(`${col} IN (${inVal.join(", ")})`)
+        | field ->
+          pName = `${prefix}_${col}`;
+          params.push((pName, field));
+          exprs.push(`${col} = @${pName}`)
+        }
+      });
+      (exprs.join(" AND "), params.chill())
+    }
+  }
+}
+
+fun toWhere(
+  strColumns: String,
+  entry: SKJSON.CJArray,
+  prefix: String,
+): (String, Vector<(String, SKJSON.CJSON)>) {
+  columns = strColumns.split(",");
+  entry match {
+  | SKJSON.CJArray(earr) ->
+    if (columns.size() != earr.size()) {
+      throw invariant_violation("Invalid entry type.")
+    };
+    exprs = mutable Vector<String>[];
+    params = mutable Vector<(String, SKJSON.CJSON)>[];
+    for (i in Range(0, columns.size())) {
+      col = columns[i];
+      field = earr[i];
+      field match {
+      | SKJSON.CJArray(farr) ->
+        inVal = mutable Vector<String>[];
+        for (jdx in Range(0, farr.size())) {
+          pName = `${prefix}${jdx}_${col}`;
+          params.push((pName, farr[jdx]));
+          inVal.push(`@${pName}`);
+        };
+        exprs.push(`${col} IN (${inVal.join(", ")})`)
+      | _ ->
+        pName = `${prefix}_${col}`;
+        params.push((pName, field));
+        exprs.push(`${col} = @${pName}`)
+      }
+    };
+    (exprs.join(" AND "), params.chill())
+  }
+}
+
+fun toSets(
+  update: SKJSON.CJObject,
+  prefix: String,
+): (String, Vector<(String, SKJSON.CJSON)>) {
+  exprs = mutable Vector<String>[];
+  params = mutable Vector<(String, SKJSON.CJSON)>[];
+  update match {
+  | SKJSON.CJObject(fields) ->
+    fields.cols.eachWithIndex((idx, column) -> {
+      field = fields.values[idx];
+      params.push((`${prefix}${column}`, field));
+      exprs.push(`${column} = @${prefix}${column}`);
+    })
+  };
+  (exprs.join(" , "), params.chill())
+}
+
+fun toInsertQuery(
+  name: String,
+  entries: SKJSON.CJArray,
+  update: Bool,
+): (String, Vector<(String, SKJSON.CJSON)>) {
+  params = mutable Vector<(String, SKJSON.CJSON)>[];
+  entries match {
+  | SKJSON.CJArray(arr) ->
+    values = arr.mapWithIndex((idx, vs) -> {
+      (q, ps) = toValues(SKJSON.expectArray(vs), `v${idx}_`);
+      ps.each(params.push);
+      `(${q})`
+    });
+    (
+      `INSERT ${if (update) "OR REPLACE " else {
+        ""
+      }}INTO "${name}" VALUES ${values.join(", ")};`,
+      params.chill(),
+    )
+  }
+}
+
+fun toCreatesQuery(schemas: SKJSON.CJArray): Result<String, void> {
+  vec = mutable Vector[];
+  schemas match {
+  | SKJSON.CJArray(ss) ->
+    for (schema in ss) {
+      SKJSON.optObject(schema) match {
+      | Some(table) ->
+        strcreate = toCreateQuery(table)?;
+        vec.push(strcreate)
+      | _ -> return Failure(void)
+      }
+    }
+  };
+  Success(vec.join("\n"));
+}
+
+fun toCreateQuery(table: SKJSON.CJObject): Result<String, void> {
+  SKJSON.getString(table, "name") match {
+  | Some(name) ->
+    SKJSON.getArray(table, "expected") match {
+    | Some(cols) ->
+      strcolumns = toColumns(cols)?;
+      Success(`CREATE TABLE IF NOT EXISTS "${name}" ${strcolumns};`)
+    | _ -> Failure(void)
+    }
+  | _ -> Failure(void)
+  };
+}
+
+fun toUpdateQuery(
+  name: String,
+  columns: String,
+  entry: SKJSON.CJArray,
+  updates: SKJSON.CJObject,
+): (String, Vector<(String, SKJSON.CJSON)>) {
+  params = mutable Vector<(String, SKJSON.CJSON)>[];
+  (where, wps) = toWhere(columns, entry, "w_");
+  wps.each(params.push);
+  (sets, sps) = toSets(updates, "u_");
+  sps.each(params.push);
+  (`UPDATE "${name}" SET ${sets} WHERE ${where};`, params.chill())
+}
+
+fun toColumns(columns: SKJSON.CJArray): Result<String, void> {
+  vec = mutable Vector[];
+  columns match {
+  | SKJSON.CJArray(cs) ->
+    for (column in cs) {
+      SKJSON.optObject(column) match {
+      | Some(obj) ->
+        strCol = toColumn(obj)?;
+        vec.push(strCol)
+      | _ -> return Failure(void)
+      }
+    }
+  };
+  Success(`(${vec.join(",")})`);
+}
+
+fun toColumn(column: SKJSON.CJObject): Result<String, void> {
+  SKJSON.getString(column, "name") match {
+  | Some(name) ->
+    SKJSON.getString(column, "type") match {
+    | Some(type) ->
+      notnull = if (SKJSON.getBool(column, "notnull")) " NOT NULL" else "";
+      primary = if (SKJSON.getBool(column, "primary")) " PRIMARY KEY" else "";
+      Success(`${name} ${type}${notnull}${primary}`)
+    | _ -> Failure(void)
+    }
+  | _ -> Failure(void)
+  }
+}
+
+fun toUpdateWhereQuery(
+  name: String,
+  where: SKJSON.CJObject,
+  updates: SKJSON.CJObject,
+): (String, Vector<(String, SKJSON.CJSON)>) {
+  params = mutable Vector<(String, SKJSON.CJSON)>[];
+  (qWhere, wps) = toSelectWhere(where, "uw_");
+  wps.each(params.push);
+  (sets, sps) = toSets(updates, "us_");
+  sps.each(params.push);
+  (`UPDATE "${name}" SET ${sets} WHERE ${qWhere};`, params.chill())
+}
+
+fun toSelectQuery(
+  name: String,
+  select: SKJSON.CJObject,
+  columns: SKJSON.CJArray,
+): (String, Vector<(String, SKJSON.CJSON)>) {
+  (w, ps) = toSelectWhere(select, "s_");
+  (strColumns, orderBy) = columns match {
+  | SKJSON.CJArray(arr) if (arr.isEmpty()) -> ("*", "")
+  | SKJSON.CJArray(arr) ->
+    strColumns = arr.map(SKJSON.asString);
+    (
+      strColumns.join(", "),
+      ` ORDER BY ${strColumns.map(n -> `${n} ASC`).join(", ")}`,
+    )
+  };
+  (`SELECT ${strColumns} FROM "${name}" WHERE ${w}${orderBy};`, ps);
+}
+
+fun toDeleteQuery(
+  name: String,
+  columns: String,
+  entry: SKJSON.CJArray,
+): (String, Vector<(String, SKJSON.CJSON)>) {
+  (where, wps) = toWhere(columns, entry, "");
+  (`DELETE FROM "${name}" WHERE ${where};`, wps)
+}
+
+fun toDeleteWhereQuery(
+  name: String,
+  where: SKJSON.CJObject,
+): (String, Vector<(String, SKJSON.CJSON)>) {
+  (qWhere, wps) = toSelectWhere(where, "d_");
+  (`DELETE FROM "${name}" WHERE ${qWhere};`, wps)
+}
+
+fun execQuery(supplier: () ~> (String, Vector<(String, SKJSON.CJSON)>)): Float {
+  try {
+    (query, params) = supplier();
+    DBUtils.execQuery(query, params) match {
+    | Success _ -> 1.0
+    | Failure(CRuntimeError(code, optMessage)) ->
+      -getErrorHdl(Error(optMessage.default(`Runtime error ${code}`)))
+    | Failure(e) -> -getErrorHdl(e)
+    }
+  } catch {
+  | e -> -getErrorHdl(e)
+  }
+}
+
+@export("SKIP_SKStore_insert")
+fun insert(name: String, entries: SKJSON.CJArray, update: UInt32): Float {
+  execQuery(() ~> toInsertQuery(name, entries, update != 0))
+}
+
+@export("SKIP_SKStore_createTables")
+fun createTables(schemas: SKJSON.CJArray): Float {
+  toCreatesQuery(schemas) match {
+  | Success(query) -> execQuery(() ~> (query, Vector[]))
+  | _ -> -getErrorHdl(Error("Unable to create tables: Invalid schemas."))
+  }
+}
+
+@export("SKIP_SKStore_update")
+fun update(
+  name: String,
+  columns: String,
+  entry: SKJSON.CJArray,
+  updates: SKJSON.CJObject,
+): Float {
+  execQuery(() ~> toUpdateQuery(name, columns, entry, updates))
+}
+
+@export("SKIP_SKStore_updateWhere")
+fun updateWhere(
+  name: String,
+  where: SKJSON.CJObject,
+  updates: SKJSON.CJObject,
+): Float {
+  execQuery(() ~> toUpdateWhereQuery(name, where, updates))
+}
+
+@export("SKIP_SKStore_select")
+fun select(
+  name: String,
+  select: SKJSON.CJObject,
+  columns: SKJSON.CJArray,
+): Float {
+  try {
+    (query, params) = toSelectQuery(name, select, columns);
+    DBUtils.execQuery(query, params) match {
+    | Success _ -> 1.0
+    | Failure(CRuntimeError(code, optMessage)) ->
+      -getErrorHdl(Error(optMessage.default(`Runtime error ${code}`)))
+    | Failure(e) -> -getErrorHdl(e)
+    }
+  } catch {
+  | e -> -getErrorHdl(e)
+  }
+}
+
+@export("SKIP_SKStore_delete")
+fun delete(name: String, columns: String, entry: SKJSON.CJArray): Float {
+  execQuery(() ~> toDeleteQuery(name, columns, entry))
+}
+
+@export("SKIP_SKStore_deleteWhere")
+fun deleteWhere(name: String, where: SKJSON.CJObject): Float {
+  execQuery(() ~> toDeleteWhereQuery(name, where))
+}
+
+class ExternalException(
+  type: String,
+  message: String,
+  stack: String,
+) extends .Exception {
+  fun getMessage(): String {
+    `${this.type}: ${this.message}'.`
+  }
+}
+
+@export("SKIP_SKStore_throwExternalException")
+fun throwExternalException(type: String, message: String, stack: String): void {
+  throw ExternalException(type, message, stack);
+}
+
+@export("SKIP_SKStore_getExceptionStack")
+fun getExceptionStack(e: .Exception): String {
+  e match {
+  | ExternalException(_t, _m, stack) -> stack
+  | _ -> ""
+  }
+}
+
+@export("SKIP_SKStore_jsonExtract")
+fun jsonExtract(from: SKJSON.CJSON, pattern: String): SKJSON.CJArray {
+  fieldsList = SKJSON.PatternParser::mcreate(pattern)
+    .toplevelPattern()
+    .pmatch(from)
+    .collect(Array);
+  values = mutable Vector[];
+  fieldsList.each(fields -> {
+    array = fields.collect(Array).map(field -> {
+      cjfields = SKJSON.CJFields::create(Array[field], x -> x);
+      SKJSON.CJObject(cjfields)
+    });
+    values.push(SKJSON.CJArray(array));
+  });
+  SKJSON.CJArray(values.toArray())
 }
 
 module end; /* SKStore */

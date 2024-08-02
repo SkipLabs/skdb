@@ -1,0 +1,3 @@
+{
+  "src": ["skstore_api.ts", "skstore_utils.ts"]
+}

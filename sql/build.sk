@@ -1,0 +1,16 @@
+module SkdbBuild;
+
+@skbuild_source_dirs
+fun source_dirs(env: Skbuild.Env): Array<String> {
+  if (env.isWasm32()) Array[] else Array["extern/src"]
+}
+
+module end;
+
+@debug
+fun main(): void {
+  Skbuild.build() match {
+  | Failure(err) -> skipExit(err.code)
+  | _ -> void
+  }
+}

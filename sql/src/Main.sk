@@ -412,6 +412,7 @@ untracked fun main(): void {
     };
   */
   SKStore.destroyObstack(saved);
+  jsNotifyAll()
 }
 
 @wasm_export("SKDB_factory")

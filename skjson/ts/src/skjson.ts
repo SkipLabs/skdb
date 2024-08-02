@@ -226,7 +226,7 @@ export const reactiveArray = {
 
 function clone<T>(value: T): T {
   const aValue = value as any;
-  if (typeof value === "object") {
+  if (value !== null && typeof value === "object") {
     if (Array.isArray(value)) {
       return value.map(clone) as T;
     } else if (aValue.__isArrayProxy) {
@@ -357,7 +357,11 @@ class LinksImpl implements Links {
       if (value === null || value === undefined) {
         return fromWasm.SKIP_SKJSON_createCJNull();
       } else if (type == "number") {
-        return fromWasm.SKIP_SKJSON_createCJFloat(value);
+        if (value === Math.trunc(value)) {
+          return fromWasm.SKIP_SKJSON_createCJInt(value);
+        } else {
+          return fromWasm.SKIP_SKJSON_createCJFloat(value);
+        }
       } else if (type == "boolean") {
         return fromWasm.SKIP_SKJSON_createCJBool(value);
       } else if (type == "string") {

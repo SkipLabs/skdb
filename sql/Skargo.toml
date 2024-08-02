@@ -12,6 +12,9 @@ sqlparser = { path = "../sqlparser" }
 [dev-dependencies]
 sktest = { path = "../sktest" }
 
+[build-dependencies]
+skbuild = { path = "../skbuild" }
+
 [[bin]]
 name = "skdb"
 main = "SKDB.main"

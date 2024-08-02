@@ -214,6 +214,12 @@ explay-%:
 nexplay-%:
 	cd skstore && make nodeplay-$*
 
+gyprun-%:
+	cd skstore && make $@
+
+gypplay-%:
+	cd skstore && make $@
+
 skcheck-%:
 	cd $* && skargo c --profile $(SKARGO_PROFILE)
 
@@ -228,6 +234,10 @@ skbuild-%:
 
 tstest-%: build/sknpm
 	cd $* && ../build/sknpm test --profile $(SKARGO_PROFILE) $(SKNPM_FLAG)
+
+.PHONY: skstore-gyp
+skstore-gyp:
+	cd skstore && make test-gyp
 
 ## Backward Compatibility
 

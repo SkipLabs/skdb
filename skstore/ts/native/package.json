@@ -1,0 +1,7 @@
+{
+  "name": "app",
+  "version": "0.0.0",
+  "private": true,
+  "gypfile": true,
+  "type": "module"
+}

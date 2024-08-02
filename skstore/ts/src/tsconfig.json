@@ -5,7 +5,8 @@
     "baseUrl": ".",
     "paths": {
       "#std/*": ["../../../prelude/ts/src/*"],
-      "#skdb/*": ["../../../sql/ts/src/*"]
+      "#skdb/*": ["../../../sql/ts/src/*"],
+      "#skjson/*": ["../../../skjson/ts/src/*"]
     },
     "strictNullChecks": true,
     "module": "node16",

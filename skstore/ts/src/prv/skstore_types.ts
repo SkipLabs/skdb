@@ -7,8 +7,10 @@ import type {
   LHandle,
   Mapper,
   Mapping,
+  MirrorSchema,
   OutputMapper,
   TJSON,
+  JSONObject,
 } from "../skstore_api.js";
 
 export interface SKJSON extends Shared {
@@ -93,6 +95,39 @@ export interface Context {
     accumulator: Accumulator<V2, V3>,
   ): string;
 
+  createTables: (schemas: MirrorSchema[]) => void;
+
+  insert: <R extends TJSON[][]>(
+    name: string,
+    entries: R,
+    update?: boolean,
+  ) => void;
+
+  update: <R extends TJSON[]>(
+    name: string,
+    columns: string[],
+    entry: R,
+    updates: JSONObject,
+  ) => void;
+
+  updateWhere: (name: string, where: JSONObject, updates: JSONObject) => void;
+
+  select: (
+    name: string,
+    select: JSONObject,
+    columns?: string[],
+  ) => JSONObject[];
+
+  delete: <R extends TJSON[]>(
+    name: string,
+    columns: string[],
+    entry: R,
+  ) => void;
+
+  deleteWhere: (name: string, where: JSONObject) => void;
+
+  jsonExtract(value: JSONObject, pattern: string): TJSON[];
+
   noref: () => Context;
   notify?: () => void;
 }
@@ -161,4 +196,21 @@ export interface FromWasm {
     accumulator: int,
     accInit: ptr,
   ): ptr;
+
+  // SKDB
+  SKIP_SKStore_createTables(schemas: ptr): number;
+  SKIP_SKStore_insert(name: ptr, entries: ptr, update: boolean): number;
+  SKIP_SKStore_update(
+    name: ptr,
+    columns: ptr,
+    entry: ptr,
+    updates: ptr,
+  ): number;
+  SKIP_SKStore_updateWhere(name: ptr, where: ptr, updates: ptr): number;
+  SKIP_SKStore_select(name: ptr, select: ptr, columns: ptr): ptr;
+  SKIP_SKStore_delete(name: ptr, columns: ptr, entry: ptr): number;
+  SKIP_SKStore_deleteWhere(name: ptr, where: ptr): number;
+
+  // Utils
+  SKIP_SKStore_jsonExtract(json: ptr, pattern: ptr): ptr;
 }

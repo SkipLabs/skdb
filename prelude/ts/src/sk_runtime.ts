@@ -21,6 +21,9 @@ class LinksImpl implements Links {
   SKIP_read_line_fill!: () => int;
   SKIP_read_to_end_fill!: () => int;
   SKIP_read_line_get!: (index: int) => ptr;
+  SKIP_initBufferedLogger!: () => void;
+  SKIP_endBufferedLogger!: () => ptr;
+  SKIP_clearBufferedLogger!: () => void;
 
   SKIP_print_error!: (strPtr: ptr) => void;
   SKIP_print_error_raw!: (strPtr: ptr) => void;
@@ -61,6 +64,19 @@ class LinksImpl implements Links {
 
   complete = (utils: Utils, exports: object) => {
     this.SKIP_etry = utils.etry;
+
+    this.SKIP_initBufferedLogger = () => {
+      utils.check_debug();
+      utils.clogs();
+    };
+    this.SKIP_endBufferedLogger = () => {
+      const output = utils.output();
+      return utils.exportString(output);
+    };
+    this.SKIP_clearBufferedLogger = () => {
+      utils.check_debug();
+      utils.clogs();
+    };
     this.SKIP_print_error = (msg: ptr) => {
       utils.sklog(msg, Stream.ERR, true);
     };
@@ -236,6 +252,9 @@ class Manager implements ToWasmManager {
       links.SKIP_setenv(skName, skValue);
     toWasm.SKIP_getenv = (skName: ptr) => links.SKIP_getenv(skName);
     toWasm.SKIP_unsetenv = (skName: ptr) => links.SKIP_unsetenv(skName);
+    toWasm.SKIP_initBufferedLogger = () => links.SKIP_initBufferedLogger();
+    toWasm.SKIP_endBufferedLogger = () => links.SKIP_endBufferedLogger();
+    toWasm.SKIP_clearBufferedLogger = () => links.SKIP_clearBufferedLogger();
     return links;
   };
 }
@@ -290,6 +309,9 @@ interface ToWasm {
   SKIP_setenv: (skName: ptr, skvalue: ptr) => void;
   SKIP_getenv: (skName: ptr) => ptr | null;
   SKIP_unsetenv: (skName: ptr) => void;
+  SKIP_initBufferedLogger: () => void;
+  SKIP_endBufferedLogger: () => ptr;
+  SKIP_clearBufferedLogger: () => void;
 }
 
 /** @sk runtime */

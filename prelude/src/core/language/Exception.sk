@@ -137,7 +137,7 @@ fun vtry<T>(f: () -> T, onError: Exception -> T): T {
 /*****************************************************************************/
 
 // We use Int32 to be JS friendly
-class CRuntimeError(code: Int32) extends Exception {
+class CRuntimeError(code: Int32, msg: ?String = None()) extends Exception {
   fun getMessage(): String {
     inspect(this).toString()
   }
@@ -146,4 +146,9 @@ class CRuntimeError(code: Int32) extends Exception {
 @cpp_export("SKIP_throw_cruntime")
 fun throwCRuntime(code: Int32): void {
   throw CRuntimeError(code);
+}
+
+@cpp_export("SKIP_throw_cruntime_with_message")
+fun throwCRuntimeWithMessage(code: Int32, message: String): void {
+  throw CRuntimeError(code, Some(message));
 }

@@ -10,6 +10,7 @@
 !**/*.mjs
 !**/*.ts
 !**/*.tsx
+!**/*.gyp
 
 # args files must be on a single line without spaces between braces
 *_args.json

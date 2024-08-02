@@ -93,7 +93,7 @@ export async function setup(
     await userSkdb.connect(dbName, testUserCreds.accessKey, key, host);
   }
 
-  const testUserCreds2 = await rootRemote.createUser();
+  const testUserCreds2 = await rootRemote!.createUser();
 
   const userSkdb2 = await createSkdb({
     asWorker: asWorker,
@@ -268,7 +268,7 @@ async function testMirroring(root: SKDB, skdb1: SKDB, skdb2: SKDB) {
   );
   await expect(
     async () =>
-      await user1.mirror({
+      await skdb1.mirror({
         table: "invalid_expect_cols",
         expectedColumns: "(i INTEGER, skdb_access TEXT)",
       }),
@@ -513,7 +513,7 @@ async function testLargeMirror(root: SKDB, user: SKDB) {
 
   const userRemote = await user.connectedRemote();
   while (true) {
-    const awaitingSync = await userRemote.tablesAwaitingSync();
+    const awaitingSync = await userRemote!.tablesAwaitingSync();
     if (awaitingSync.size < 1) {
       break;
     }
@@ -574,7 +574,7 @@ async function testMirrorWithAuthor(root: SKDB, user1: SKDB, user2: SKDB) {
   expect(user1.currentUser).not.toEqual(user2.currentUser);
 
   await user1.mirror(test_pk, view_pk, syncDef, syncPkDef);
-  const whoami = user1.currentUser;
+  const whoami = user1.currentUser ?? null;
   await user1.exec("INSERT INTO sync VALUES (0, 'read-write', @whoami);", {
     whoami,
   });
@@ -640,24 +640,24 @@ VALUES
 COMMIT;
 `);
   {
-    const res: SKDBTable = await waitSynch(
+    const res = (await waitSynch(
       user1,
       "select i from has_constraint__skdb_mirror_feedback order by i",
       (rows) => rows.length > 1,
-    );
+    )) as SKDBTable;
     expect(res).toEqual([{ i: -1 }, { i: -1 }, { i: 35 }, { i: 55 }]);
   }
 
   // mirror still works after failures
   {
     await user1.exec("INSERT INTO has_constraint VALUES (2, 'read-write');");
-    const res: SKDBTable = await waitSynch(
+    const res = (await waitSynch(
       root,
       "select count(*) from has_constraint where i = 2",
       (rows) => rows.length > 0,
       {},
       true,
-    );
+    )) as SKDBTable;
     expect(res.scalarValue()).toEqual(1);
   }
 }
@@ -703,11 +703,11 @@ async function testJSPrivacy(skdb: SKDB, skdb2: SKDB) {
   await skdb2.mirror(test_pk_subset_schema, view_pk);
   await skdb.exec(
     "INSERT INTO skdb_groups VALUES ('my_group', @uid, @uid, @uid, 'read-write');",
-    { uid: skdb.currentUser },
+    { uid: skdb.currentUser ?? null },
   );
   await skdb.exec(
     "INSERT INTO skdb_group_permissions VALUES ('my_group', @uid, skdb_permission('rw'), @uid);",
-    { uid: skdb.currentUser },
+    { uid: skdb.currentUser ?? null },
   );
 
   await skdb.exec("INSERT INTO test_pk VALUES (37, 42, 'my_group');");
@@ -735,7 +735,7 @@ async function testJSPrivacy(skdb: SKDB, skdb2: SKDB) {
 
   await skdb.exec(
     "INSERT INTO skdb_group_permissions VALUES ('my_group', @uid, skdb_permission('rw'), 'read-write');",
-    { uid: skdb2.currentUser },
+    { uid: skdb2.currentUser ?? null },
   );
 
   expect(
@@ -886,7 +886,7 @@ async function testJSGroups(skdb1: SKDB, skdb2: SKDB) {
 
   const group_as_user2 = await skdb2.lookupGroup(group.groupID);
 
-  await group_as_user2.setMemberPermission(user1, "rw");
+  await group_as_user2!.setMemberPermission(user1, "rw");
 
   // user1 can still take admin actions as owner after removing themself as an admin
 

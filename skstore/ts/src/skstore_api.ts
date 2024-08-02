@@ -8,9 +8,9 @@
 import type { Opt, Shared, float, int, ptr } from "#std/sk_types.js";
 export type { Opt, float, int, ptr };
 
-export type JSONObject = { [key: string]: TJSON };
+export type JSONObject = { [key: string]: TJSON | null };
 
-export type TJSON = number | JSONObject | boolean | TJSON[] | string;
+export type TJSON = number | JSONObject | boolean | (TJSON | null)[] | string;
 
 export type TTableHandle = any;
 export type TTable = any;
@@ -424,5 +424,11 @@ export interface SKStore {
     call: (key: K, params: P) => Promise<AValue<V, M>>,
   ): LHandle<K, Loadable<V, M>>;
 
-  log(object: TJSON): void;
+  jsonExtract(value: JSONObject, pattern: string): TJSON[];
+
+  /**
+   * Utils to log skstore internal object in a convenient way
+   * @param object - the object to log
+   */
+  log(...object: TJSON[]): void;
 }

@@ -4,7 +4,8 @@
     "outDir": "../dist/src",
     "baseUrl": ".",
     "paths": {
-      "#std/*": ["../../../prelude/ts/src/*"]
+      "#std/*": ["../../../prelude/ts/src/*"],
+      "#skjson/*": ["../../../skjson/ts/src/*"]
     },
     "strictNullChecks": true,
     "module": "node16",

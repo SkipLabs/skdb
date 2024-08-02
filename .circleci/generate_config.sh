@@ -10,7 +10,7 @@ skdb=$?
 git diff --quiet HEAD $(git merge-base main HEAD) -- sknpm/
 sknpm=$?
 git diff --quiet HEAD $(git merge-base main HEAD) -- skstore/
-skstore_wasm=$?
+skstore_api=$?
 
 cat .circleci/base.yml
 
@@ -58,11 +58,12 @@ then
 EOF
 fi
 
-if (( $skdb != 0 || $skstore != 0 || $skstore_wasm != 0 || $sknpm != 0))
+if (( $skdb != 0 || $skstore != 0 || $skstore_api != 0 || $sknpm != 0))
 then
     cat <<EOF
-  skstore-wasm:
+  skstore-api:
     jobs:
       - skstore-wasm
+      - skstore-gyp
 EOF
 fi

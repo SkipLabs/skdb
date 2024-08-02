@@ -35,6 +35,7 @@ export {
   ctext,
   cinteger,
   cfloat,
+  cjson,
 } from "./skstore_utils.js";
 
 var modules: ModuleInit[];

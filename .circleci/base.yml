@@ -108,3 +108,15 @@ jobs:
             make tstest-skstore
       - store_test_results:
           path: ~/test-results/skstore-wasm.xml
+  
+  skstore-gyp:
+    docker:
+      - image: skiplabs/skdb-base:latest
+    steps:
+      - checkout
+      - setup
+      - run:
+          name: Run node addon skstore tests
+          no_output_timeout: 5m
+          command: |
+            make skstore-gyp

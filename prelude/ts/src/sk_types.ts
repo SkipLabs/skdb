@@ -261,6 +261,11 @@ export class Utils {
       this.stdout.push(str);
     }
   };
+  clogs = () => {
+    this.stdout = new Array();
+    this.stderr = new Array();
+    this.stddebug = new Array();
+  };
   sklog = (strPtr: ptr, kind?: Stream, newLine: boolean = false) => {
     let str = this.importString(strPtr);
     this.log(str, kind, newLine);
@@ -292,6 +297,17 @@ export class Utils {
       throw error;
     }
     return res;
+  };
+
+  check_debug = () => {
+    if (this.stddebug.length > 0) {
+      console.log(this.stddebug.join(""));
+    }
+  };
+
+  output = () => {
+    this.check_debug();
+    return this.stdout.join("");
   };
 
   main = (new_args: Array<string>, new_stdin: string) => {

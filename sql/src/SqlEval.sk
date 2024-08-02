@@ -2400,7 +2400,6 @@ fun printReactiveQueryResult(
 ): void {
   format = SKStore.OJS(fieldNames);
   RowValues::printHeader(format);
-  switchTo(UInt32::truncate(0));
   for (kv in context.unsafeGetEagerDir(dirName).unsafeGetFileIter()) {
     (_, files) = kv;
     for (file in files) {
@@ -2431,17 +2430,15 @@ fun printReactiveQueryChanges(
       for (key in changes) {
         values = edir.getArrayRaw(key);
         if (values.size() == 0) {
-          switchTo(UInt32::truncate(2));
           row = (key as RowKey _).getRowValues();
           for (_ in Range(0, row.repeat)) {
-            RowValues::printItem(format, row);
+            RowValues::printItem(format, row, 2);
           }
         } else {
-          switchTo(UInt32::truncate(1));
           for (file in values) {
             row = RowValues::type(file);
             for (_ in Range(0, row.repeat)) {
-              RowValues::printItem(format, row);
+              RowValues::printItem(format, row, 1);
             }
           }
         }
@@ -2452,12 +2449,11 @@ fun printReactiveQueryChanges(
 }
 
 private fun printTick(tick: SKStore.Tick): void {
-  switchTo(UInt32::truncate(3));
   jsClearFieldNames();
   jsPushFieldName("tick");
   jsClearObject();
   jsPushObjectFieldInt32(Int32::truncate(tick.value));
-  jsPushObject()
+  jsPushObject(UInt32::truncate(3))
 }
 
 fun printResult(
@@ -2474,13 +2470,22 @@ fun printResult(
   };
 }
 
+@cpp_extern("SKIP_js_notify_all")
+native fun jsNotifyAll(): void;
+
+@cpp_extern("SKIP_js_after_update")
+native fun jsAfterUpdate(): void;
+
 @cpp_extern("SKIP_js_delete_fun")
 native fun jsDeleteUserFun(queryID32: Int32): void;
 
 @cpp_extern("SKIP_js_mark_query")
 native fun jsMarkQuery(queryID32: Int32): void;
 
-@wasm_export("SKIP_reactive_query")
+@cpp_extern("SKIP_last_tick")
+native fun lastTick(UInt32): UInt32;
+
+@export("SKIP_reactive_query")
 fun reactiveQuery(
   queryID32: Int32,
   query: String,
@@ -2489,7 +2494,7 @@ fun reactiveQuery(
   manageReactiveQuery(queryID32, query, encoded_params, false)
 }
 
-@wasm_export("SKIP_reactive_query_changes")
+@export("SKIP_reactive_query_changes")
 fun reactiveQueryChanges(
   queryID32: Int32,
   query: String,
@@ -2524,7 +2529,7 @@ fun manageReactiveQuery(
   };
 }
 
-@wasm_export("SKIP_reactive_print_result")
+@export("SKIP_reactive_print_result")
 fun printReactiveQuery(queryID32: Int32): void {
   saved = SKStore.newObstack();
   try {
@@ -2553,7 +2558,7 @@ fun printReactiveQuery(queryID32: Int32): void {
   SKStore.destroyObstack(saved);
 }
 
-@wasm_export("SKIP_delete_reactive_query")
+@export("SKIP_delete_reactive_query")
 fun deleteReactiveQuery(queryID32: Int32): void {
   saved = SKStore.newObstack();
   try {

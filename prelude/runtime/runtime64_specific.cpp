@@ -34,6 +34,8 @@ extern "C" {
 #include <string>
 #include <vector>
 
+#include "runtime64_specific.h"
+
 extern "C" {
 #include "xoroshiro128plus.h"
 }
@@ -53,6 +55,19 @@ void* sk_get_exception_message(void* skExn);
 sk_saved_obstack_t* SKIP_new_Obstack();
 void SKIP_destroy_Obstack(sk_saved_obstack_t* saved);
 }
+
+namespace skruntime {
+Logger::~Logger() {}
+__attribute__((noreturn)) void BufferedLogger::exit(int code) {
+  std::cout << m_out.str();
+  m_out.clear();
+  std::cout.flush();
+  std::cerr.flush();
+  std::string message = m_err.str();
+  char* skmessage = sk_string_create(message.c_str(), message.size());
+  SKIP_throw_cruntime_with_message((int32_t)code, skmessage);
+}
+}  // namespace skruntime
 
 namespace {
 
@@ -221,6 +236,100 @@ static int argc = 0;
 static char** argv = NULL;
 extern char** environ;
 
+const char* endl = "\n";
+
+thread_local skruntime::Logger* logger;
+
+/*****************************************************************************/
+/* File name parser (from the command line arguments). */
+/*****************************************************************************/
+
+static char* parse_args(int argc, char** argv, int* is_init,
+                        int64_t* capacity) {
+  *capacity = DEFAULT_CAPACITY;
+  // FIXME
+  if (argc > 0 && strcmp(argv[0], "skargo") == 0) {
+    return NULL;
+  }
+
+  int i;
+  int idx = -1;
+
+  for (i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "--data") == 0 || strcmp(argv[i], "--init") == 0) {
+      if (strcmp(argv[i], "--init") == 0) {
+        *is_init = 1;
+      }
+      if (i + 1 >= argc) {
+        fprintf(stderr, "Error: --data/--init expects a file name");
+        exit(ERROR_ARG_PARSE);
+      }
+      if (idx != -1) {
+        fprintf(stderr, "Error: incompatible --data/--init options");
+        exit(ERROR_ARG_PARSE);
+      }
+      idx = i + 1;
+    } else if (strcmp(argv[i], "--capacity") == 0) {
+      if (i + 1 < argc) {
+        if (argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9') {
+          char d;
+          int j = 0;
+          size_t c = 0;
+          while ((d = argv[i + 1][j]) != 0) {
+            if (d >= '0' && d <= '9') {
+              j++;
+              c = c + (10 * (d - '0'));
+              continue;
+            }
+            c = -1;
+            break;
+          }
+          *capacity = c;
+        } else if (argv[i + 1][0] == '-') {
+          *capacity = DEFAULT_CAPACITY;
+        } else {
+          *capacity = -1;
+        }
+      }
+    }
+  }
+
+  if (idx == -1) {
+    return NULL;
+  } else {
+    return argv[idx];
+  }
+}
+
+extern "C" {
+void SKIP_initBufferedLogger() {
+  if (logger != nullptr) {
+    logger->flush(true);
+    delete logger;
+  }
+  logger = new skruntime::BufferedLogger();
+}
+char* SKIP_endBufferedLogger() {
+  if (logger != nullptr) {
+    std::string sout = logger->out();
+    char* skout = sk_string_create(sout.c_str(), sout.size());
+    delete logger;
+    logger = nullptr;
+    return skout;
+  } else {
+    return sk_string_create("", 0);
+  }
+}
+}
+
+void SKIP_clearBufferedLogger() {
+  if (logger != nullptr) {
+    logger->flush(true);
+    delete logger;
+    logger = nullptr;
+  }
+}
+
 int64_t SKIP_getArgc() {
   return argc;
 }
@@ -271,30 +380,73 @@ void SKIP_unsetenv(char* name) {
   }
 }
 
-void SKIP_memory_init(int pargc, char** pargv);
+int SKIP_memory_init(char* fileName, int is_create, int64_t capacity);
 void sk_persist_consts();
+
+void check_alloc_error(int code, char* fileName, int is_create);
+
+void SKIP_collect_alloc_error(int code, char* fileName, int is_create,
+                              std::ostringstream& error) {
+  switch (code) {
+    case ERROR_FILE_IO:
+      error << "Error: could not open file (did you run --init?)";
+      break;
+    case ERROR_MAPPING_MEMORY:
+      if (is_create) {
+        error << "Error: Could not initialize memory";
+      } else {
+        error << "Error: could not read header";
+      }
+      break;
+    case ERROR_MAPPING_VERSION:
+      error << "Error: wrong file format: " << fileName;
+      break;
+    case ERROR_MAPPING_FAILED:
+      error << "Error (MAP FAILED): " << strerror(errno);
+      break;
+    case ERROR_MAPPING_EXISTS:
+      error << "Error: File " << fileName << " already exists";
+      break;
+    case ERROR_MAPPING_CAPACITY:
+      error << "Error: capacity expects an integer greater than zero";
+      break;
+    default:
+      error << "Error with code %d occurs!";
+      break;
+  }
+}
+
+int SKIP_init_runtime(char* fileName, int is_create, int64_t capacity) {
+  sk_saved_obstack_t* saved;
+  int res = SKIP_memory_init(fileName, is_create, capacity);
+  if (res != 0) return res;
+  saved = SKIP_new_Obstack();
+  SKIP_initializeSkip();
+  sk_persist_consts();
+  SKIP_destroy_Obstack(saved);
+  return 0;
+}
 
 void sk_init(int pargc, char** pargv) {
   sk_saved_obstack_t* saved;
   argc = pargc;
   argv = pargv;
-  SKIP_memory_init(pargc, pargv);
+  int is_create = 0;
+  int64_t capacity = DEFAULT_CAPACITY;
+  char* fileName = parse_args(argc, argv, &is_create, &capacity);
+  if (is_create && capacity <= 0) {
+    fprintf(stderr, "--capacity expects an integer greater than zero\n");
+    exit(2);
+  }
+  int code = SKIP_memory_init(fileName, is_create, capacity);
+  check_alloc_error(code, fileName, is_create);
   saved = SKIP_new_Obstack();
   SKIP_initializeSkip();
   sk_persist_consts();
   SKIP_destroy_Obstack(saved);
 }
 
-#ifdef SKIP_LIBRARY
-__attribute__((constructor)) static void lib_init() {
-  argc = 1;
-  char* argv0 = strdup("library");
-  argv = (char**)malloc(2 * sizeof(char*));
-  argv[0] = argv0;
-  argv[1] = NULL;
-  sk_init(argc, argv);
-}
-#else
+#ifndef SKIP_LIBRARY
 int main(int pargc, char** pargv) {
   std::set_terminate(terminate);
   // TODO: Make memory initialization read state.db path from the environment
@@ -311,34 +463,55 @@ static void print(FILE* descr, char* str) {
 }
 
 void SKIP_print_raw(char* str) {
-  print(stdout, str);
+  if (logger)
+    logger->print(str);
+  else
+    print(stdout, str);
 }
 
 void SKIP_print_error_raw(char* str) {
-  print(stderr, str);
+  if (logger)
+    logger->error(str);
+  else
+    print(stderr, str);
 }
 
 void SKIP_print_debug_raw(char* str) {
-  SKIP_print_error_raw(str);
+  print(stderr, str);
 }
 
 void SKIP_flush_stdout() {
-  fflush(stdout);
-  fflush(stderr);
+  if (logger)
+    logger->flush(false);
+  else {
+    fflush(stdout);
+    fflush(stderr);
+  }
 }
 
 void print_string(char* str) {
-  print(stdout, str);
-  printf("\n");
+  if (logger) {
+    logger->print(str);
+    logger->println();
+  } else {
+    print(stdout, str);
+    printf("\n");
+  }
 }
 
 void SKIP_print_error(char* str) {
-  print(stderr, str);
-  fprintf(stderr, "\n");
+  if (logger) {
+    logger->error(str);
+    logger->errorln();
+  } else {
+    print(stderr, str);
+    fprintf(stderr, "\n");
+  }
 }
 
 void SKIP_print_debug(char* str) {
-  SKIP_print_error(str);
+  print(stderr, str);
+  fprintf(stderr, "\n");
 }
 
 char* SKIP_open_file(char* filename) {
@@ -584,54 +757,10 @@ char* SKIP_realpath(char* path) {
 }
 
 __attribute__((noreturn)) void SKIP_exit(uint64_t code) {
-  exit(code);
+  if (logger != nullptr) {
+    logger->exit(code);
+  } else {
+    exit(code);
+  }
 }
-
-char* SKIP_call_external_fun(int32_t, char*) {
-  fprintf(stderr, "SKIP_call_external_fun not implemented in native mode");
-  exit(2);
-}
-
-/*****************************************************************************/
-/* Primitives used to output js objects directly, doesn't do anything
- * in native mode.
- */
-/*****************************************************************************/
-
-void SKIP_last_tick(uint32_t) {
-  // Not implemented
-}
-void SKIP_switch_to(uint32_t) {
-  // Not implemented
-}
-void SKIP_clear_field_names() {
-  // Not implemented
-}
-void SKIP_push_field_name(char*) {
-  // Not implemented
-}
-void SKIP_clear_object() {
-  // Not implemented
-}
-void SKIP_push_object_field_null() {
-  // Not implemented
-}
-void SKIP_push_object_field_int32(int32_t) {
-  // Not implemented
-}
-void SKIP_push_object_field_int64(char*) {
-  // Not implemented
-}
-void SKIP_push_object_field_float(char*) {
-  // Not implemented
-}
-void SKIP_push_object_field_string(char*) {
-  // Not implemented
-}
-void SKIP_push_object() {
-  // Not implemented
-}
-void SKIP_js_delete_fun() {
-  // Not implemented
-}
-}
+}  // extern "C"

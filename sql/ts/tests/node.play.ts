@@ -1,6 +1,6 @@
-import { test, type Page, expect } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import { tests } from "./tests";
-import { createSkdb } from "skdb";
+import { createSkdb, SKDB } from "skdb";
 
 function run(t, asWorker: boolean) {
   test(t.name, async () => {
@@ -33,7 +33,7 @@ run(
       }
       rows.push(":10");
 
-      skdb.skdbSync.runLocal(["write-csv"], rows.join("\n") + "\n");
+      (skdb as any).skdbSync.runLocal(["write-csv"], rows.join("\n") + "\n");
 
       return await skdb.exec("select count(*) as n from no_pk_inserts");
     },

@@ -26,6 +26,15 @@ fun typeOf(json: CJSON): Float {
 fun asInt(json: CJSON): Float {
   json match {
   | CJInt(v) -> v.toFloat()
+  | CJFloat(v) -> v
+  | _ -> invariant_violation("Must be an Int value.")
+  }
+}
+
+@export("SKIP_SKJSON_asInt64")
+fun asInt64(json: CJSON): Int {
+  json match {
+  | CJInt(v) -> v
   | _ -> invariant_violation("Must be an Int value.")
   }
 }
@@ -34,6 +43,7 @@ fun asInt(json: CJSON): Float {
 fun asFloat(json: CJSON): Float {
   json match {
   | CJFloat(v) -> v
+  | CJInt(v) -> v.toFloat()
   | _ -> invariant_violation("Must be a Float value.")
   }
 }
@@ -216,6 +226,33 @@ fun getObject(obj: CJObject, field: String): ?CJObject {
     | _ -> None()
     }
   )
+}
+
+fun getArray(obj: CJObject, field: String): ?CJArray {
+  getValue(obj, field).flatMap(v ->
+    v match {
+    | arr @ CJArray _ -> Some(arr)
+    | _ -> None()
+    }
+  )
+}
+
+fun getBool(obj: CJObject, field: String): Bool {
+  getValue(obj, field)
+    .map(v ->
+      v match {
+      | CJBool(b) -> b
+      | _ -> false
+      }
+    )
+    .default(false)
+}
+
+fun optObject(value: CJSON): ?CJObject {
+  value match {
+  | fobj @ CJObject _ -> Some(fobj)
+  | _ -> None()
+  }
 }
 
 fun remove(obj: SKJSON.CJObject, field: String): SKJSON.CJObject {

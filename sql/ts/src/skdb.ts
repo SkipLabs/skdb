@@ -4,7 +4,13 @@ import type { Wrk, ModuleInit } from "#std/sk_types.js";
 import type { SKDB, SKDBSync, SKDBShared } from "./skdb_types.js";
 import { SKDBWorker } from "./skdb_wdatabase.js";
 export { SKDBTable } from "./skdb_util.js";
-export type { SKDB, RemoteSKDB, MirrorDefn, SKDBGroup } from "./skdb_types.js";
+export type {
+  SKDB,
+  RemoteSKDB,
+  MirrorDefn,
+  SKDBGroup,
+  Params,
+} from "./skdb_types.js";
 export type { Creds, MuxedSocket } from "./skdb_orchestration.js";
 export type { Environment } from "#std/sk_types.js";
 export { SKDBTransaction } from "./skdb_util.js";

@@ -16,7 +16,6 @@
 
 #include "runtime.h"
 
-#define DEFAULT_CAPACITY (1024L * 1024L * 1024L * 16L)
 #define BOTTOM_ADDR ((void*)0x0000001000000000)
 #define FTABLE_SIZE 64
 
@@ -342,73 +341,6 @@ void sk_context_set(char* obj) {
 }
 
 /*****************************************************************************/
-/* File name parser (from the command line arguments). */
-/*****************************************************************************/
-
-static char* parse_args(int argc, char** argv, int* is_init) {
-  // FIXME
-  if (argc > 0 && strcmp(argv[0], "skargo") == 0) {
-    return NULL;
-  }
-
-  int i;
-  int idx = -1;
-
-  for (i = 1; i < argc; i++) {
-    if (strcmp(argv[i], "--data") == 0 || strcmp(argv[i], "--init") == 0) {
-      if (strcmp(argv[i], "--init") == 0) {
-        *is_init = 1;
-      }
-      if (i + 1 >= argc) {
-        fprintf(stderr, "Error: --data/--init expects a file name");
-        exit(ERROR_ARG_PARSE);
-      }
-      if (idx != -1) {
-        fprintf(stderr, "Error: incompatible --data/--init options");
-        exit(ERROR_ARG_PARSE);
-      }
-      idx = i + 1;
-    }
-  }
-
-  if (idx == -1) {
-    return NULL;
-  } else {
-    return argv[idx];
-  }
-}
-
-size_t parse_capacity(int argc, char** argv) {
-  int i;
-
-  for (i = 1; i < argc; i++) {
-    if (strcmp(argv[i], "--capacity") == 0) {
-      if (i + 1 < argc) {
-        if (argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9') {
-          int j = 0;
-
-          while (argv[i + 1][j] != 0) {
-            if (argv[i + 1][j] >= '0' && argv[i + 1][j] <= '9') {
-              j++;
-              continue;
-            }
-            fprintf(stderr, "--capacity expects an integer\n");
-            exit(2);
-          }
-          return atol(argv[i + 1]);
-        } else if (argv[i + 1][0] == '-') {
-          return DEFAULT_CAPACITY;
-        } else {
-          fprintf(stderr, "--capacity expects an integer\n");
-          exit(2);
-        }
-      }
-    }
-  }
-  return DEFAULT_CAPACITY;
-}
-
-/*****************************************************************************/
 /* Staging/commit. */
 /*****************************************************************************/
 
@@ -454,10 +386,9 @@ struct file_mapping {
 /* Creates a new file mapping. */
 /*****************************************************************************/
 
-void sk_create_mapping(char* fileName, size_t icapacity) {
-  if (fileName != NULL && access(fileName, F_OK) == 0) {
-    fprintf(stderr, "ERROR: File %s already exists!\n", fileName);
-    exit(ERROR_MAPPING_EXISTS);
+int sk_create_mapping(char* fileName, size_t icapacity) {
+  if (access(fileName, F_OK) == 0) {
+    return ERROR_MAPPING_EXISTS;
   }
   file_mapping_t* mapping;
   int prot = PROT_READ | PROT_WRITE;
@@ -472,8 +403,7 @@ void sk_create_mapping(char* fileName, size_t icapacity) {
   }
 
   if (mapping == MAP_FAILED) {
-    perror("ERROR (MAP FAILED)");
-    exit(ERROR_MAPPING_FAILED);
+    return ERROR_MAPPING_FAILED;
   }
 
   mapping->header.version = SKIP_get_version();
@@ -493,8 +423,7 @@ void sk_create_mapping(char* fileName, size_t icapacity) {
   char* end = (char*)mapping + icapacity;
 
   if (head >= end) {
-    fprintf(stderr, "Could not initialize memory\n");
-    exit(ERROR_MAPPING_MEMORY);
+    return ERROR_MAPPING_MEMORY;
   }
 
   if (fileName != NULL) {
@@ -527,18 +456,18 @@ void sk_create_mapping(char* fileName, size_t icapacity) {
   if (ginfo->fileName != NULL) {
     sk_global_lock_init();
   }
+  return 0;
 }
 
 /*****************************************************************************/
 /* Loads an existing mapping. */
 /*****************************************************************************/
 
-void sk_load_mapping(char* fileName) {
+int sk_load_mapping(char* fileName) {
   int fd = open(fileName, O_RDWR, 0600);
 
   if (fd == -1) {
-    fprintf(stderr, "Error: could not open file (did you run --init?)\n");
-    exit(ERROR_FILE_IO);
+    return ERROR_FILE_IO;
   }
 
   file_mapping_header_t header;
@@ -546,13 +475,11 @@ void sk_load_mapping(char* fileName) {
   int bytes = read(fd, &header, sizeof(file_mapping_header_t));
 
   if (bytes != sizeof(file_mapping_header_t)) {
-    fprintf(stderr, "Error: could not read header\n");
-    exit(ERROR_MAPPING_MEMORY);
+    return ERROR_MAPPING_MEMORY;
   }
 
   if (header.version != SKIP_get_version()) {
-    fprintf(stderr, "Error: wrong file format: %s\n", fileName);
-    exit(ERROR_MAPPING_VERSION);
+    return ERROR_MAPPING_VERSION;
   }
 
   size_t fsize = lseek(fd, 0, SEEK_END) - 1;
@@ -562,8 +489,7 @@ void sk_load_mapping(char* fileName) {
   close(fd);
 
   if (mapping == MAP_FAILED) {
-    perror("ERROR (MAP FAILED)");
-    exit(ERROR_MAPPING_FAILED);
+    return ERROR_MAPPING_FAILED;
   }
 
   gmutex = &mapping->gmutex;
@@ -571,6 +497,7 @@ void sk_load_mapping(char* fileName) {
   gid = &mapping->gid;
   capacity = &mapping->capacity;
   pconsts = &mapping->pconsts;
+  return 0;
 }
 
 /*****************************************************************************/
@@ -624,11 +551,10 @@ typedef struct {
 } no_file_t;
 
 #ifdef __APPLE__
-static void sk_init_no_file() {
+static int sk_init_no_file() {
   no_file_t* no_file = malloc(sizeof(no_file_t));
   if (no_file == NULL) {
-    perror("malloc");
-    exit(1);
+    return ERROR_MALLOC;
   }
   ginfo = &no_file->ginfo_data;
   ginfo->total_palloc_size = 0;
@@ -639,6 +565,7 @@ static void sk_init_no_file() {
   pconsts = &no_file->pconsts;
   *gid = 1;
   *pconsts = NULL;
+  return 0;
 }
 #endif
 
@@ -652,10 +579,39 @@ int sk_is_nofile_mode() {
 
 extern SKIP_gc_type_t* epointer_ty;
 
-void SKIP_memory_init(int argc, char** argv) {
-  int is_create = 0;
-  char* fileName = parse_args(argc, argv, &is_create);
+void check_alloc_error(int code, char* fileName, int is_create) {
+  if (code == 0) return;
+  switch (code) {
+    case ERROR_FILE_IO:
+      fprintf(stderr, "Error: could not open file (did you run --init?)\n");
+      break;
+    case ERROR_MAPPING_MEMORY:
+      if (is_create) {
+        fprintf(stderr, "Error: Could not initialize memory\n");
+      } else {
+        fprintf(stderr, "Error: could not read header\n");
+      }
+      break;
+    case ERROR_MAPPING_VERSION:
+      fprintf(stderr, "Error: wrong file format: %s\n", fileName);
+      break;
+    case ERROR_MAPPING_FAILED:
+      perror("Error (MAP FAILED)");
+      break;
+    case ERROR_MAPPING_EXISTS:
+      fprintf(stderr, "Error: File %s already exists!\n", fileName);
+      break;
+    case ERROR_MAPPING_CAPACITY:
+      fprintf(stderr, "Error: capacity expects an integer greater than zero\n");
+      break;
+    default:
+      fprintf(stderr, "Error with code %d occurs!\n", code);
+      break;
+  }
+  exit(code);
+}
 
+int SKIP_memory_init(char* fileName, int is_create, int64_t capacity) {
 #ifdef __APPLE__
   if (fileName != NULL) {
     fprintf(stderr,
@@ -666,20 +622,24 @@ void SKIP_memory_init(int argc, char** argv) {
   if (is_create) {
     exit(EXIT_SUCCESS);
   }
-  sk_init_no_file();
+  int res = sk_init_no_file();
+  if (res != 0) return res;
 
 #else   // __APPLE__
   if (is_create || fileName == NULL) {
-    size_t capacity = DEFAULT_CAPACITY;
-    capacity = parse_capacity(argc, argv);
-    sk_create_mapping(fileName, capacity);
+    if (capacity <= 0 && fileName != NULL) return ERROR_MAPPING_CAPACITY;
+    int res = sk_create_mapping(fileName,
+                                capacity == 0 ? DEFAULT_CAPACITY : capacity);
+    if (res != 0) return res;
   } else {
-    sk_load_mapping(fileName);
+    int res = sk_load_mapping(fileName);
+    if (res != 0) return res;
   }
 #endif  // __APPLE__
 
   char* obj = sk_get_external_pointer();
   epointer_ty = get_gc_type(obj);
+  return 0;
 }
 
 /*****************************************************************************/

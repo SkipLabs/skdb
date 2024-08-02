@@ -24,8 +24,6 @@ import type {
 // prettier-ignore
 import type { MirrorDefn, Params, SKDBSync } from "#skdb/skdb_types.js";
 
-type Query = { query: string; params?: JSONObject };
-
 class EHandleImpl<K extends TJSON, V extends TJSON> implements EHandle<K, V> {
   //
   protected context: Context;
@@ -163,75 +161,49 @@ export class TableImpl<R extends TJSON[]> implements Table<R> {
   }
 
   insert(entries: R[], update?: boolean | undefined): void {
-    const query = toInsertQuery(this.getName(), entries, update);
-    const params = query.params ? toParams(query.params) : undefined;
-    this.skdb.exec(query.query, params);
+    this.context.insert(this.getName(), entries, update);
   }
 
   update(entry: R, updates: JSONObject): void {
-    const query = toUpdateQuery(
+    this.context.update(
       this.getName(),
-      this.schema.expected,
+      this.schema.expected.map((c) => c.name),
       entry,
       updates,
-    );
-    this.skdb.exec(
-      query.query,
-      query.params ? toParams(query.params) : undefined,
     );
   }
 
   updateWhere(where: JSONObject, updates: JSONObject): void {
-    const query = toUpdateWhereQuery(this.getName(), where, updates);
-    this.skdb.exec(
-      query.query,
-      query.params ? toParams(query.params) : undefined,
-    );
+    this.context.updateWhere(this.getName(), where, updates);
   }
 
-  select(select: JSONObject, colmuns?: string[]): JSONObject[] {
-    const query = toSelectQuery(this.getName(), select, colmuns);
-    return this.skdb.exec(
-      query.query,
-      query.params ? toParams(query.params) : undefined,
-    ) as JSONObject[];
+  select(select: JSONObject, columns?: string[]): JSONObject[] {
+    return this.context.select(this.getName(), select, columns);
   }
 
   delete(entry: R): void {
-    const query = toDeleteQuery(this.getName(), this.schema.expected, entry);
-    this.skdb.exec(
-      query.query,
-      query.params ? toParams(query.params) : undefined,
+    this.context.delete(
+      this.getName(),
+      this.schema.expected.map((c) => c.name),
+      entry,
     );
   }
 
   deleteWhere(where: JSONObject): void {
-    const query = toDeleteWhereQuery(this.getName(), where);
-    this.skdb.exec(
-      query.query,
-      query.params ? toParams(query.params) : undefined,
-    );
+    this.context.deleteWhere(this.getName(), where);
   }
+
   watch = (update: (rows: JSONObject[]) => void) => {
-    const query = toSelectQuery(this.getName(), {});
-    return this.skdb.watch(
-      query.query,
-      query.params ? toParams(query.params) : {},
-      update,
-    );
+    const query = `SELECT * FROM "${this.getName()}"`;
+    return this.skdb.watch(query, {}, update);
   };
 
   watchChanges = (
     init: (rows: JSONObject[]) => void,
     update: (added: JSONObject[], removed: JSONObject[]) => void,
   ) => {
-    const query = toSelectQuery(this.getName(), {});
-    return this.skdb.watchChanges(
-      query.query,
-      query.params ? toParams(query.params) : {},
-      init,
-      update,
-    );
+    const query = `SELECT * FROM "${this.getName()}"`;
+    return this.skdb.watchChanges(query, {}, init, update);
   };
 }
 
@@ -285,17 +257,26 @@ export class SKStoreImpl implements SKStore {
     return new LHandleImpl<K, Loadable<V, M>>(this.context, lazyHdl);
   }
 
-  log(object: any): void {
-    if (
-      typeof object == "object" &&
-      (("__isArrayProxy" in object && object.__isArrayProxy) ||
-        ("__isObjectProxy" in object && object.__isObjectProxy)) &&
-      "clone" in object
-    ) {
-      console.log(object.clone());
-    } else {
-      console.log(object);
-    }
+  jsonExtract(value: JSONObject, pattern: string): TJSON[] {
+    return this.context.jsonExtract(value, pattern);
+  }
+
+  log(...objects: TJSON[]): void {
+    const toLog = objects.map((object) => {
+      if (object === null) {
+        return null;
+      } else if (
+        typeof object == "object" &&
+        (("__isArrayProxy" in object && object.__isArrayProxy) ||
+          ("__isObjectProxy" in object && object.__isObjectProxy)) &&
+        "clone" in object
+      ) {
+        return (object as any).clone();
+      } else {
+        return object;
+      }
+    });
+    console.log(...toLog);
   }
 }
 
@@ -356,10 +337,7 @@ export function mirror(
       "\tThe produced data will be lost as soon as the process shutdown.",
     );
     */
-    tables.forEach((table) => {
-      const query = create(table);
-      skdb.exec(query.query, query.params ? toParams(query.params) : undefined);
-    });
+    context.createTables(tables);
   }
   return tables.map((table) => new TableHandleImpl(context, skdb, table));
 }
@@ -395,107 +373,6 @@ function toMirrorDefinitions(...tables: MirrorSchema[]): MirrorDefn[] {
   return tables.map(toMirrorDefinition);
 }
 
-function create(table: MirrorSchema): Query {
-  const query = `CREATE TABLE IF NOT EXISTS "${table.name}" ${toColumns(
-    table.expected,
-  )};`;
-  return { query };
-}
-
-function toValues(entry: TJSON[], prefix: string = ""): Query {
-  let exprs: string[] = [];
-  let params: JSONObject = {};
-  for (let i = 0; i < entry.length; i++) {
-    const field = entry[i];
-    if (
-      typeof field == "string" ||
-      typeof field == "number" ||
-      typeof field == "boolean"
-    ) {
-      params[prefix + i] = field;
-    } else {
-      params[prefix + i] = JSON.stringify(field);
-    }
-    exprs.push(`@${prefix + i}`);
-  }
-  return {
-    query: exprs.join(" , "),
-    params,
-  };
-}
-
-function toWhere(
-  columns: ColumnSchema[],
-  entry: TJSON[],
-  prefix: string = "",
-): Query {
-  if (columns.length != entry.length) throw new Error("Invalid entry type.");
-  let exprs: string[] = [];
-  let params: JSONObject = {};
-  for (let i = 0; i < columns.length; i++) {
-    const column = columns[i];
-    const field = entry[i];
-    if (Array.isArray(field)) {
-      const inVal: string[] = [];
-      for (let idx = 0; idx < field.length; idx++) {
-        const pName = prefix + idx + "_" + column.name;
-        params[pName] = field[idx];
-        inVal.push(`@${pName}`);
-      }
-      exprs.push(`${column.name} IN (${inVal.join(", ")})`);
-    } else {
-      const pName = prefix + column.name;
-      params[pName] = field;
-      exprs.push(`${column.name} = @${pName}`);
-    }
-  }
-  return {
-    query: exprs.join(" AND "),
-    params,
-  };
-}
-
-function toSets(update: JSONObject, prefix: string = ""): Query {
-  let exprs: string[] = [];
-  let params: JSONObject = {};
-  Object.keys(update).forEach((column: keyof JSONObject) => {
-    const field = update[column];
-    params[prefix + column] = field;
-    exprs.push(`${column} = @${prefix + column}`);
-  });
-  return {
-    query: exprs.join(" , "),
-    params,
-  };
-}
-
-function toSelectWhere(select: JSONObject, prefix: string = ""): Query {
-  const keys = Object.keys(select);
-  if (keys.length <= 0) return { query: "true" };
-  let exprs: string[] = [];
-  let params: JSONObject = {};
-  keys.forEach((column: keyof JSONObject) => {
-    const field = select[column];
-    if (Array.isArray(field)) {
-      const inVal: string[] = [];
-      for (let idx = 0; idx < field.length; idx++) {
-        const pName = prefix + idx + "_" + column;
-        params[pName] = field[idx];
-        inVal.push(`@${pName}`);
-      }
-      exprs.push(`${column} IN (${inVal.join(", ")})`);
-    } else {
-      const pName = prefix + column;
-      params[pName] = field;
-      exprs.push(`${column} = @${pName}`);
-    }
-  });
-  return {
-    query: exprs.join(" AND "),
-    params,
-  };
-}
-
 function toParams(params: JSONObject): Params {
   let res: Record<string, string | number | boolean> = {};
   Object.keys(params).forEach((key: keyof JSONObject) => {
@@ -511,75 +388,4 @@ function toParams(params: JSONObject): Params {
     }
   });
   return res;
-}
-
-function toUpdateQuery(
-  name: string,
-  columns: ColumnSchema[],
-  entry: TJSON[],
-  updates: JSONObject,
-): Query {
-  const where = toWhere(columns, entry, "w_");
-  const sets = toSets(updates, "u_");
-  const query = `UPDATE "${name}" SET ${sets.query} WHERE ${where.query};`;
-  return { query, params: { ...sets.params, ...where.params } };
-}
-
-function toSelectQuery(
-  name: string,
-  select: JSONObject,
-  columns?: string[],
-): Query {
-  const where = toSelectWhere(select, "s_");
-  const strColumns = columns ? columns.join(", ") : "*";
-  const orderBy = columns
-    ? " ORDER BY " + columns.map((n) => n + " ASC").join(", ")
-    : "";
-  const query = `SELECT ${strColumns} FROM "${name}" WHERE ${where.query}${orderBy};`;
-  return { query, params: where.params };
-}
-
-function toInsertQuery(
-  name: string,
-  entries: TJSON[][],
-  update?: boolean | undefined,
-): Query {
-  let params: JSONObject = {};
-  const values = entries.map((vs, idx) => {
-    const q = toValues(vs, "v" + idx + "_");
-    params = { ...params, ...q.params };
-    return q;
-  });
-  const strValue = values.map((v) => `(${v.query})`).join(",");
-  const query = `INSERT ${
-    update ? "OR REPLACE " : ""
-  }INTO "${name}" VALUES ${strValue};`;
-  return { query, params };
-}
-
-function toDeleteQuery(
-  name: string,
-  columns: ColumnSchema[],
-  entry: TJSON[],
-): Query {
-  const where = toWhere(columns, entry);
-  const query = `DELETE FROM "${name}" WHERE ${where.query};`;
-  return { query, params: where.params };
-}
-
-function toDeleteWhereQuery(name: string, where: JSONObject): Query {
-  const qWhere = toSelectWhere(where, "d_");
-  const query = `DELETE FROM "${name}" WHERE ${qWhere.query};`;
-  return { query, params: qWhere.params };
-}
-
-function toUpdateWhereQuery(
-  name: string,
-  where: JSONObject,
-  updates: JSONObject,
-): Query {
-  const qWhere = toSelectWhere(where, "uw_");
-  const sets = toSets(updates, "us_");
-  const query = `UPDATE "${name}" SET ${sets.query} WHERE ${qWhere.query};`;
-  return { query, params: { ...sets.params, ...qWhere.params } };
 }

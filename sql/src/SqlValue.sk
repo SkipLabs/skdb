@@ -5,10 +5,7 @@ module SKDB;
 /*****************************************************************************/
 /* Primitives used to build js objects directly (instead of a string) */
 /*****************************************************************************/
-@cpp_extern("SKIP_last_tick")
-native fun lastTick(UInt32): UInt32;
-@cpp_extern("SKIP_switch_to")
-native fun switchTo(UInt32): void;
+
 @cpp_extern("SKIP_clear_field_names")
 native fun jsClearFieldNames(): void;
 @cpp_extern("SKIP_push_field_name")
@@ -25,8 +22,10 @@ native fun jsPushObjectFieldInt64(String): void;
 native fun jsPushObjectFieldFloat(String): void;
 @cpp_extern("SKIP_push_object_field_string")
 native fun jsPushObjectFieldString(String): void;
+@cpp_extern("SKIP_push_object_field_json")
+native fun jsPushObjectFieldJSON(SKJSON.CJSON): void;
 @cpp_extern("SKIP_push_object")
-native fun jsPushObject(): void;
+native fun jsPushObject(UInt32): void;
 
 fun compareRows(
   kinds: Array<(Int, P.IKind, P.Type)>,
@@ -207,7 +206,11 @@ extension class RowValues extends Row {
     }
   }
 
-  static fun printItem(format: SKStore.OutputFormat, row: RowValues): void {
+  static fun printItem(
+    format: SKStore.OutputFormat,
+    row: RowValues,
+    channel: Int = 0,
+  ): void {
     format match {
     | SKStore.OJS _ ->
       jsClearObject();
@@ -223,11 +226,11 @@ extension class RowValues extends Row {
           }
         | Some(CFloat(f)) -> jsPushObjectFieldFloat(f.toString())
         | Some(CString(s)) -> jsPushObjectFieldString(s)
-        | Some(b @ CJSON _) -> jsPushObjectFieldString(b.toString())
+        | Some(b @ CJSON _) -> jsPushObjectFieldJSON(b.value)
         | Some(b @ CType _) -> jsPushObjectFieldString(b.toString())
         }
       };
-      jsPushObject()
+      jsPushObject(UInt32::truncate(channel))
     | _ -> print_string(row.toStringSingle(format))
     }
   }

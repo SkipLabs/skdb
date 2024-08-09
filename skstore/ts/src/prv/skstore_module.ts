@@ -311,14 +311,20 @@ class NonEmptyIteratorImpl<T> implements NonEmptyIterator<T> {
   };
 
   toArray: () => T[] = () => {
-    const array: T[] = [];
+    return Array.from(this);
+  };
+
+  *iterator() {
     let value = this.next();
     while (value != null) {
-      array.push(value);
+      yield value;
       value = this.next();
     }
-    return array;
-  };
+  }
+
+  [Symbol.iterator]() {
+    return this.iterator();
+  }
 }
 
 class WriterImpl<K, T> {

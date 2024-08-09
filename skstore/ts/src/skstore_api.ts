@@ -210,7 +210,7 @@ export interface Accumulator<T extends TJSON, V extends TJSON> {
 /**
  * A mutable iterator with at least one element
  */
-export interface NonEmptyIterator<T> {
+export interface NonEmptyIterator<T> extends Iterable<T> {
   /**
    * Return the next element of the iteration.
    *   `first` cannot be called after `next`

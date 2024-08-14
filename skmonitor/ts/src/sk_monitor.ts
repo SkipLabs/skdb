@@ -15,8 +15,6 @@ class LinksImpl implements Links {
   traceIdOpt!: () => Opt<ptr<Internal.String>>;
   monitoringOpt!: () => Opt<ptr<Internal.String>>;
 
-  constructor() {}
-
   complete = (utils: Utils, exports: object) => {
     this.write = (content: ptr<Internal.String>) => {
       console.log(utils.importString(content));
@@ -32,11 +30,9 @@ class LinksImpl implements Links {
 }
 
 class Manager implements ToWasmManager {
-  constructor() {}
-
   prepare = (wasm: object) => {
-    let toWasm = wasm as ToWasm;
-    let links = new LinksImpl();
+    const toWasm = wasm as ToWasm;
+    const links = new LinksImpl();
     toWasm.SKIP_SKMonitor_write = (content: ptr<Internal.String>) =>
       links.write(content);
     toWasm.SKIP_SKMonitor_traceIdOpt = () => links.traceIdOpt();
@@ -46,7 +42,12 @@ class Manager implements ToWasmManager {
   };
 }
 
-/** @sk init */
+/* @sk init */
+/**
+ * Init the Monitoring Wasm code manager according given environment
+ * @param env The current environnement
+ * @returns The Monitoring Wasm code manager
+ */
 export function init(env?: Environment) {
   return Promise.resolve(new Manager());
 }

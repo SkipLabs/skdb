@@ -864,15 +864,16 @@ mutable class Context{
             (false, dir.unsafeGetFileIterNoReducer(None()).map(pair -> pair.i0))
           };
           ctx = this.clone();
-          producedOutput = dir.writeDiff(
-            shouldRebuild,
-            changes,
-            writer,
-            dirSub.entity,
-            dirSub.format,
-            dirSub.filter(ctx, false, dirName),
-            dirSub.getDestinationWatermark(ctx),
-          );
+          producedOutput =
+            dir.writeDiff(
+              shouldRebuild,
+              changes,
+              writer,
+              dirSub.entity,
+              dirSub.format,
+              dirSub.filter(ctx, false, dirName),
+              dirSub.getDestinationWatermark(ctx),
+            ) > 0;
           !producedAnyOutput = producedAnyOutput || producedOutput
         | _ -> void
         }
@@ -1380,7 +1381,23 @@ private native fun newObstack(): Obstack;
 
 @debug
 @cpp_extern("SKIP_destroy_Obstack")
-private native fun destroyObstack(Obstack): void;
+private native fun destroy_Obstack(?Obstack): void;
+
+@debug
+@cpp_extern("SKIP_switch_to_trace")
+private native fun switchToTrace(): void;
+
+@debug
+@cpp_extern("SKIP_duplicate")
+private native fun duplicate(String): String;
+
+@debug
+@cpp_extern("SKIP_restore_from_trace")
+private native fun restoreFromTrace(): void;
+
+@debug
+@cpp_extern("SKIP_clear_and_restore_from_trace")
+private native fun clearAndRestoreFromTrace(): void;
 
 @debug
 @cpp_extern("SKIP_destroy_Obstack_with_value")
@@ -1474,6 +1491,10 @@ native fun shouldGC(Obstack): UInt32;
 
 @cpp_extern("SKIP_print_persistent_size")
 native fun printPersistentSize(): void;
+
+fun destroyObstack(obstack: Obstack): void {
+  destroy_Obstack(Some(obstack))
+}
 
 /*****************************************************************************/
 /* Safe way to use a context. */

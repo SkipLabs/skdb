@@ -1,0 +1,47 @@
+processors:
+  resource:
+      attributes:
+      - key: service.name
+        value: "skiplabs-host-metrics"
+        action: insert
+      - key: service.instance.id
+        value: "to-be-set"
+        action: insert
+      - key: service.namespace
+        value: "skdb.server"
+        action: insert
+  batch:
+
+receivers:
+  hostmetrics:
+    collection_interval: 10s
+    scrapers:
+      # CPU utilization metrics
+      cpu:
+      # Disk I/O metrics
+      disk:
+      # File System utilization metrics
+      filesystem:
+      # CPU load metrics
+      load:
+      # Memory utilization metrics
+      memory:
+      # Network interface I/O metrics & TCP connection metrics
+      network:
+      # Paging/Swap space utilization and I/O metrics
+      paging:
+
+exporters:
+  debug:
+  otlp/uptrace:
+    endpoint: localhost:14317
+    tls: { insecure: true }
+    # TO BE SET (Dev uptrace-dsn)
+    headers: { 'uptrace-dsn': 'http://project2_secret_token@localhost:14317/2' }
+
+service:
+  pipelines:
+    metrics:
+      receivers: [hostmetrics]
+      processors: [batch, resource]
+      exporters: [debug, otlp/uptrace]

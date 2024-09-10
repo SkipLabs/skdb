@@ -1,0 +1,277 @@
+#+TITLE: Monitoring
+
+* Objective
+
+Manage monitoring in skstore applications, especially in skdb.
+To stay aware of the performance of the software and notifies if a problem occurs with the application.
+
+* Overview
+
+Collecting telemetry data is essential for administering and managing the infrastructures.
+This data is used to monitor the performance of different systems and provide actionable insight.
+
+* Design
+
+To enable monitoring, a trace ID is required.
+
+In SKStore native application, a mmap is used to manage persistence, we need to add a notion of global monotoring identifier.
+To respect OpenTelemetry specification the identifier must be representable as 32-hex-character lowercase string.
+
+The SKMonitor API is a impired from OpenTelemetry API.
+It's focused on the the Trace API part.
+
+The SKMonitor is essentially a tracer, responsible for generating spans.
+
+The Span is the API to trace an operation.
+
+* Time
+
+SKMonitor operate on time values up to nanosecond (ns) precision.
+
+* Timestamp
+
+A timestamp is the time elapsed since the Unix epoch.
+
+* Memory management
+
+Due to SKStore's memory model and to enable trace management, a specific obstack is created.
+All trace-related data is created directly in this obstack.
+
+* Span
+
+A Span represents a single operation within a trace. Spans can be nested to form a trace tree. Each trace contains a root span, which typically describes the entire operation and, optionally, one or more sub-spans for its sub-operations.
+
+Spans encapsulate:
+
+- The span name
+- The span identifier that must be representable as 32-hex-character lowercase string
+- An optional parent span identifier
+- A start timestamp
+- An end timestamp
+- Attributes
+- A list of timestamped Events
+- A Status.
+
+** Attribute
+
+An Attribute is a key-value pair, which have the following properties:
+
+- The attribute key must be a non-empty string.
+  - Case sensitivity of keys is preserved. Keys that differ in casing are treated as distinct keys.
+- The attribute value is either:
+  - A primitive type: string, boolean, double precision floating point (IEEE 754-1985) or signed 64 bit integer.
+  - An array of primitive type values. The array MUST be homogeneous, i.e., it MUST NOT contain values of different types.
+
+Attribute Naming shall respect the OpenTelemetry [Attribute Naming](https://opentelemetry.io/docs/specs/semconv/general/attribute-naming/) for naming guidelines.
+
+** Events
+
+A Span have the ability to add events. Events have a time associated with the moment when they are added to the Span.
+
+An Event is structurally defined by the following properties:
+  - A name: Name of the event.
+  - A timestamp: the time at which the event was added.
+  - Zero or more Attributes further describing the event.
+
+** Status
+
+The Status of the Span.
+
+Status is structurally defined by the following properties:
+- StatusCode, one of the values listed below.
+- Optional Description that provides a descriptive message of the Status.
+
+StatusCode is one of the following values:
+- Unset: The default status.
+- Ok: The operation has been validated by an Application developer or Operator to have completed successfully.
+- Error: The operation contains an error.
+
+* API
+
+** startSpan
+
+A function that allow to create a new Span, on first call it's creates the specific trace memory obstack. 
+Is a Span was previously started end not ended, that one is concidered as the parent of the created span.
+
+** setName
+
+A function that allow to set this name of the current started span.
+
+** setStringAttribute
+
+A function that allow to add a string attribute to the current started span.
+
+** setIntAttribute
+
+A function that allow to add a int attribute to the current started span .
+
+** incrIntAttribute
+
+A function that allow to modify a int attribute by adding with given value to the current started span.
+
+** setFloatAttribute
+
+A function that allow to add a float attribute to the current started span.
+
+** setBoolAttribute
+
+A function that allow to add a boolean attribute to the current started span.
+
+** setStringArrayAttribute
+
+A function that allow to add a string array attribute to the current started span.
+
+** setIntArrayAttribute
+
+A function that allow to add a int array attribute to the current started span.
+
+** setFloatArrayAttribute
+
+A function that allow to add a float array attribute to the current started span.
+
+** setBoolArrayAttribute
+
+A function that allow to add a boolean array attribute to the current started span.
+
+** addEvent
+
+A function that allow to add an Event to the current started span.
+
+** trace,  debug, info, warn, error and fatal
+
+Functions that allow to add an Log Event with respectively (Trace, Debug, Info, Warn, Error and Fatal) level to the current started span using Logger mechanism.
+
+** setOkStatus
+
+A function that set the status of current started span to Ok.
+
+** setErrorStatus
+
+A function that set the status of current started span to Error with the corresponding message.
+
+** setUnsetStatus
+
+A function that set the status of current started span to default Unset value.
+
+** endSpan
+
+A function that end the current started span, flush the resulting message and clean the use memory.
+If the span have a parent, the parent become the current span.
+
+* Properties
+
+** SKMonitor
+
+Each root span defines the following attributes:
+
+- skruntime.memory.persistent: The persistent memory size used after the run (in Bytes).
+- skruntime.memory.free: The size of the free table remaining after the run (in Bytes).
+- skruntime.obstack.pick: The maximun obstack size used during the run (in Bytes).
+
+Each span defines the following attributes:
+
+- skmonitor.memory: The memory used by the span itself.
+
+** SKDB
+
+SKDB will creates at least on span for each command.
+
+For root span the name of the span represent the current executed command.
+
+During SKDB execution the following attributes may be generated:
+
+- db.namespace: The name of the current executed database (if --init or --data supplied).
+- db.user: The name of the current user running the database.
+- skdb.bytes.read: The number of bytes read durring the command.
+- skdb.bytes.written: The number of bytes written durring the command.
+
+*** SKDB exec
+
+During SKDB `exec` command a span will be generated for each transaction `skdb.transaction` and one for each statement `skdb.statement`.
+For transaction spans the span name is "skdb.transaction".
+For statement spans the span name is "skdb.statement".
+
+Durring `skdb.statement` execution the following attributes may be generated:
+
+- db.operation.name: The type of the SQL Statemement.
+
+Other properties could be added to have more info on executed statement sush as:
+
+- The number of columns.
+- The types of columns.
+- The number of joins.
+- The number of tables implied.
+- ...
+
+*** SKDB write csv
+
+During SKDB `write.csv` command a span will be generated for each table managed (`skdb.replication.table`) and for each batch handling (`skdb.replication.batch.handling`).
+A `skdb.replication.reboot` and `skdb.replication.feedback` events can be added to the span.
+
+Durring `skdb.replication.table` execution the following attributes may be generated:
+
+- skdb.replication.row.updates: The number of found row updates.
+- skdb.replication.rejected.row: The number of rejected rows.
+
+A `skdb.replication.rebuild` event can be added to the span.
+
+Durring `skdb.replication.batch.handling` execution the following attributes may be generated:
+
+- skdb.replication.rejected.row: The number of rejected rows.
+
+*** SKDB tail
+
+During SKDB `tail` command a span will be generated for each table managed (`skdb.tail.table`).
+A `skdb.tail.reboot` and `skdb.tail.commit` events can be added to the span.
+
+Durring `skdb.tail.table` execution the following attributes may be generated:
+
+- skdb.tail.changes: The number of tailed changes.
+
+* IO
+
+** Writer
+
+if /tmp/skmonitor directory does not exist the monitoring trace is written to stderr.
+if /tmp/skmonitor exists a file is created for each run to store trace
+
+** Collectors
+
+*** SKMONITOR Collector
+
+A Collector that manages insert the SKMonitor trace into OpenTelemetry flow.
+
+It's creates a '/tmp/skmonitor' directory and watch it.
+for each file created in '/tmp/skmonitor' the collector read the file and collect each span.
+
+**** Metrics
+
+A collector can convert trace span into metrics according metric converters.
+
+A metric converter is represented as json object with following properties:
+
+- name: The name of the produced metric
+- unit: The unit of the produced metric
+- descrition: The description of the produced metric
+- mode: To specify the way where the metric is computed
+  - extract: Convert a trace attribute into metric
+  - count: Convert the number of trace into metric
+  - duration: Convert a trace duration into metric
+  - event: Convert the number of event into metric
+- spans: The list of trace name concerned by the metric
+- key: The name of the concerned (attribute, event) (Only in extract or event mode)
+- kind: The kind of the metric (Default counter)
+  - counter: to measures additive non-decreasing values
+  - histogram: to produce a histogram from recorded values
+- floatValue: To specify if the produced value is int or a double float value
+- status: A optional string to filter spans according there status ('ERROR','OK' or 'UNSET') the string cans be preceded with "!" to exclude a status
+
+*** Hostmetrics Collector
+
+A OpenTelemetry Collector is used to collect host metrics to monitors the health of the host
+
+** Visulisation
+
+An Uptrace server is used to visualize the spans and metrics.
+It's directly compatible with OpenTelemetry
+It's allows to creates metrics on alerts

@@ -526,6 +526,8 @@ class Evaluator{options: Options, user: ?UserFile} {
     mutable SKStore.Context,
     SKStore.Context,
   ) ~> void) {
+    SKDBMonitor.logStatement(stmt);
+    this.user.each(u -> SKDBMonitor.setUser(u.name));
     stmt match {
     | P.Pragma _ -> invariant_violation("PRAGMA should be handled at top level")
     | P.BeginTransaction _
@@ -1881,7 +1883,10 @@ private mutable class SQLContext(
     params: Map<String, P.Value>,
     isTransaction: Bool,
   ): Result<void, Error> {
-    this.exec(context ~> {
+    if (isTransaction) {
+      SKDBMonitor.startTransaction()
+    };
+    res = this.exec(context ~> {
       context.!globals = SortedMap[];
 
       underLockF: ?((
@@ -1901,6 +1906,7 @@ private mutable class SQLContext(
         markIfRead(context, stmt);
 
         try {
+          SKDBMonitor.startStatement();
           !underLockF = evalWithContext(
             options,
             context,
@@ -1908,15 +1914,31 @@ private mutable class SQLContext(
             stmt,
             isTransaction,
           );
+          SKDBMonitor.endStatement()
         } catch {
-        | IgnoreAndContinue() -> void
-        | SqlError(_, msg) -> throw SqlError(stmt.pos, msg)
-        | exn -> throw exn
-        };
+        | IgnoreAndContinue() -> SKDBMonitor.endStatement()
+        | SqlError(_, msg) ->
+          // TODO filter message
+          SKMonitor.setErrorStatus(msg);
+          SKDBMonitor.endStatement();
+          throw SqlError(stmt.pos, msg)
+        | exn ->
+          SKMonitor.setErrorStatus(exn.getMessage());
+          SKDBMonitor.endStatement();
+          throw exn
+        }
       };
 
       underLockF
-    })
+    });
+    if (isTransaction) {
+      res match {
+      | Failure _ -> SKMonitor.setErrorStatus("Transaction failed.")
+      | Success _ -> void
+      };
+      SKDBMonitor.endTransaction()
+    };
+    res
   }
 }
 
@@ -1935,10 +1957,13 @@ fun eval(
         loop {
           parser.next_stmt(requireFinalSemicolon) match {
           | Failure(err) ->
+            SKMonitor.setErrorStatus("Parse Error");
             return (Failure(ParserError(err)) : Result<void, Error>)
           | Success(None()) ->
             if (isTransaction) {
-              return Failure(UnfinishedTransactionError(sql.length()))
+              error = UnfinishedTransactionError(sql.length());
+              SKMonitor.setErrorStatus(error.getMessage());
+              return Failure(error)
             };
             if (statements.isEmpty()) {
               return (Success(void) : Result<void, Error>)
@@ -1947,14 +1972,16 @@ fun eval(
             stmt match {
             | P.BeginTransaction{pos} ->
               if (isTransaction) {
-                return Failure(SqlError(pos, "Nested transaction"))
+                msg = "Nested transaction";
+                SKMonitor.setErrorStatus(msg);
+                return Failure(SqlError(pos, msg))
               };
               !isTransaction = true
             | P.EndTransaction{pos} ->
               if (!isTransaction) {
-                return (Failure(
-                  SqlError(pos, "Unexpected COMMIT/END TRANSACTION"),
-                ) : Result<void, Error>)
+                msg = "Unexpected COMMIT/END TRANSACTION";
+                SKMonitor.setErrorStatus(msg);
+                return (Failure(SqlError(pos, msg)) : Result<void, Error>)
               };
               break void
             | _ ->
@@ -2226,6 +2253,7 @@ fun printConsumeDiffResponse(acks: ?StdoutCheckpointAck): void {
   acks match {
   | None() -> void
   | Some(StdoutCheckpointAck(table, tick, rest)) ->
+    SKDBMonitor.replicationFeedback();
     print_raw("^" + feedbackTable(table) + "\n");
     print_raw(":" + tick.value.toString() + "\n");
     printConsumeDiffResponse(rest)
@@ -2245,15 +2273,16 @@ fun printContext(context: mutable SKStore.Context): void {
     for ((dirsub, tick) in spec) {
       edir = context.unsafeGetEagerDir(dirsub.dirName);
       (shouldRebuild, changes) = edir.getChangesAfter(tick);
-      producedOutput = edir.writeDiff(
-        shouldRebuild,
-        changes.iterator(),
-        writer,
-        dirsub.entity,
-        dirsub.format,
-        dirsub.filter(context.clone(), false, dirsub.dirName),
-        dirsub.getDestinationWatermark(context),
-      );
+      producedOutput =
+        edir.writeDiff(
+          shouldRebuild,
+          changes.iterator(),
+          writer,
+          dirsub.entity,
+          dirsub.format,
+          dirsub.filter(context.clone(), false, dirsub.dirName),
+          dirsub.getDestinationWatermark(context),
+        ) > 0;
       !producedAnyOutput = producedAnyOutput || producedOutput
     };
     if (producedAnyOutput) {

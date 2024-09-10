@@ -78,6 +78,7 @@ fun slurpStdin(): String {
 
 untracked fun main(): void {
   saved = SKStore.newObstack();
+  SKDBMonitor.start();
   cmd = Cli.Command("skdb")
     .about("The SQL database that tells you when your query results changed")
     .arg(Cli.Arg::string("init").about("Initialize new SKStore runtime data"))
@@ -367,15 +368,23 @@ untracked fun main(): void {
       }
     )
     .default((args, options) -> {
+      SKDBMonitor.setName("skdb.exec");
       // NOTE: This should be a subcommand, but the `--init` flag is currently
       // hardcoded in the runtime. It should be revisited once the runtime has
       // a proper two-step init API for persistence.
-      if (args.maybeGetString("init") is Some _) {
+      args.maybeGetString("init") match {
+      | Some(init) ->
+        SKDBMonitor.setDatabase(Path.basename(init));
         _ = SKStore.gContextInit(SKDB.makeSqlContext().clone());
         return void
-      } else if (args.maybeGetString("capacity") is Some _) {
-        print_error("cannot use capacity without init");
-        skipExit(2)
+      | _ ->
+        args.maybeGetString("data").each(d ->
+          SKDBMonitor.setDatabase(Path.basename(d))
+        );
+        if (args.maybeGetString("capacity") is Some _) {
+          print_error("cannot use capacity without init");
+          skipExit(2)
+        }
       };
       params = queryParams(options);
       if (!IO.stdin().isatty()) {
@@ -416,6 +425,7 @@ untracked fun main(): void {
     | exn -> print_error("Internal error: " + exn.getMessage())
     };
   */
+  SKDBMonitor.end();
   SKStore.destroyObstack(saved);
 }
 
@@ -425,14 +435,17 @@ untracked fun factory(): void {
 }
 
 private fun ensureContext(args: Cli.ParseResults): void {
+  optData = args.maybeGetString("data");
   if (SKStore.gHasContext() == 0) {
-    invariant(args.maybeGetString("data") is None _);
+    invariant(optData.isNone());
     print_error("Error: option --data is missing");
     skipExit(2);
   };
+  optData.each(d -> SKDBMonitor.setDatabase(Path.basename(d)))
 }
 
 fun execSessions(args: Cli.ParseResults, options: SKDB.Options): void {
+  SKDBMonitor.setName("skdb.sessions");
   ensureContext(args);
   SKDB.runSql(options, context ~> {
     for (id => sub in context.sessions) {
@@ -445,6 +458,7 @@ fun execSessions(args: Cli.ParseResults, options: SKDB.Options): void {
 }
 
 fun execCompact(args: Cli.ParseResults, options: SKDB.Options): void {
+  SKDBMonitor.setName("skdb.compact");
   ensureContext(args);
   SKDB.runLockedSql(options, context ~> {
     for (_dirName => dir in context.dirs.state) {
@@ -459,6 +473,7 @@ fun execCompact(args: Cli.ParseResults, options: SKDB.Options): void {
 }
 
 fun execDumpTable(args: Cli.ParseResults, options: SKDB.Options): void {
+  SKDBMonitor.setName("skdb.dump.table");
   ensureContext(args);
   tableName = args.getString("table");
   suffix = args.maybeGetString("table-suffix");
@@ -470,6 +485,7 @@ fun execDumpTable(args: Cli.ParseResults, options: SKDB.Options): void {
 }
 
 fun execSetClientContext(args: Cli.ParseResults, options: SKDB.Options): void {
+  SKDBMonitor.setName("skdb.set.client.context");
   ensureContext(args);
   userId = args.getString("userId");
   replicationId = args.getString("replicationId").toInt();
@@ -486,6 +502,7 @@ fun execSetClientContext(args: Cli.ParseResults, options: SKDB.Options): void {
 }
 
 fun execDumpTables(args: Cli.ParseResults, options: SKDB.Options): void {
+  SKDBMonitor.setName("skdb.dump.tables");
   ensureContext(args);
   suffix = args.maybeGetString("table-suffix");
   SKDB.runSql(options, context ~> {
@@ -495,6 +512,7 @@ fun execDumpTables(args: Cli.ParseResults, options: SKDB.Options): void {
 }
 
 fun execDumpInserts(args: Cli.ParseResults, options: SKDB.Options): void {
+  SKDBMonitor.setName("skdb.dump.inserts");
   ensureContext(args);
   SKDB.runSql(options, context ~> {
     SKDB.dumpInserts(context);
@@ -503,6 +521,7 @@ fun execDumpInserts(args: Cli.ParseResults, options: SKDB.Options): void {
 }
 
 fun execDumpView(args: Cli.ParseResults, options: SKDB.Options): void {
+  SKDBMonitor.setName("skdb.dump.view");
   ensureContext(args);
   viewName = args.getString("view");
   SKDB.runSql(options, context ~> {
@@ -512,6 +531,7 @@ fun execDumpView(args: Cli.ParseResults, options: SKDB.Options): void {
 }
 
 fun execDumpViews(args: Cli.ParseResults, options: SKDB.Options): void {
+  SKDBMonitor.setName("skdb.dump.views");
   ensureContext(args);
   SKDB.runSql(options, context ~> {
     SKDB.dumpViews(context);
@@ -520,6 +540,7 @@ fun execDumpViews(args: Cli.ParseResults, options: SKDB.Options): void {
 }
 
 fun execDump(args: Cli.ParseResults, options: SKDB.Options): void {
+  SKDBMonitor.setName("skdb.dump");
   ensureContext(args);
   SKDB.runSql(options, context ~> {
     SKDB.dumpTables(context, None());
@@ -530,6 +551,7 @@ fun execDump(args: Cli.ParseResults, options: SKDB.Options): void {
 }
 
 fun execMigrate(args: Cli.ParseResults, options: SKDB.Options): void {
+  SKDBMonitor.setName("skdb.migrate");
   ensureContext(args);
   stmts = SKDB.slurpStmts(options);
   SKDB.runSql(options, context ~> {
@@ -541,6 +563,7 @@ fun execMigrate(args: Cli.ParseResults, options: SKDB.Options): void {
 }
 
 fun execSize(args: Cli.ParseResults, options: SKDB.Options): void {
+  SKDBMonitor.setName("skdb.size");
   ensureContext(args);
   SKDB.runSql(options, _context ~> {
     SKStore.printPersistentSize();
@@ -549,6 +572,7 @@ fun execSize(args: Cli.ParseResults, options: SKDB.Options): void {
 }
 
 fun execDiff(args: Cli.ParseResults, options: SKDB.Options): void {
+  SKDBMonitor.setName("skdb.diff");
   ensureContext(args);
   sessionID = args.getString("session-id").toInt();
   since = args.maybeGetString("since").map(v -> v.toInt());
@@ -587,6 +611,7 @@ fun execDiff(args: Cli.ParseResults, options: SKDB.Options): void {
 }
 
 fun execDisconnect(args: Cli.ParseResults, options: SKDB.Options): void {
+  SKDBMonitor.setName("skdb.disconnect");
   ensureContext(args);
   sessionID = args.getString("session-id").toInt();
   SKDB.runLockedSql(options, context ~> {
@@ -600,6 +625,7 @@ fun execDisconnect(args: Cli.ParseResults, options: SKDB.Options): void {
 }
 
 fun execTail(args: Cli.ParseResults, options: SKDB.Options): void {
+  SKDBMonitor.setName("skdb.tail");
   ensureContext(args);
   sessionID = args.getString("session-id").toInt();
   followMode = args.getBool("follow");
@@ -632,6 +658,7 @@ fun execTail(args: Cli.ParseResults, options: SKDB.Options): void {
 }
 
 fun execWatermark(args: Cli.ParseResults, options: SKDB.Options): void {
+  SKDBMonitor.setName("skdb.watermark");
   ensureContext(args);
   tableName = args.getString("table").lowercase();
   source = args.getString("source").toIntOption();
@@ -646,6 +673,7 @@ fun execWatermark(args: Cli.ParseResults, options: SKDB.Options): void {
 }
 
 fun execReplicationId(args: Cli.ParseResults, options: SKDB.Options): void {
+  SKDBMonitor.setName("skdb.replication.id");
   ensureContext(args);
   clientUuid = args.getString("client-uuid").lowercase();
   SKDB.runSql(options, context ~> {
@@ -675,6 +703,7 @@ fun execReplicationId(args: Cli.ParseResults, options: SKDB.Options): void {
 }
 
 fun execWriteCsv(args: Cli.ParseResults, options: SKDB.Options): void {
+  SKDBMonitor.setName("skdb.write.csv");
   ensureContext(args);
   source = args.maybeGetString("source") match {
   | Some(src) -> src.toInt()
@@ -699,6 +728,7 @@ fun execWriteCsv(args: Cli.ParseResults, options: SKDB.Options): void {
 }
 
 fun execSubscribe(args: Cli.ParseResults, options: SKDB.Options): void {
+  SKDBMonitor.setName("skdb.subscribe");
   ensureContext(args);
   views = args.getArray("views").map(v -> v.lowercase());
   init = args.getBool("connect");
@@ -739,6 +769,7 @@ fun execSubscribe(args: Cli.ParseResults, options: SKDB.Options): void {
 }
 
 fun execCanMirror(args: Cli.ParseResults, options: SKDB.Options): void {
+  SKDBMonitor.setName("skdb.can.mirror");
   ensureContext(args);
   table = args.getString("table");
   schema = args.getString("schema");
@@ -752,6 +783,7 @@ fun execCanMirror(args: Cli.ParseResults, options: SKDB.Options): void {
 }
 
 fun execReplay(_args: Cli.ParseResults, _options: SKDB.Options): void {
+  SKDBMonitor.setName("skdb.replay");
   state = SKCSV.replayStdin();
   state.each((value, txNbrAndRepeat) -> {
     (_, repeat) = txNbrAndRepeat;
@@ -762,6 +794,7 @@ fun execReplay(_args: Cli.ParseResults, _options: SKDB.Options): void {
 }
 
 fun execToggleView(args: Cli.ParseResults, _options: SKDB.Options): void {
+  SKDBMonitor.setName("skdb.toggle.view");
   ensureContext(args);
   tableName = args.getString("table");
   SKDB.runSql(_options, context ~> {

@@ -52,6 +52,26 @@ static struct sk_obstack* free_list = NULL;
 
 unsigned char* decr_heap_end(size_t size);
 void reset_heap_end();
+uint64_t heap_end_diff();
+
+#else
+
+typedef struct {
+  uint64_t size;
+  uint64_t max;
+} sk_obstack_info_t;
+
+static __thread sk_obstack_info_t info = {0};
+void incr_size(size_t size) {
+  info.size += size;
+  if (info.size > info.max) {
+    info.max = info.size;
+  }
+}
+
+void decr_size(size_t size) {
+  info.size -= size;
+}
 #endif
 
 /*****************************************************************************/
@@ -71,7 +91,22 @@ typedef struct sk_obstack {
   char user_data[0];
 } sk_obstack_t;
 
+typedef struct sk_trace {
+  struct sk_obstack* main;
+  sk_saved_obstack_t obstack;
+  sk_saved_obstack_t switched;
+} sk_trace_t;
+
 static __thread sk_saved_obstack_t init_saved = {NULL, NULL, NULL};
+static __thread sk_trace_t trace = {};
+
+uint64_t SKIP_obstack_peak() {
+#ifdef SKIP32
+  return heap_end_diff();
+#else
+  return info.max;
+#endif
+}
 
 size_t sk_page_size(sk_obstack_t* page) {
   return page->size;
@@ -90,6 +125,7 @@ void sk_free_page(sk_obstack_t* page) {
     free_list = page;
   }
 #else
+  decr_size(page->size);
   sk_free_size(page, page->size);
 #endif
 }
@@ -103,6 +139,7 @@ sk_obstack_t* sk_malloc_page(size_t block_size) {
   }
   return (sk_obstack_t*)decr_heap_end(block_size);
 #else
+  incr_size(block_size);
   return (sk_obstack_t*)sk_malloc(block_size);
 #endif
 }
@@ -117,6 +154,9 @@ void sk_obstack_attach_page(sk_obstack_t* lpage, sk_obstack_t* next) {
 
 char* sk_large_page(size_t size) {
   size_t block_size = size + sizeof(sk_obstack_t);
+#ifdef SKIP64
+  incr_size(block_size);
+#endif
   // SKIP32
   // large pages are create directly on persistence side memory
   // to prevent persistence copy
@@ -193,6 +233,60 @@ sk_saved_obstack_t* sk_saved_obstack(sk_obstack_t* page) {
   return &page->saved;
 }
 
+void SKIP_destroy_Obstack(sk_saved_obstack_t* saved);
+char* SKIP_copy_string(char* obj, sk_cell_t* large_page);
+
+void SKIP_init_trace_Obstack() {
+  size_t block_size = PAGE_SIZE;
+  sk_obstack_t* trace_page = sk_malloc_page(block_size);
+  trace_page->previous = NULL;
+  trace_page->size = block_size;
+  trace_page->saved.head = NULL;
+  trace_page->saved.end = NULL;
+  trace_page->saved.page = NULL;
+  trace.main = trace_page;
+  trace.obstack.page = trace_page;
+  trace.obstack.end = (char*)trace_page + block_size;
+  trace.obstack.head = trace_page->user_data;
+}
+
+char* SKIP_duplicate(char* skstr) {
+  return SKIP_copy_string(skstr, NULL);
+}
+
+void SKIP_switch_to_trace() {
+  if (trace.main == NULL) {
+    SKIP_init_trace_Obstack();
+  }
+  trace.switched.head = head;
+  trace.switched.end = end;
+  trace.switched.page = page;
+  sk_saved_obstack_t* obstack = &trace.obstack;
+  head = obstack->head;
+  end = obstack->end;
+  page = obstack->page;
+}
+
+void SKIP_clear_and_restore_from_trace() {
+  SKIP_destroy_Obstack(NULL);
+  trace.main = NULL;
+  trace.obstack.page = NULL;
+  trace.obstack.end = NULL;
+  trace.obstack.head = NULL;
+  head = trace.switched.head;
+  end = trace.switched.end;
+  page = trace.switched.page;
+}
+
+void SKIP_restore_from_trace() {
+  trace.obstack.head = head;
+  trace.obstack.end = end;
+  trace.obstack.page = page;
+  head = trace.switched.head;
+  end = trace.switched.end;
+  page = trace.switched.page;
+}
+
 sk_saved_obstack_t* SKIP_new_Obstack() {
   sk_saved_obstack_t* saved;
   if (head == NULL && page == NULL && end == NULL) {
@@ -208,6 +302,20 @@ sk_saved_obstack_t* SKIP_new_Obstack() {
   sk_new_page();
 
   return saved;
+}
+
+uint64_t SKIP_Obstack_size(sk_saved_obstack_t* saved) {
+  sk_obstack_t* saved_page = NULL;
+  if (saved != NULL) {
+    saved_page = saved->page;
+  }
+  uint64_t size = 0;
+  sk_obstack_t* current = page;
+  while (current != NULL && current != saved_page) {
+    size += current->size;
+    current = current->previous;
+  }
+  return size;
 }
 
 void SKIP_destroy_Obstack(sk_saved_obstack_t* saved) {

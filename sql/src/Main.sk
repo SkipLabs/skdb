@@ -581,7 +581,10 @@ fun execDiff(args: Cli.ParseResults, options: SKDB.Options): void {
       }
     };
 
-    origContext.setGlobal("Stdout", SKDB.StdoutDiff(diffSpec.collect(Array)));
+    origContext.setGlobal(
+      "Stdout",
+      SKDB.StdoutDiff(diffSpec.collect(Array), print_raw),
+    );
     SKStore.CStop(None())
   })
 }

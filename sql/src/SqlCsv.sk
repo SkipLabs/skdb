@@ -870,6 +870,7 @@ fun replayDiff(
   identity: Int,
   schemas: Map<String, Array<P.ColumnDefinition>>,
   rebuildsEnabled: Bool,
+  single_chunk: Bool = false,
 ): SKStore.ContextOp {
   SKDB.getReplicationState(context, Some(identity)) match {
   | Some(SKDB.RSError()) ->
@@ -922,15 +923,19 @@ fun replayDiff(
         tableDiffs.push(currentDiff);
         checkpoint = parseCheckpoint(line);
 
-        break SKStore.CContinue(
-          buildDiffChain(
-            context,
-            userFileOpt,
-            tableDiffs.map(td -> td.freeze()).toArray(),
-            identity,
-            checkpoint,
-          ),
-        )
+        diff_chain = buildDiffChain(
+          context,
+          userFileOpt,
+          tableDiffs.map(td -> td.freeze()).toArray(),
+          identity,
+          checkpoint,
+        );
+
+        break if (single_chunk) {
+          SKStore.CStop(diff_chain)
+        } else {
+          SKStore.CContinue(diff_chain)
+        }
 
       | current @ Some(DiffParsingState(_, currentDiff)) if (
         line == "!rebuild"

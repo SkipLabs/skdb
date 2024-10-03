@@ -16,7 +16,7 @@ module Runtime;
 native value class GCPointer
 
 // A pointer to random non-GC'd memory
-native value class NonGCPointer {
+native value class NonGCPointer uses Orderable {
   @intrinsic
   static native fun zero(): NonGCPointer;
 }

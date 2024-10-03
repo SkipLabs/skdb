@@ -65,6 +65,7 @@ typedef struct ginfo {
   char* end;
   char* fileName;
   size_t total_palloc_size;
+  char use_lock;
 } ginfo_t;
 
 ginfo_t* ginfo = NULL;
@@ -80,7 +81,7 @@ pthread_mutex_t* gmutex = (void*)1234;
 int sk_is_locked = 0;
 
 void sk_check_has_lock() {
-  if ((ginfo->fileName != NULL) && !sk_is_locked) {
+  if (ginfo->use_lock && !sk_is_locked) {
     fprintf(stderr, "INTERNAL ERROR: unsafe operation\n");
     SKIP_throw_cruntime(ERROR_INTERNAL_LOCK);
   }
@@ -96,7 +97,7 @@ void sk_global_lock_init() {
 }
 
 void sk_global_lock() {
-  if (ginfo->fileName == NULL) {
+  if (!ginfo->use_lock) {
     return;
   }
 
@@ -119,7 +120,7 @@ void sk_global_lock() {
 }
 
 void sk_global_unlock() {
-  if (ginfo->fileName == NULL) {
+  if (!ginfo->use_lock) {
     return;
   }
 
@@ -413,7 +414,7 @@ size_t parse_capacity(int argc, char** argv) {
 /*****************************************************************************/
 
 void sk_commit(char* new_root, uint32_t sync) {
-  if (ginfo->fileName == NULL) {
+  if (!ginfo->use_lock) {
     sk_context_set_unsafe(new_root);
     return;
   }
@@ -454,7 +455,7 @@ struct file_mapping {
 /* Creates a new file mapping. */
 /*****************************************************************************/
 
-void sk_create_mapping(char* fileName, size_t icapacity) {
+void sk_create_mapping(char* fileName, size_t icapacity, char use_lock) {
   if (fileName != NULL && access(fileName, F_OK) == 0) {
     fprintf(stderr, "ERROR: File %s already exists!\n", fileName);
     exit(ERROR_MAPPING_EXISTS);
@@ -524,7 +525,8 @@ void sk_create_mapping(char* fileName, size_t icapacity) {
   *capacity = icapacity;
   *pconsts = NULL;
 
-  if (ginfo->fileName != NULL) {
+  ginfo->use_lock = use_lock;
+  if (ginfo->use_lock) {
     sk_global_lock_init();
   }
 }
@@ -652,7 +654,7 @@ int sk_is_nofile_mode() {
 
 extern SKIP_gc_type_t* epointer_ty;
 
-void SKIP_memory_init(int argc, char** argv) {
+void SKIP_memory_init(int argc, char** argv, char use_lock) {
   int is_create = 0;
   char* fileName = parse_args(argc, argv, &is_create);
 
@@ -672,7 +674,7 @@ void SKIP_memory_init(int argc, char** argv) {
   if (is_create || fileName == NULL) {
     size_t capacity = DEFAULT_CAPACITY;
     capacity = parse_capacity(argc, argv);
-    sk_create_mapping(fileName, capacity);
+    sk_create_mapping(fileName, capacity, use_lock);
   } else {
     sk_load_mapping(fileName);
   }

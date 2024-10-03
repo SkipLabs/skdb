@@ -12,6 +12,9 @@ sqlparser = { path = "../sqlparser" }
 [dev-dependencies]
 sktest = { path = "../sktest" }
 
+[lib]
+type = ["cdylib"]
+
 [[bin]]
 name = "skdb"
 main = "SKDB.main"

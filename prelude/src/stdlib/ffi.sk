@@ -1,0 +1,7 @@
+module FFI;
+
+// TODO: This should probably return a Result<> in case invalid utf8 is provided.
+@cpp_extern
+native fun utf8_bytes_to_string(bytes: Runtime.NonGCPointer, len: Int): String;
+
+module end;

@@ -483,6 +483,15 @@ mutable class Compiler{
       );
       fieldNames = schema.map(x -> x.name.origName);
       SKStore.OJS(fieldNames)
+    | OFK_FFI(id) ->
+      schema = static::getSchema(
+        context,
+        (select.core as P.SelectCoreQuery _).params,
+        core.from,
+        core.params,
+      );
+      fieldNames = schema.map(x -> x.name.origName);
+      SKStore.OFFI(id, fieldNames)
     };
 
     cselect = core with {format, directMode, rest, kinds, orderBy, limit};

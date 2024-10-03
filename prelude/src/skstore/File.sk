@@ -199,6 +199,7 @@ base class OutputFormat uses Orderable {
   | OCSV(fieldTransform: Array<Int>)
   | OJSON(fieldNames: Array<String>)
   | OJS(fieldNames: Array<String>)
+  | OFFI(res_ptr: Runtime.NonGCPointer, fieldNames: Array<String>)
   | OTable(fieldNames: Array<String>)
 
   fun usesComma(): Bool
@@ -206,9 +207,10 @@ base class OutputFormat uses Orderable {
   | OCSV(_) -> true
   | OJSON(_) -> true
   | OTable(_) -> false
-  | OJS _ ->
+  | OJS _
+  | OFFI _ ->
     invariant_violation(
-      "Internal error: JS direct mode should never be printed",
+      "Internal error: JS/FFI direct mode should never be printed",
     )
 
   fun usesDoubleQuotes(): Bool
@@ -216,9 +218,10 @@ base class OutputFormat uses Orderable {
   | OCSV(_) -> true
   | OJSON(_) -> true
   | OTable(_) -> true
-  | OJS _ ->
+  | OJS _
+  | OFFI _ ->
     invariant_violation(
-      "Internal error: JS direct mode should never be printed",
+      "Internal error: JS/FFI direct mode should never be printed",
     )
 }
 

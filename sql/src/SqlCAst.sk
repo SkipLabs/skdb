@@ -227,9 +227,10 @@ extension base class CValue uses Show {
             invariant_violation(
               "CSV handled separately. This branch should not be reached.",
             )
-          | SKStore.OJS _ ->
+          | SKStore.OJS _
+          | SKStore.OFFI _ ->
             invariant_violation(
-              "Internal error: JS direct mode should never be pretty-printed",
+              "Internal error: JS/FFI direct mode should never be pretty-printed",
             )
           }
         };

@@ -1,0 +1,601 @@
+module SKDBFFI;
+
+// FIXME: avoid leaks.
+
+class FFIWatchWriter(
+  table_ptr: Runtime.NonGCPointer,
+  update_tx_ptr: Runtime.NonGCPointer,
+) extends SKStore.StructuredWriter {
+  fun init(fileNames: Array<String>): void {
+    SKDB.RowValues::printHeader(SKStore.OFFI(this.table_ptr, fileNames))
+  }
+
+  fun writeKV(
+    _key: SKStore.Key,
+    values: Array<SKStore.File>,
+    _init: Bool,
+  ): void {
+    if (values.size() == 0) {
+      invariant_violation("Cannot have deletions during init")
+    } else {
+      for (file in values) {
+        row = SKDB.RowValues::type(file);
+        for (_ in Range(0, row.repeat)) {
+          SKDB.RowValues::printItem(SKStore.OFFI(this.table_ptr, Array[]), row);
+        }
+      }
+    }
+  }
+
+  fun flush(): void {
+    ffiSendWatchUpdate(this.update_tx_ptr, this.table_ptr)
+  }
+}
+
+class FFIWatchChangesWriter(
+  init_table_ptr: Runtime.NonGCPointer,
+  update_table_ptr: Runtime.NonGCPointer,
+  delete_table_ptr: Runtime.NonGCPointer,
+  tx_ptr: Runtime.NonGCPointer,
+) extends SKStore.StructuredWriter {
+  fun init(fileNames: Array<String>): void {
+    for (ptr in Array[
+      this.init_table_ptr,
+      this.update_table_ptr,
+      this.delete_table_ptr,
+    ]) {
+      SKDB.RowValues::printHeader(SKStore.OFFI(ptr, fileNames))
+    }
+  }
+
+  fun writeKV(key: SKStore.Key, values: Array<SKStore.File>, init: Bool): void {
+    if (values.size() == 0) {
+      if (init) {
+        invariant_violation("Cannot have deletions during init")
+      };
+      row = (key as SKDB.RowKey _).getRowValues();
+      for (_ in Range(0, row.repeat)) {
+        SKDB.RowValues::printItem(
+          SKStore.OFFI(this.delete_table_ptr, Array[]),
+          row,
+        );
+      }
+    } else {
+      for (file in values) {
+        row = SKDB.RowValues::type(file);
+        table_ptr = if (init) {
+          this.init_table_ptr
+        } else {
+          this.update_table_ptr
+        };
+        for (_ in Range(0, row.repeat)) {
+          SKDB.RowValues::printItem(SKStore.OFFI(table_ptr, Array[]), row);
+        }
+      }
+    }
+  }
+
+  fun flush(): void {
+    ffiSendWatchChangesUpdate(
+      this.tx_ptr,
+      this.init_table_ptr,
+      this.update_table_ptr,
+      this.delete_table_ptr,
+    )
+  }
+}
+
+@cpp_extern("SKIP_FFI_print")
+native fun ffiPrint_internal(
+  res: Runtime.NonGCPointer,
+  str: String,
+  len: Int,
+): void;
+
+fun ffiPrint(res: Runtime.NonGCPointer, str: String): void {
+  ffiPrint_internal(res, str, str.length())
+}
+
+@cpp_extern("SKIP_FFI_send_update")
+native fun ffiSendUpdate_internal(
+  stream_tx_ptr: Runtime.NonGCPointer,
+  str: String,
+  len: Int,
+): void;
+
+fun ffiSendUpdate(stream_tx_ptr: Runtime.NonGCPointer, str: String): void {
+  ffiSendUpdate_internal(stream_tx_ptr, str, str.length())
+}
+
+@cpp_extern("SKIP_FFI_send_watch_update")
+native fun ffiSendWatchUpdate(
+  stream_tx_ptr: Runtime.NonGCPointer,
+  res: Runtime.NonGCPointer,
+): void;
+
+@cpp_extern("SKIP_FFI_send_watch_changes_update")
+native fun ffiSendWatchChangesUpdate(
+  stream_tx_ptr: Runtime.NonGCPointer,
+  init_table_ptr: Runtime.NonGCPointer,
+  update_table_ptr: Runtime.NonGCPointer,
+  delete_table_ptr: Runtime.NonGCPointer,
+): void;
+
+@cpp_export("skdb_exec")
+fun exec(
+  query_ptr: Runtime.NonGCPointer,
+  query_len: Int,
+  params_ptr: Runtime.NonGCPointer,
+  params_len: Int,
+  res: Runtime.NonGCPointer,
+): Int {
+  // TODO: Garbage collection of temp variables.
+  query = FFI.utf8_bytes_to_string(query_ptr, query_len);
+  params = SKDB.decodeParams(
+    try {
+      JSON.decode(FFI.utf8_bytes_to_string(params_ptr, params_len))
+    } catch {
+    | _exn -> invariant_violation("TODO")
+    },
+  );
+  try {
+    SKDB.eval(
+      query,
+      SKDB.Options{
+        alwaysAllowJoins => true,
+        backtrace => true,
+        sync => true,
+        showUsedIndexes => false,
+        format => SKDB.OFK_FFI(res),
+      },
+      params,
+    ) match {
+    | Success _ -> 0
+    | Failure _ -> -1
+    }
+  } catch {
+  | exn ->
+    print_error("Uncaught skdb exception: " + exn.getMessage());
+    -1
+  }
+}
+
+@cpp_export("skdb_write_csv")
+fun write_csv(
+  payload_ptr: Runtime.NonGCPointer,
+  payload_len: Int,
+  source: Int,
+): void {
+  try {
+    user = None<String>();
+    schemas = Map<String, Array<SQLParser.ColumnDefinition>>::createFromItems(
+      Array[],
+    );
+    rebuildsEnabled = true;
+
+    options = SKDB.Options{
+      backtrace => false,
+      alwaysAllowJoins => false,
+      sync => false,
+      showUsedIndexes => false,
+      format => SKDB.OFK_SQL(),
+      expectQueryParams => false,
+    };
+
+    // NOTE: Since current code relies on reading from stdin to trick the compiler
+    // into thinking `getLine()` does not mutate any state, we have to pre-chunk
+    // the payload.
+    payload = FFI.utf8_bytes_to_string(payload_ptr, payload_len);
+    chunks = mutable Vector[];
+    cur_chunk = mutable Vector[];
+    for (line in payload.split("\n")) {
+      cur_chunk.push(line);
+      if (line.startsWith(":")) {
+        chunks.push(cur_chunk.chill());
+        chunks.push(Vector[]);
+        cur_chunk.clear();
+      }
+    };
+
+    for (chunk in chunks) {
+      SKDB.runSql(options, context ~> {
+        SKCSV.replayDiff(
+          context,
+          chunk.values().next,
+          user,
+          source,
+          schemas,
+          rebuildsEnabled,
+          /* single_chunk */ true,
+        )
+      })
+    }
+  } catch {
+  | exn -> print_error("Uncaught skdb exception: " + exn.getMessage())
+  }
+}
+
+@cpp_export("skdb_dump_table")
+fun dump_table(
+  table_name_ptr: Runtime.NonGCPointer,
+  table_name_len: Int,
+  stdout_ptr: Runtime.NonGCPointer,
+): void {
+  try {
+    tableName = FFI.utf8_bytes_to_string(table_name_ptr, table_name_len);
+    suffix = None<String>();
+    legacySchema = false;
+    options = SKDB.Options{
+      backtrace => false,
+      alwaysAllowJoins => false,
+      sync => false,
+      showUsedIndexes => false,
+      format => SKDB.OFK_SQL(),
+      expectQueryParams => false,
+    };
+    SKDB.runSql(options, context ~> {
+      SKDB.dumpTable(
+        context,
+        tableName.lowercase(),
+        suffix,
+        legacySchema,
+        str ~> {
+          ffiPrint(stdout_ptr, str)
+        },
+      );
+      SKStore.CStop(None())
+    })
+  } catch {
+  | exn -> print_error("Uncaught skdb exception: " + exn.getMessage())
+  }
+}
+
+@cpp_export("skdb_subscribe")
+fun subscribe(
+  replication_uid: Int,
+  view_names_ptr: Runtime.NonGCPointer,
+  view_names_len: Int,
+  update_tx_ptr: Runtime.NonGCPointer,
+  stdout_ptr: Runtime.NonGCPointer,
+): void {
+  try {
+    views = FFI.utf8_bytes_to_string(view_names_ptr, view_names_len)
+      .split(";")
+      .map(v -> v.lowercase())
+      .collect(Array);
+    init = false;
+    options = SKDB.Options{
+      backtrace => false,
+      alwaysAllowJoins => false,
+      sync => false,
+      showUsedIndexes => false,
+      format => SKDB.OFK_CSV(),
+      expectQueryParams => false,
+    };
+    SKDB.runLockedSql(options, context ~> {
+      SKDB.forbidNow(context);
+      cmd = SKStore.NFFIUpdates(str ~> ffiSendUpdate(update_tx_ptr, str));
+      (input, output) = SKDB.getSubsDirs(context);
+      viewKey = SKStore.SID(
+        views.maybeGet(0).fromSome("Must specify at least one view or table"),
+      );
+      inputDir = context.unsafeGetEagerDir(input.dirName);
+      sessionID = SKStore.genSym(0);
+      request = SKDB.SubRequestFile(
+        views,
+        options.format,
+        init,
+        cmd,
+        sessionID,
+        Some(replication_uid),
+      );
+      inputDir.write(context, viewKey, request);
+      context.update();
+      outputDir = context.unsafeGetEagerDir(output.dirName);
+      file = outputDir.getArrayRaw(viewKey)[0];
+      invariant(sessionID == SKStore.IntFile::type(file).value);
+      ffiPrint(stdout_ptr, sessionID.toString());
+    })
+  } catch {
+  | exn -> print_error("Uncaught skdb exception: " + exn.getMessage())
+  }
+}
+
+fun watch_common(
+  query: String,
+  params: String,
+  cmd: SKStore.CmdKind,
+  stdout_ptr: Runtime.NonGCPointer,
+): void {
+  try {
+    sessionID = SKStore.genSym(0);
+    init = true;
+    // NOTE: The `onlyChanges` var should not matter here.
+    onlyChanges = false;
+    options = SKDB.Options{
+      backtrace => false,
+      alwaysAllowJoins => false,
+      sync => false,
+      showUsedIndexes => false,
+      format => SKDB.OFK_CSV(),
+      expectQueryParams => false,
+    };
+    SKStore.runWithGc(SKDB.makeSqlContext(), context ~> {
+      SKDB.getReactiveQueryHandle(context).i0.writeArray(
+        context,
+        SKStore.IID(sessionID),
+        Array[
+          SKDB.QueryInfoFile(
+            Some(SKDB.QueryInfo(query, JSON.decode(params), onlyChanges)),
+          ),
+        ],
+      );
+      context.update();
+      SKStore.CStop(None())
+    });
+
+    SKDB.runLockedSql(options, context ~> {
+      SKDB.forbidNow(context);
+      reactive_query = SKDB.getReactiveQueryHandle(context).i1.get(
+        context,
+        SKStore.IID(sessionID),
+      );
+      dir_name = reactive_query.selectDir.dirName;
+      format = SKStore.OFFI(
+        Runtime.NonGCPointer::zero(),
+        reactive_query.fieldNames,
+      );
+      dir_sub = SKStore.DirSub(
+        dir_name,
+        "reactive_query_" + sessionID.toString(),
+        format,
+        (_context) ~> None(),
+      );
+
+      context.subscribe(context, sessionID, init, cmd, None(), Array[dir_sub]);
+
+      ffiPrint(stdout_ptr, sessionID.toString())
+    })
+  } catch {
+  | exn -> print_error("Uncaught skdb exception: " + exn.getMessage())
+  }
+}
+
+@cpp_export("skdb_watch")
+fun watch_query(
+  query_ptr: Runtime.NonGCPointer,
+  query_len: Int,
+  params_ptr: Runtime.NonGCPointer,
+  params_len: Int,
+  table_ptr: Runtime.NonGCPointer,
+  tx_ptr: Runtime.NonGCPointer,
+  stdout_ptr: Runtime.NonGCPointer,
+): void {
+  query = FFI.utf8_bytes_to_string(query_ptr, query_len);
+  params = FFI.utf8_bytes_to_string(params_ptr, params_len);
+  cmd = SKStore.NFFIWatch(FFIWatchWriter(table_ptr, tx_ptr));
+  watch_common(query, params, cmd, stdout_ptr)
+}
+
+@cpp_export("skdb_watch_changes")
+fun watch_query_changes(
+  query_ptr: Runtime.NonGCPointer,
+  query_len: Int,
+  params_ptr: Runtime.NonGCPointer,
+  params_len: Int,
+  init_table_ptr: Runtime.NonGCPointer,
+  update_table_ptr: Runtime.NonGCPointer,
+  delete_table_ptr: Runtime.NonGCPointer,
+  tx_ptr: Runtime.NonGCPointer,
+  stdout_ptr: Runtime.NonGCPointer,
+): void {
+  query = FFI.utf8_bytes_to_string(query_ptr, query_len);
+  params = FFI.utf8_bytes_to_string(params_ptr, params_len);
+  cmd = SKStore.NFFIWatchChanges(
+    FFIWatchChangesWriter(
+      init_table_ptr,
+      update_table_ptr,
+      delete_table_ptr,
+      tx_ptr,
+    ),
+  );
+  watch_common(query, params, cmd, stdout_ptr)
+}
+
+@cpp_export("skdb_disconnect")
+fun disconnect(sessionID: Int): void {
+  try {
+    options = SKDB.Options{
+      backtrace => false,
+      alwaysAllowJoins => false,
+      sync => false,
+      showUsedIndexes => false,
+      format => SKDB.OFK_CSV(),
+      expectQueryParams => false,
+    };
+    SKDB.runLockedSql(options, context ~> {
+      context.sessions.maybeGet(sessionID) match {
+      | None() ->
+        print_error("Error: session not found");
+        skipExit(2)
+      | Some(_) -> context.!sessions = context.sessions.remove(sessionID)
+      };
+    })
+  } catch {
+  | exn -> print_error("Uncaught skdb exception: " + exn.getMessage())
+  }
+}
+
+@cpp_export("skdb_watermark")
+fun watermark(
+  replication_uid: Int,
+  table_name_ptr: Runtime.NonGCPointer,
+  table_name_len: Int,
+  stdout_ptr: Runtime.NonGCPointer,
+): void {
+  try {
+    tableName = FFI.utf8_bytes_to_string(
+      table_name_ptr,
+      table_name_len,
+    ).lowercase();
+    source = Some(replication_uid);
+    options = SKDB.Options{
+      backtrace => false,
+      alwaysAllowJoins => false,
+      sync => false,
+      showUsedIndexes => false,
+      format => SKDB.OFK_SQL(),
+      expectQueryParams => false,
+    };
+    SKDB.runSql(options, context ~> {
+      ffiPrint(
+        stdout_ptr,
+        SKDB.getWatermark(context.clone(), tableName, source)
+          .default(SKStore.Tick(0))
+          .value.toString(),
+      );
+      SKStore.CStop(None())
+    });
+  } catch {
+  | exn -> print_error("Uncaught skdb exception: " + exn.getMessage())
+  }
+}
+
+@cpp_export("skdb_diff")
+fun diff(
+  sessionID: Int,
+  input_ptr: Runtime.NonGCPointer,
+  input_len: Int,
+  stdout_ptr: Runtime.NonGCPointer,
+): void {
+  try {
+    input = FFI.utf8_bytes_to_string(input_ptr, input_len);
+    options = SKDB.Options{
+      backtrace => false,
+      alwaysAllowJoins => false,
+      sync => false,
+      showUsedIndexes => false,
+      format => SKDB.OFK_CSV(),
+      expectQueryParams => false,
+    };
+    SKDB.runSql(options, origContext ~> {
+      context = origContext.mclone();
+      sub = context.sessions.maybeGet(sessionID) match {
+      | None() ->
+        print_error("Error: session not found");
+        skipExit(2)
+      | Some(x) -> x
+      };
+
+      spec = SKDB.decodeDiffSpec(input);
+
+      diffSpec = mutable Vector[];
+
+      for (dirSub in sub.dirSubs) {
+        tableName = SQLParser.Name::create(
+          dirSub.dirName.dirName.stripPrefix("/").stripSuffix("/"),
+        );
+        spec.maybeGet(tableName) match {
+        | None() -> void
+        | Some(t) -> diffSpec.push((dirSub, t))
+        }
+      };
+
+      // FIXME: Invoke ffiPrint() directly.
+      origContext.setGlobal(
+        "Stdout",
+        SKDB.StdoutDiff(diffSpec.collect(Array), str ~>
+          ffiPrint(stdout_ptr, str)
+        ),
+      );
+      SKStore.CStop(None())
+    })
+  } catch {
+  | exn -> print_error("Uncaught skdb exception: " + exn.getMessage())
+  }
+}
+
+@cpp_export("skdb_toggle_view")
+fun toggle_view(view_name_ptr: Runtime.NonGCPointer, view_name_len: Int): void {
+  try {
+    tableName = FFI.utf8_bytes_to_string(view_name_ptr, view_name_len);
+    options = SKDB.Options{
+      backtrace => false,
+      alwaysAllowJoins => false,
+      sync => false,
+      showUsedIndexes => false,
+      format => SKDB.OFK_CSV(),
+      expectQueryParams => false,
+    };
+    SKDB.runSql(options, context ~> {
+      tables = SKDB.getTableDir(context);
+      baseName = SKStore.SID::create(tableName.lowercase());
+      tables.maybeGet(context, baseName) match {
+      | None() -> print_error("Table not found: " + tableName)
+      | Some(dirDescr) ->
+        tables.writeArray(
+          context,
+          baseName,
+          Array[dirDescr with {view => !dirDescr.view}],
+        )
+      };
+      SKStore.CStop(None())
+    })
+  } catch {
+  | exn -> print_error("Uncaught skdb exception: " + exn.getMessage())
+  }
+}
+
+@cpp_export("skdb_replication_id")
+fun replication_id(
+  client_uuid_ptr: Runtime.NonGCPointer,
+  client_uuid_len: Int,
+  stdout_ptr: Runtime.NonGCPointer,
+): void {
+  try {
+    clientUuid = FFI.utf8_bytes_to_string(
+      client_uuid_ptr,
+      client_uuid_len,
+    ).lowercase();
+    options = SKDB.Options{
+      backtrace => false,
+      alwaysAllowJoins => false,
+      sync => false,
+      showUsedIndexes => false,
+      format => SKDB.OFK_CSV(),
+      expectQueryParams => false,
+    };
+    SKDB.runSql(options, context ~> {
+      clientsDirname = SKStore.DirName::create(`/clients/`);
+      clientsDir = context.maybeGetDir(clientsDirname) match {
+      | None() ->
+        context.mkdir(
+          SKStore.SID::keyType,
+          SKStore.IntFile::type,
+          clientsDirname,
+        )
+      | Some(d) ->
+        SKStore.EHandle(
+          SKStore.SID::keyType,
+          SKStore.IntFile::type,
+          d.getDirName(),
+        )
+      };
+      key = SKStore.SID::create(clientUuid);
+      arr = clientsDir.unsafeGetArray(context, key);
+      replicationSource = if (arr.size() > 0) {
+        arr[0].value
+      } else {
+        source = SKStore.genSym(0);
+        clientsDir.writeArray(context, key, Array[SKStore.IntFile(source)]);
+        source
+      };
+      ffiPrint(stdout_ptr, replicationSource.toString());
+      SKStore.CStop(None())
+    });
+  } catch {
+  | exn -> print_error("Uncaught skdb exception: " + exn.getMessage())
+  }
+}
+
+module end;

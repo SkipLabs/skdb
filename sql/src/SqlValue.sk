@@ -9,6 +9,7 @@ module SKDB;
 native fun lastTick(UInt32): UInt32;
 @cpp_extern("SKIP_switch_to")
 native fun switchTo(UInt32): void;
+
 @cpp_extern("SKIP_clear_field_names")
 native fun jsClearFieldNames(): void;
 @cpp_extern("SKIP_push_field_name")
@@ -29,6 +30,23 @@ native fun jsPushObjectFieldString(String): void;
 native fun jsPushObjectFieldJSON(SKJSON.CJSON): void;
 @cpp_extern("SKIP_push_object")
 native fun jsPushObject(): void;
+
+@cpp_extern("SKIP_FFI_new_object")
+native fun ffiNewObject(readonly Runtime.NonGCPointer): void;
+@cpp_extern("SKIP_FFI_push_field_name")
+native fun ffiPushFieldName(readonly Runtime.NonGCPointer, String, Int): void;
+@cpp_extern("SKIP_FFI_push_object_field_null")
+native fun ffiPushObjectFieldNull(readonly Runtime.NonGCPointer): void;
+@cpp_extern("SKIP_FFI_push_object_field_int")
+native fun ffiPushObjectFieldInt(readonly Runtime.NonGCPointer, Int): void;
+@cpp_extern("SKIP_FFI_push_object_field_float")
+native fun ffiPushObjectFieldFloat(readonly Runtime.NonGCPointer, Float): void;
+@cpp_extern("SKIP_FFI_push_object_field_string")
+native fun ffiPushObjectFieldString(
+  readonly Runtime.NonGCPointer,
+  String,
+  Int,
+): void;
 
 fun compareRows(
   kinds: Array<(Int, P.IKind, P.Type)>,
@@ -205,6 +223,10 @@ extension class RowValues extends Row {
       for (fieldName in fieldNames) {
         jsPushFieldName(fieldName);
       }
+    | SKStore.OFFI(id, fieldNames) ->
+      for (fieldName in fieldNames) {
+        ffiPushFieldName(id, fieldName, fieldName.length());
+      }
     | _ -> void
     }
   }
@@ -230,6 +252,20 @@ extension class RowValues extends Row {
         }
       };
       jsPushObject()
+    | SKStore.OFFI(id, _) ->
+      ffiNewObject(id);
+      for (v in row.values) {
+        v match {
+        | None() -> ffiPushObjectFieldNull(id)
+        | Some(CInt(n)) -> ffiPushObjectFieldInt(id, n)
+        | Some(CFloat(f)) -> ffiPushObjectFieldFloat(id, f)
+        | Some(CString(s)) -> ffiPushObjectFieldString(id, s, s.length())
+        | Some(b @ CJSON _)
+        | Some(b @ CType _) ->
+          bs = b.toString();
+          ffiPushObjectFieldString(id, bs, bs.length())
+        }
+      }
     | _ -> print_string(row.toStringSingle(format))
     }
   }

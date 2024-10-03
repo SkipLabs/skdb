@@ -1780,6 +1780,7 @@ base class OutputFormatKind {
   | OFK_JSON()
   | OFK_SQL()
   | OFK_JS()
+  | OFK_FFI(Runtime.NonGCPointer)
   | OFK_Table()
 }
 
@@ -2158,6 +2159,7 @@ class StdoutFile(
 
 class StdoutDiff(
   diffSpec: Array<(SKStore.DirSub, SKStore.Tick)>,
+  print: String ~> void,
 ) extends SKStore.File
 
 class StdoutCheckpointAck(
@@ -2239,8 +2241,8 @@ fun printContext(context: mutable SKStore.Context): void {
     for (selectDir in stdout.toArray().reversed()) {
       showSelect(context, format, selectDir)
     }
-  | Some(StdoutDiff(spec)) ->
-    writer = mutable Debug.BufferedWriter(print_raw, 4096);
+  | Some(StdoutDiff(spec, print)) ->
+    writer = mutable Debug.BufferedWriter(print, 4096);
     producedAnyOutput = false;
     for ((dirsub, tick) in spec) {
       edir = context.unsafeGetEagerDir(dirsub.dirName);

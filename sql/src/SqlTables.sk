@@ -468,6 +468,8 @@ fun getSubsDirs(
         | SKDB.OFK_JSON() -> SKStore.OJSON(getFieldNames(context, edir.dirName))
         | SKDB.OFK_SQL() -> SKStore.OSQL()
         | SKDB.OFK_JS() -> SKStore.OJS(getFieldNames(context, edir.dirName))
+        | SKDB.OFK_FFI(id) ->
+          SKStore.OFFI(id, getFieldNames(context, edir.dirName))
         | SKDB.OFK_Table() ->
           SKStore.OTable(getFieldNames(context, edir.dirName))
         };
@@ -713,8 +715,11 @@ fun feedbackTable(table: String): String {
 /* DUMP. */
 /*****************************************************************************/
 
-fun printDirDescr(dirDescr: DirDescr, suffix: ?String): void {
-  o = print_raw;
+fun printDirDescr(
+  dirDescr: DirDescr,
+  suffix: ?String,
+  o: (String) ~> void = print_raw,
+): void {
   o("CREATE ");
   o("TABLE ");
   o(dirDescr.name.origName);
@@ -787,6 +792,7 @@ fun dumpTable(
   tableName: String,
   suffix: ?String,
   legacySchema: Bool = false,
+  o: (String) ~> void = print_raw,
 ): void {
   context = SKStore.Context::fromSaved(origContext.clone());
   tableDir = getTableDir(context);
@@ -814,7 +820,7 @@ fun dumpTable(
 
   dirDescrOpt match {
   | None() -> void
-  | Some(dd) -> printDirDescr(dd, suffix)
+  | Some(dd) -> printDirDescr(dd, suffix, o)
   };
 }
 

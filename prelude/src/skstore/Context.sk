@@ -48,9 +48,18 @@ class CopyTo(from: DirName, to: DirName) extends Postponable {
 /* Sessions. */
 /*****************************************************************************/
 
+base class StructuredWriter {
+  fun init(fieldNames: Array<String>): void;
+  fun writeKV(key: Key, value: Array<File>, init: Bool): void;
+  fun flush(): void;
+}
+
 base class CmdKind {
   children =
   | NUpdates(String)
+  | NFFIUpdates(String ~> void)
+  | NFFIWatch(StructuredWriter)
+  | NFFIWatchChanges(StructuredWriter)
   | NNotify(String)
   | NTail()
   | NWatch(
@@ -803,6 +812,86 @@ mutable class Context{
     }
   }
 
+  readonly fun notifySubUpdates(
+    sub: Sub,
+    start: Tick,
+    writer: mutable Debug.BufferedWriter,
+  ): void {
+    producedAnyOutput = false;
+    for (dirSub in sub.dirSubs) {
+      dirName = dirSub.dirName;
+      this.unsafeMaybeGetDir(dirName) match {
+      | Some(dir @ EagerDir _) ->
+        (shouldRebuild, changes) = if (start.value > 0) {
+          (shouldRebuild, changes) = dir.getChangesAfter(start);
+          (shouldRebuild, changes.iterator());
+        } else {
+          (false, dir.unsafeGetFileIterNoReducer(None()).map(pair -> pair.i0))
+        };
+        ctx = this.clone();
+        producedOutput = dir.writeDiff(
+          shouldRebuild,
+          changes,
+          writer,
+          dirSub.entity,
+          dirSub.format,
+          dirSub.filter(ctx, false, dirName),
+          dirSub.getDestinationWatermark(ctx),
+        );
+        !producedAnyOutput = producedAnyOutput || producedOutput
+      | _ -> void
+      }
+    };
+    if (producedAnyOutput) {
+      // then we need to produce a checkpoint for flushing and committing
+      ourTime = this.tick.value.toString();
+      writer.write(`:${ourTime}\n`);
+      writer.flush();
+      flushStdout();
+    };
+  }
+
+  readonly fun notifySubUpdatesWatch(
+    sub: Sub,
+    start: Tick,
+    writer: StructuredWriter,
+    changesOnly: Bool,
+  ): void {
+    assert(sub.dirSubs.size() == 1);
+    dirSub = sub.dirSubs[0];
+    dirName = dirSub.dirName;
+    this.unsafeMaybeGetDir(dirName) match {
+    | Some(dir @ EagerDir _) ->
+      (init, changes) = (if (changesOnly && start.value > 0) {
+        // TODO: Not sure about shouldRebuild.
+        (shouldRebuild, changes) = dir.getChangesAfter(start);
+        if (shouldRebuild) {
+          None()
+        } else {
+          Some(changes.iterator())
+        }
+      } else {
+        None()
+      }) match {
+      | None() ->
+        (true, dir.unsafeGetFileIterNoReducer(None()).map(pair -> pair.i0))
+      | Some(x) -> (false, x)
+      };
+      dirSub.format match {
+      | OFFI(_, fieldNames) -> writer.init(fieldNames)
+      | _ -> invariant_violation("Inconsistent format")
+      };
+
+      for (key in changes) {
+        values = dir.getArrayRaw(key);
+        writer.writeKV(key, values, init);
+      };
+
+      writer.flush()
+    | _ -> void
+    };
+  }
+
   readonly fun notifySub(sub: Sub, start: Tick): void {
     lock = unfreezeLock(sub.lock);
     mutexLock(lock);
@@ -820,40 +909,16 @@ mutable class Context{
       o = x -> _ = file.write_all(x.bytes());
       writer = mutable Debug.BufferedWriter(o, 4096);
 
-      producedAnyOutput = false;
-      for (dirSub in sub.dirSubs) {
-        dirName = dirSub.dirName;
-        this.unsafeMaybeGetDir(dirName) match {
-        | Some(dir @ EagerDir _) ->
-          (shouldRebuild, changes) = if (start.value > 0) {
-            (shouldRebuild, changes) = dir.getChangesAfter(start);
-            (shouldRebuild, changes.iterator());
-          } else {
-            (false, dir.unsafeGetFileIterNoReducer(None()).map(pair -> pair.i0))
-          };
-          ctx = this.clone();
-          producedOutput = dir.writeDiff(
-            shouldRebuild,
-            changes,
-            writer,
-            dirSub.entity,
-            dirSub.format,
-            dirSub.filter(ctx, false, dirName),
-            dirSub.getDestinationWatermark(ctx),
-          );
-          !producedAnyOutput = producedAnyOutput || producedOutput
-        | _ -> void
-        }
-      };
-      if (producedAnyOutput) {
-        // then we need to produce a checkpoint for flushing and committing
-        ourTime = this.tick.value.toString();
-        writer.write(`:${ourTime}\n`);
-        writer.flush();
-        flushStdout();
-      };
+      this.notifySubUpdates(sub, start, writer);
 
       file.close()
+    | NFFIUpdates(ffiSend) ->
+      // TODO: Does buffering causes issues with incomplete payloads?
+      writer = mutable Debug.BufferedWriter(ffiSend, 4096);
+      this.notifySubUpdates(sub, start, writer)
+    | NFFIWatch(writer) -> this.notifySubUpdatesWatch(sub, start, writer, false)
+    | NFFIWatchChanges(writer) ->
+      this.notifySubUpdatesWatch(sub, start, writer, true)
     | NNotify(file) -> _ = unixNotify(file, Int32::truncate(start.value))
     | NTail() ->
       cond = unfreezeCond(sub.cond);

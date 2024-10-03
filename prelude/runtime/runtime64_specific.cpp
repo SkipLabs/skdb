@@ -271,14 +271,14 @@ void SKIP_unsetenv(char* name) {
   }
 }
 
-void SKIP_memory_init(int pargc, char** pargv);
+void SKIP_memory_init(int pargc, char** pargv, char use_lock);
 void sk_persist_consts();
 
 void sk_init(int pargc, char** pargv) {
   sk_saved_obstack_t* saved;
   argc = pargc;
   argv = pargv;
-  SKIP_memory_init(pargc, pargv);
+  SKIP_memory_init(pargc, pargv, /* use_lock = */ 1);
   saved = SKIP_new_Obstack();
   SKIP_initializeSkip();
   sk_persist_consts();
@@ -637,4 +637,39 @@ void SKIP_push_object() {
 void SKIP_js_delete_fun() {
   // Not implemented
 }
+
+void SKIP_js_mark_query() {
+  // Not implemented
+}
+
+#ifdef SKIP_LIBRARY
+extern void SKIP_FFI_push_field_name(void* res, const char* name,
+                                     int64_t name_len);
+extern void SKIP_FFI_new_object(void* res);
+extern void SKIP_FFI_push_object_field_null(void* res);
+extern void SKIP_FFI_push_object_field_int(void* res, int64_t val);
+extern void SKIP_FFI_push_object_field_float(void* res, double val);
+extern void SKIP_FFI_push_object_field_string(void* res, const char* val,
+                                              int64_t val_len);
+
+extern void SKIP_FFI_print(void* res, const char* str, int64_t str_len);
+extern void SKIP_FFI_send_update(void* res, const char* str, int64_t str_len);
+extern void SKIP_FFI_send_watch_update(void* table_ptr, void* res);
+extern void SKIP_FFI_send_watch_changes_update(void* init_table_ptr,
+                                               void* changes_table_ptr,
+                                               void* deletes_table_ptr,
+                                               void* res);
+#else
+void SKIP_FFI_push_field_name(void*, const char*, int64_t) {}
+void SKIP_FFI_new_object(void*) {}
+void SKIP_FFI_push_object_field_null(void*) {}
+void SKIP_FFI_push_object_field_int(void*, int64_t) {}
+void SKIP_FFI_push_object_field_float(void*, double) {}
+void SKIP_FFI_push_object_field_string(void*, const char*, int64_t) {}
+
+void SKIP_FFI_print(void*, const char*, int64_t) {}
+void SKIP_FFI_send_update(void*, const char*, int64_t) {}
+void SKIP_FFI_send_watch_update(void*, void*) {}
+void SKIP_FFI_send_watch_changes_update(void*, void*, void*, void*) {}
+#endif
 }

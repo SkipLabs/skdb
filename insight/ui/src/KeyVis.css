@@ -1,0 +1,362 @@
+:root {
+    --kv_beige: #d5bbb1;
+    --kv_beige_l: #d5c5bf;
+
+    --kv_blue: #242f40;
+    --kv_blue_b: #2e3c52;
+    --kv_blue_l: #3e4a5d;
+    --kv_blue_l2: #4e5d75;
+    --kv_blue_link: #3a73cb;
+
+    --kv_green: #4a6156;
+    --kv_green_l: #aec7bb;
+
+    --kv_red: #664a65;
+    --kv_red_l: #4c434d;
+
+    --kv_gray0: #eeeeee;
+    --kv_gray1: #dddddd;
+    --kv_gray2: #cccccc;
+    --kv_gray3: #bbbbbb;
+    --kv_gray4: #9a9a9a;
+    --kv_gray5: #666666;
+    --kv_gray6: #333333;
+    --kv_gray7: #000000;
+}
+
+/* ----------------------------------------------------------- */
+/* DAG */
+/* ----------------------------------------------------------- */
+
+#keyvis {
+    height: 100%;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+}
+
+#keyvis svg {
+    background-color: var(--kv_gray0);
+}
+
+#keyvis #nodes foreignObject {
+    border-width: 1px;
+    border-color: var(--kv_gray6);
+    border-style: solid;
+    background-color: var(--kv_green_l);
+    border-radius: 1em;
+}
+
+#keyvis #nodes .node {
+    /* background-color: var(--kv_green_l); */
+    padding-top: 1em;
+    background-color: var(--kv_gray2);
+    color: var(--kv_gray0);
+    height: 100%;
+    box-sizing: border-box;
+    overflow: auto;
+}
+
+#keyvis #nodes .node .dir-title {
+    box-shadow: 0px 3px 3px 0.001px rgb(0 0 0 / 20%);
+    position:relative;
+    z-index:3;
+}
+
+#keyvis #nodes .node .dir {
+    background-color: var(--kv_blue);
+
+    margin-top: 0em;
+    margin-bottom: 0em;
+
+    padding-left: 1em;
+    padding-top: 1em;
+    padding-bottom: 1em;
+
+    overflow: auto;
+}
+
+#keyvis #nodes .node.highlighted .dir {
+    /* background-color: var(--kv_green_l); */
+    /* color: var(--kv_gray0); */
+}
+
+#keyvis #nodes .node .keys .heading {
+    padding-left: 1em;
+    padding-top: .3em;
+    padding-bottom: .3em;
+    font-family: monospace;
+    display: block;
+    position: relative;
+    z-index:2;
+    box-shadow: 0px 2px 3px 0.001px rgb(0 0 0 / 30%);
+
+    background-color: var(--kv_blue_b);
+    color: var(--kv_gray2);
+}
+
+#keyvis #nodes .node .key {
+    padding-left: 1em;
+    background-color: var(--kv_blue_l2);
+    color: var(--kv_gray2);
+    margin: 0em;
+    padding-top: 1em;
+    padding-bottom: 1em;
+    overflow: auto;
+    /* border-bottom: 1px solid var(--kv_blue); */
+    box-shadow: 0px 2px 3px 0.001px rgb(0 0 0 / 30%);
+    z-index:1;
+    position:relative;
+    /* margin-top: 1em; */
+}
+
+#keyvis #nodes .node .keys .contributions {
+    margin-bottom: .5em;
+}
+
+#keyvis #nodes .node .keys .contributions .heading {
+    background-color: var(--kv_beige);
+    color: var(--kv_gray6);
+    padding-left: 1em;
+    padding-top: .3em;
+    padding-bottom: .3em;
+    font-family: monospace;
+    display: block;
+    position: relative;
+    z-index:1;
+    box-shadow: 0px 2px 3px 0.001px rgb(0 0 0 / 30%);
+}
+
+#keyvis #nodes .node .contributions .contribution {
+    background-color: var(--kv_beige_l);
+    color: var(--kv_gray6);
+    display: grid;
+    grid-template-columns: 9fr 1fr 1fr;
+    border-bottom: 1px solid var(--kv_gray4);
+}
+
+#keyvis #nodes .node .contributions.highlighted .contribution {
+    background-color: var(--kv_green_l);
+    /* color: var(--kv_gray2); */
+}
+
+#keyvis #nodes .node .contributions .contribution .tick {
+    padding-left: 1em;
+    margin: 0em;
+    padding-top: 1em;
+    padding-bottom: 1em;
+    overflow: auto;
+}
+
+#keyvis #nodes .node .contributions .contribution .codelink {
+    padding-left: 1em;
+    margin: 0em;
+    padding-top: 1em;
+    padding-bottom: 1em;
+    overflow: auto;
+    color: var(--kv_gray2);
+}
+
+#keyvis #nodes .node .contributions .contribution .codelink a {
+    color: var(--kv_gray6);
+    text-decoration: underline;
+}
+
+#keyvis #nodes .node .contributions .contribution .file {
+    padding-left: 1em;
+    margin: 0em;
+    padding-top: 1em;
+    padding-bottom: 1em;
+    overflow: auto;
+}
+
+#keyvis #links path {
+    stroke: var(--kv_blue);
+    fill: none;
+    stroke-width: 6;
+}
+
+#keyvis #links path.highlighted {
+    stroke: var(--kv_green_l);
+}
+
+#keyvis .arrowHead {
+    fill: var(--kv_blue);
+    stroke: var(--kv_gray5);
+    stroke-width: .3;
+}
+
+#keyvis .arrowHeadHighlighted {
+    fill: var(--kv_green_l);
+    stroke: var(--kv_gray2);
+    stroke-width: .3;
+}
+
+/* ----------------------------------------------------------- */
+/* detail pane */
+/* ----------------------------------------------------------- */
+
+#keyvis div.contributionDetail {
+    background: var(--kv_gray0);
+    flex: 0 0 content;
+    overflow-y: auto;
+}
+
+#keyvis div.contributionDetail.showing {
+    border-top: 5px solid var(--kv_blue_b);
+    flex: 0 0 50%;
+    height: 100%;
+}
+
+#keyvis div.contributionDetail.showing > .header {
+    display: flex;
+    align-items: center;
+    padding: 1em;
+    border-bottom: 1px solid var(--kv_gray1);
+    color: var(--kv_gray1);
+    background-color: var(--kv_blue_b);
+}
+
+#keyvis div.contributionDetail.showing > .header > h1 {
+    font-size: 1.4em;
+    font-weight: 600;
+    margin: 0em;
+    flex: 1;
+}
+
+#keyvis div.contributionDetail.showing > .header > button {
+    font-size: 1.4em;
+    flex: 0;
+    color: var(--kv_gray1);
+    background-color: var(--kv_blue_b);
+    padding: 0.2em;
+    padding-left: 0.5em;
+    padding-right: 0.5em;
+}
+
+#keyvis div.contributionDetail.showing > .header > button:hover {
+    font-size: 1.4em;
+    flex: 0;
+    color: var(--kv_gray1);
+    background-color: var(--kv_blue_l);
+    border: 1px solid var(--kv_blue_l2);
+}
+
+#keyvis div.contributionDetail.showing > .section {
+    padding-left: 1em;
+    padding-right: 1em;
+    margin-bottom: 2em;
+}
+
+#keyvis div.contributionDetail.showing > .section > h1 {
+    font-size: 1.4em;
+    font-weight: 600;
+    margin-top: 1em;
+}
+
+#keyvis div.contributionDetail .skipValueContainer {
+    padding-left: 0.5em;
+    padding-right: 0.5em;
+}
+
+#keyvis div.contributionDetail .skipValueContainer a {
+    color: var(--kv_blue_link);
+}
+
+#keyvis div.contributionDetail .skipValueContainer h3 {
+    margin: 0.2em;
+}
+
+#keyvis div.contributionDetail .skipValueContainer pre {
+    padding-left: 0.5em;
+    padding-right: 0.5em;
+}
+
+#keyvis div.contributionDetail .skipValueContainer table {
+    border: 1px solid var(--kv_gray4);
+    width: 100%;
+    max-width: 100%;
+    table-layout: auto;
+    margin-bottom: .5em;
+    background-color: var(--kv_gray0);
+    border-collapse: separate;
+    border-spacing: 1px 0px;;
+}
+
+#keyvis div.contributionDetail .skipValueContainer table thead th {
+    font-weight: normal;
+    text-align: left;
+    padding-top: .5em;
+    padding-left: .5em;
+    padding-right: .5em;
+    padding-bottom: .5em;
+    color: var(--kv_gray1);
+    background-color: var(--kv_blue_b);
+}
+
+#keyvis div.contributionDetail .skipValueContainer table tbody {
+    color: var(--kv_blue_b);
+}
+
+#keyvis div.contributionDetail .skipValueContainer table tbody tr td {
+    padding-left: .5em;
+    padding-right: .5em;
+    vertical-align: top;
+    overflow: auto;
+}
+
+#keyvis div.contributionDetail .skipValueContainer table tbody tr td:last-child {
+    width: 100%;
+    vertical-align: middle;
+}
+
+#keyvis div.contributionDetail .skipValueContainer table tbody tr:nth-child(odd) {
+    background-color: var(--kv_gray1);
+}
+
+#keyvis div.contributionDetail .skipValueContainer table tbody tr:nth-child(even) {
+    background-color: var(--kv_gray2);
+}
+
+#keyvis div.contributionDetail .skipValueContainer .codeRender > pre:nth-child(2) {
+    background: var(--kv_gray0);
+    padding-bottom: 1em;
+    padding-top: 1em;
+    margin: 0em;
+    margin-bottom: 1em;
+    border: solid 1px var(--kv_gray4);
+}
+
+#keyvis div.contributionDetail .reads {
+    border: 1px solid var(--kv_gray4);
+    width: 100%;
+    max-width: 100%;
+    table-layout: auto;
+    margin-bottom: .5em;
+    background-color: var(--kv_gray0);
+    border-collapse: separate;
+    border-spacing: 1px 0px;;
+}
+
+#keyvis div.contributionDetail .reads thead th {
+    font-weight: normal;
+    text-align: left;
+    padding-top: .5em;
+    padding-left: .5em;
+    padding-right: .5em;
+    padding-bottom: .5em;
+    color: var(--kv_gray1);
+    background-color: var(--kv_blue_b);
+}
+
+#keyvis div.contributionDetail .reads tbody {
+    color: var(--kv_blue_b);
+}
+
+#keyvis div.contributionDetail .reads tbody tr td {
+    padding-left: .5em;
+    padding-right: .5em;
+    vertical-align: top;
+    overflow: auto;
+}

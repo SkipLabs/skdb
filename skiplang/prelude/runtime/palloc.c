@@ -65,6 +65,7 @@ typedef struct ginfo {
   char* end;
   char* fileName;
   size_t total_palloc_size;
+  char use_lock;
 } ginfo_t;
 
 ginfo_t* ginfo = NULL;
@@ -80,7 +81,7 @@ pthread_mutex_t* gmutex = (void*)1234;
 int sk_is_locked = 0;
 
 void sk_check_has_lock() {
-  if ((ginfo->fileName != NULL) && !sk_is_locked) {
+  if (ginfo->use_lock && !sk_is_locked) {
     fprintf(stderr, "INTERNAL ERROR: unsafe operation\n");
     SKIP_throw_cruntime(ERROR_INTERNAL_LOCK);
   }
@@ -96,7 +97,7 @@ void sk_global_lock_init() {
 }
 
 void sk_global_lock() {
-  if (ginfo->fileName == NULL) {
+  if (!ginfo->use_lock) {
     return;
   }
 
@@ -119,7 +120,7 @@ void sk_global_lock() {
 }
 
 void sk_global_unlock() {
-  if (ginfo->fileName == NULL) {
+  if (!ginfo->use_lock) {
     return;
   }
 
@@ -413,7 +414,7 @@ size_t parse_capacity(int argc, char** argv) {
 /*****************************************************************************/
 
 void sk_commit(char* new_root, uint32_t sync) {
-  if (ginfo->fileName == NULL) {
+  if (!ginfo->use_lock) {
     sk_context_set_unsafe(new_root);
     return;
   }
@@ -454,7 +455,7 @@ struct file_mapping {
 /* Creates a new file mapping. */
 /*****************************************************************************/
 
-void sk_create_mapping(char* fileName, size_t icapacity) {
+void sk_create_mapping(char* fileName, size_t icapacity, char use_lock) {
   if (fileName != NULL && access(fileName, F_OK) == 0) {
     fprintf(stderr, "ERROR: File %s already exists!\n", fileName);
     exit(ERROR_MAPPING_EXISTS);
@@ -524,7 +525,8 @@ void sk_create_mapping(char* fileName, size_t icapacity) {
   *capacity = icapacity;
   *pconsts = NULL;
 
-  if (ginfo->fileName != NULL) {
+  ginfo->use_lock = use_lock;
+  if (ginfo->use_lock) {
     sk_global_lock_init();
   }
 }
@@ -623,25 +625,6 @@ typedef struct {
   void** pconsts;
 } no_file_t;
 
-#ifdef __APPLE__
-static void sk_init_no_file() {
-  no_file_t* no_file = malloc(sizeof(no_file_t));
-  if (no_file == NULL) {
-    perror("malloc");
-    exit(1);
-  }
-  ginfo = &no_file->ginfo_data;
-  ginfo->total_palloc_size = 0;
-  ginfo->fileName = NULL;
-  ginfo->context = NULL;
-  gmutex = NULL;
-  gid = &no_file->gid;
-  pconsts = &no_file->pconsts;
-  *gid = 1;
-  *pconsts = NULL;
-}
-#endif
-
 int sk_is_nofile_mode() {
   return (ginfo->fileName == NULL);
 }
@@ -652,7 +635,7 @@ int sk_is_nofile_mode() {
 
 extern SKIP_gc_type_t* epointer_ty;
 
-void SKIP_memory_init(int argc, char** argv) {
+void SKIP_memory_init(int argc, char** argv, char use_lock) {
   int is_create = 0;
   char* fileName = parse_args(argc, argv, &is_create);
 
@@ -662,21 +645,21 @@ void SKIP_memory_init(int argc, char** argv) {
             "Persistent allocation not supported on this platform. "
             "Disregarding %s.\n",
             fileName);
+    fileName = NULL;
   }
+
   if (is_create) {
     exit(EXIT_SUCCESS);
   }
-  sk_init_no_file();
+#endif  // __APPLE__
 
-#else   // __APPLE__
   if (is_create || fileName == NULL) {
     size_t capacity = DEFAULT_CAPACITY;
     capacity = parse_capacity(argc, argv);
-    sk_create_mapping(fileName, capacity);
+    sk_create_mapping(fileName, capacity, use_lock);
   } else {
     sk_load_mapping(fileName);
   }
-#endif  // __APPLE__
 
   char* obj = sk_get_external_pointer();
   epointer_ty = get_gc_type(obj);

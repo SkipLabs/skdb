@@ -1,6 +1,6 @@
 // The Sklib format is a binary format for pre-compiled skip packages. It is a
 // simple ranlib archive, containing object files for possible extensions, as
-// well as metadata (in the `lib.skmeta` file), and skip sources.
+// well as metadata and skip sources (in the `lib.skmeta` file).
 
 module Sklib;
 
@@ -8,6 +8,7 @@ class Metadata(
   name: String,
   target: String,
   hash: String,
+  sources: Array<(String, Int, String)>,
   dependencies: Array<(String, String)>,
   links: Array<String>,
   preambles: Array<String>,
@@ -18,6 +19,18 @@ class Metadata(
       "name" => JSON.String(this.name),
       "target" => JSON.String(this.target),
       "hash" => JSON.String(this.hash),
+      "sources" => JSON.Array(
+        Vector::createFromItems(
+          this.sources.map(s -> {
+            (path, mtime, contents) = s;
+            JSON.Object[
+              "path" => JSON.String(path),
+              "mtime" => JSON.IntNumber(mtime),
+              "contents" => JSON.String(contents),
+            ]
+          }),
+        ),
+      ),
       "dependencies" => JSON.Array(
         Vector::createFromItems(
           this.dependencies.map(d ->
@@ -51,6 +64,17 @@ class Metadata(
       json["name"].expectString(),
       json["target"].expectString(),
       json["hash"].expectString(),
+      json["sources"]
+        .expectArray()
+        .value.map(o -> {
+          src = o.expectObject();
+          (
+            src["path"].expectString(),
+            src["mtime"].expectInt(),
+            src["contents"].expectString(),
+          )
+        })
+        .collect(Array),
       json["dependencies"]
         .expectArray()
         .value.map(o -> {
@@ -71,75 +95,32 @@ class Metadata(
   }
 }
 
-// The Sklib class does not contain the possible object files present in the
-// archive as those are handled directly by the linker.
-mutable class .Sklib(
-  ar: mutable ARParser.Archive<mutable IO.File>,
-  sources: Map<String, ARParser.Header>,
-  metadata: Metadata,
-) {
-  const kMetadataFile: String = "lib.skmeta";
+const kMetadataFile: String = "lib.skmeta";
 
-  static fun read(
-    file: mutable IO.File,
-  ): Result<mutable Sklib, ARParser.Error> {
-    ar = ARParser.Archive::read(file) match {
-    | Success(ar) -> ar
+fun read_metadata(path: String): Result<Metadata, ARParser.Error> {
+  file = IO.File::open(path, IO.OpenOptions{read => true});
+  ar = ARParser.Archive::read(file) match {
+  | Success(ar) -> ar
+  | Failure(err) -> return Failure(err)
+  };
+  res = Metadata::read(
+    (ar[kMetadataFile] match {
+    | Success(bytes) -> bytes
     | Failure(err) -> return Failure(err)
-    };
-
-    metadata = Metadata::read(
-      (ar[static::kMetadataFile] match {
-      | Success(bytes) -> bytes
-      | Failure(err) -> return Failure(err)
-      } match {
-      | Some(bytes) -> bytes
-      | None() -> "".bytes()
-      // TODO: Properly fail.
-      }),
-    );
-
-    sources = mutable Map[];
-    for (header in ar) {
-      if (!header.identifier.endsWith(".sk")) continue;
-      sources.set(header.identifier.replace("#", "/"), header)
-    };
-
-    Success(mutable Sklib(ar, sources.chill(), metadata))
-  }
-
-  mutable fun read_file(path: String): Result<String, ARParser.Error> {
-    this.ar[path.replace("/", "#")] match {
-    | Success(Some(bytes)) -> Success(String::fromUtf8(bytes.collect(Array)))
-    | Success(None()) -> Success("")
-    | Failure(err) -> Failure(err)
-    }
-  }
-
-  static fun read_metadata(path: String): Result<Metadata, ARParser.Error> {
-    file = IO.File::open(path, IO.OpenOptions{read => true});
-    ar = ARParser.Archive::read(file) match {
-    | Success(ar) -> ar
-    | Failure(err) -> return Failure(err)
-    };
-    res = Metadata::read(
-      (ar[static::kMetadataFile] match {
-      | Success(bytes) -> bytes
-      | Failure(err) -> return Failure(err)
-      } match {
-      | Some(bytes) -> bytes
-      | None() -> "".bytes()
-      // TODO: Properly fail.
-      }),
-    );
-    file.close();
-    Success(res)
-  }
+    } match {
+    | Some(bytes) -> bytes
+    | None() -> "".bytes()
+    // TODO: Properly fail.
+    }),
+  );
+  file.close();
+  Success(res)
 }
 
 mutable class .SklibBuilder(
   name: String,
   target: String,
+  sources: mutable Vector<(String, Int, String)> = mutable Vector[],
   dependencies: mutable Vector<(String, String)> = mutable Vector[],
   links: mutable Vector<String> = mutable Vector[],
   preambles: mutable Vector<String> = mutable Vector[],
@@ -176,7 +157,13 @@ mutable class .SklibBuilder(
   }
 
   mutable fun add_source(path: String): void {
-    this.files.push((path, FileSystem.readTextFile(path).bytes()))
+    this.sources.push(
+      (
+        path,
+        FileSystem.getLastModificationTime(path),
+        FileSystem.readTextFile(path),
+      ),
+    )
   }
 
   readonly fun hash(): Int {
@@ -184,6 +171,7 @@ mutable class .SklibBuilder(
     (
       this.name,
       this.target,
+      this.sources.sortedBy(s ~> s.i0).collect(Array),
       // FIXME: Bytes should implement Hashable. For now, we convert to String.
       this.files.sortedBy(f ~> Path.basename(f.i0)).map(f ->
         (f.i0, f.i1.toString())
@@ -196,16 +184,17 @@ mutable class .SklibBuilder(
     file: mutable IO.File,
     // variant: ARParser.Variant = ARParser.VariantGNU(),
   ): Result<void, ARParser.Error> {
-    file_names = Array[Sklib::kMetadataFile].concat(
-      this.files.map(fn -> fn.i0.replace("/", "#")).collect(Array),
+    file_names = Array[kMetadataFile].concat(
+      this.files.map(fn -> fn.i0).collect(Array),
     );
     ar = ARParser.Builder::createGNU(file, file_names);
     ar.append_id(
-      Sklib::kMetadataFile,
+      kMetadataFile,
       Metadata(
         this.name,
         this.target,
         this.hash().toString(),
+        this.sources.collect(Array),
         this.dependencies.collect(Array),
         this.links.collect(Array),
         this.preambles.collect(Array),
@@ -216,7 +205,7 @@ mutable class .SklibBuilder(
     | Failure(err) -> return Failure(err)
     };
     for ((file_name, contents) in this.files) {
-      ar.append_id(file_name.replace("/", "#"), contents) match {
+      ar.append_id(file_name, contents) match {
       | Success _ -> void
       | Failure(err) ->
         print_error(`Could not write ${file_name}: ${err}`);
@@ -246,7 +235,7 @@ class Resolver(
         };
 
         path = Path.join(p, f);
-        metadata = Sklib::read_metadata(path) match {
+        metadata = read_metadata(path) match {
         | Success(metadata) -> metadata
         | Failure(err) ->
           print_error(`Failed to read metadata for ${path}: ${err}`);
@@ -272,7 +261,7 @@ class Resolver(
       (!dep, path, metadata) = if (dep.contains("=")) {
         (name, path) = dep.splitFirst("=");
         !path = FileSystem.realpath(path);
-        metadata = Sklib::read_metadata(path) match {
+        metadata = read_metadata(path) match {
         | Success(metadata) -> metadata
         | Failure(err) ->
           print_error(`Failed to read metadata for ${path}: ${err}`);

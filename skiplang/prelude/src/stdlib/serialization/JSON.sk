@@ -198,7 +198,7 @@ private fun indent(write: .String -> void, nspaces: Int): void {
 
 class KeyNotFoundError(key: .String) extends Serialization.SerializationError {
   fun getMessage(): .String {
-    "Key '" + this.key + "'not found";
+    "Key '" + this.key + "' not found";
   }
   fun toString(): .String {
     `KeyNotFoundError: ${this.getMessage()}`

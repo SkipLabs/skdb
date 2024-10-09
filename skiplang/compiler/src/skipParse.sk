@@ -22,68 +22,57 @@ const fileDir: SKStore.EHandle<
   fileDirName,
 );
 
+class InputPackage(
+  name: ?String,
+  srcs: Array<(String, Int)>,
+) extends SKStore.File
+
+// Contains the paths of all source files the analysis of which has
+// been kept so far.
 const allFilesDirName: SKStore.DirName = SKStore.DirName::create(
   "/allFilesCache/",
 );
-const allFilesDir: SKStore.EHandle<
-  SKStore.IID,
-  SKStore.StringFile,
-> = SKStore.EHandle(
+const allFilesDir: SKStore.EHandle<SKStore.IID, InputPackage> = SKStore.EHandle(
   SKStore.IID::keyType,
-  SKStore.StringFile::type,
+  InputPackage::type,
   allFilesDirName,
 );
 
-const fileTimeDirName: SKStore.DirName = SKStore.DirName::create(
-  "/fileTimeCache/",
-);
-const fileTimeDir: SKStore.EHandle<
-  SKStore.SID,
-  SKStore.IntFile,
-> = SKStore.EHandle(
-  SKStore.SID::keyType,
-  SKStore.IntFile::type,
-  fileTimeDirName,
-);
+fun pkgDelta(
+  old_srcs: Array<(String, Int)>,
+  new_srcs: Array<(String, Int)>,
+): (Array<String>, Array<String>, Array<String>) {
+  added_files = mutable Vector[];
+  modified_files = mutable Vector[];
+  deleted_files = mutable Vector[];
 
-fun get_old_files_per_package(
-  context: mutable SKStore.Context,
-): Map<String, SortedSet<String>> {
-  allFilesDir
-    .unsafeGetArray(context, SKStore.IID(0))
-    .reduce(
-      (map, fn) -> {
-        key = fn.value;
-        (package, filename) = if (key.contains(":")) {
-          key.splitFirst(":")
-        } else {
-          ("", key)
-        };
-        map.getOrAdd(package, () -> mutable Vector[]).push(filename);
-        map
-      },
-      mutable Map[],
-    )
-    .map((_, v) -> SortedSet::createFromItems(v))
-    .chill()
+  // FIXME: This is O(n^2).
+  for ((src, mtime) in new_srcs) {
+    old_srcs.find(s -> s.i0 == src) match {
+    | Some((_, old_mtime)) ->
+      if (mtime != old_mtime) {
+        modified_files.push(src)
+      }
+    | None() -> added_files.push(src)
+    }
+  };
+
+  // FIXME: This is O(n^2).
+  for ((src, _) in old_srcs) {
+    if (!new_srcs.any(s -> s.i0 == src)) {
+      deleted_files.push(src)
+    }
+  };
+
+  (
+    added_files.collect(Array),
+    modified_files.collect(Array),
+    deleted_files.collect(Array),
+  )
 }
 
-fun writeFile(
-  context: mutable SKStore.Context,
-  key: String,
-  last_modif_time: Int,
-  contents: String,
-): void {
-  fileTimeDir.writeArray(
-    context,
-    SKStore.SID(key),
-    Array[SKStore.IntFile(last_modif_time)],
-  );
-  fileDir.writeArray(
-    context,
-    SKStore.SID(key),
-    Array[SKStore.StringFile(contents)],
-  )
+fun formatPkgSrc(pkg_opt: ?String, path: String): String {
+  pkg_opt.map(p -> `${p}:`).default("") + path
 }
 
 fun writeFiles(
@@ -92,90 +81,94 @@ fun writeFiles(
   dependencies: Map<String, (String, Sklib.Metadata)>,
   lib_name_opt: ?String,
 ): void {
-  old_files_per_package = get_old_files_per_package(context);
-
-  stale_files = Vector::mcreateFromItems(
-    lib_name_opt match {
-    | Some(lib_name) ->
-      old_files_per_package
-        .maybeGet(lib_name)
-        .default(SortedSet[])
-        .difference(SortedSet::createFromItems(file_names))
-        .union(old_files_per_package.maybeGet("").default(SortedSet[]))
-        .map(fn -> `${lib_name}:${fn}`)
-        .collect(Array)
-    | None() ->
-      old_files_per_package
-        .maybeGet("")
-        .default(SortedSet[])
-        .difference(SortedSet::createFromItems(file_names))
-        .collect(Array)
-    },
-  );
-  current_files = Vector::mcreateFromItems(
-    lib_name_opt match {
-    | Some(lib_name) -> file_names.map(fn -> `${lib_name}:${fn}`)
-    | None() -> file_names
-    },
-  );
-
-  for (file_name in file_names) {
-    key = lib_name_opt match {
-    | Some(lib_name) -> `${lib_name}:${file_name}`
-    | None() -> file_name
-    };
-    lastModifTime = FileSystem.getLastModificationTime(file_name);
-    timeArr = fileTimeDir.unsafeGetArray(context, SKStore.SID(key));
-    if (timeArr.size() > 0 && timeArr[0].value == lastModifTime) continue;
-    contents = FileSystem.readTextFile(file_name);
-    writeFile(context, key, lastModifTime, contents)
+  // Files in the current graph.
+  current_files = mutable Map[
+    lib_name_opt => file_names
+      .map(fn ->
+        (
+          fn,
+          FileSystem.getLastModificationTime(fn),
+          FileSystem.readTextFile(fn),
+        )
+      )
+      .collect(Array),
+  ];
+  for (dep_name => dep in dependencies) {
+    (_, dep_meta) = dep;
+    current_files.set(Some(dep_name), dep_meta.sources)
   };
 
-  for (lib_name => dep in dependencies) {
-    (lib_path, _) = dep;
-    file = IO.File::open(lib_path, IO.OpenOptions{read => true});
-    lib = Sklib::read(file) match {
-    | Success(lib) -> lib
-    | Failure(err) ->
-      print_error(`Could not read ${lib_path}: ${err}`);
-      skipExit(3)
-    };
-
-    for (f in old_files_per_package
-      .maybeGet(lib_name)
-      .default(SortedSet[])
-      .difference(SortedSet::createFromIterator(lib.sources.keys()))) {
-      stale_files.push(`${lib_name}:${f}`)
-    };
-
-    for (src_path => header in lib.sources) {
-      key = `${lib_name}:${src_path}`;
-      current_files.push(key);
-
-      lastModifTime = header.mtime;
-      timeArr = fileTimeDir.unsafeGetArray(context, SKStore.SID(key));
-      if (timeArr.size() > 0 && timeArr[0].value == lastModifTime) continue;
-      contents = lib.read_file(src_path) match {
-      | Success(v) -> v
-      | Failure(err) ->
-        print_error(`Could not read ${src_path} from ${lib_path} (${err})`);
-        skipExit(3)
-      };
-      writeFile(context, key, lastModifTime, contents)
-    };
-
-    file.close();
+  // Files kept in the previous run.
+  old_files = mutable Map[];
+  for (pkg in allFilesDir.unsafeGetArray(context, SKStore.IID(0))) {
+    old_files.set(pkg.name, pkg.srcs)
   };
 
-  for (file_name in stale_files) {
-    key = SKStore.SID(file_name);
-    fileDir.writeArray(context, key, Array[SKStore.StringFile("")]);
-    fileTimeDir.writeArray(context, key, Array[])
+  stale_pkgs = mutable Vector<?String>[];
+  if (lib_name_opt is Some _) {
+    // Invalidate non-package source files.
+    stale_pkgs.push(None())
   };
+  // For each current package, invalidate files that were modified or deleted.
+  for (pkg_opt => srcs in current_files) {
+    (added_files, modified_files, deleted_files) = if (
+      old_files.containsKey(pkg_opt)
+    ) {
+      pkgDelta(old_files[pkg_opt], srcs.map(src -> (src.i0, src.i1)));
+    } else {
+      (srcs.map(src -> src.i0), Array[], Array[])
+    };
+
+    if (
+      added_files.isEmpty() &&
+      modified_files.isEmpty() &&
+      deleted_files.isEmpty()
+    ) {
+      continue
+    };
+    stale_pkgs.push(pkg_opt);
+
+    // Update added/modified files.
+    for (src_path in added_files.concat(modified_files)) {
+      key = formatPkgSrc(pkg_opt, src_path);
+      // FIXME: This is O(n).
+      src_contents = srcs.find(src ~> src.i0 == src_path).fromSome().i2;
+      fileDir.writeArray(
+        context,
+        SKStore.SID(key),
+        Array[SKStore.StringFile(src_contents)],
+      )
+    };
+    // Invalidate deleted files.
+    for (src_path in deleted_files) {
+      key = formatPkgSrc(pkg_opt, src_path);
+      fileDir.writeArray(
+        context,
+        SKStore.SID(key),
+        Array[SKStore.StringFile("")],
+      )
+    }
+  };
+
+  new_old_files = current_files
+    .map((_, srcs) -> srcs.map(src -> (src.i0, src.i1)))
+    .clone();
+  // Keep analysis for all non-stale packages.
+  for (pkg_opt => srcs in old_files) {
+    // FIXME: This is O(n).
+    if (stale_pkgs.contains(pkg_opt)) {
+      continue
+    };
+    new_old_files.set(pkg_opt, srcs)
+  };
+
   allFilesDir.writeArray(
     context,
     SKStore.IID(0),
-    current_files.map(x -> SKStore.StringFile(x)).collect(Array),
+    new_old_files
+      .items()
+      .map(pkg -> InputPackage(pkg.i0, pkg.i1))
+      .collect(Array),
   );
 }
 

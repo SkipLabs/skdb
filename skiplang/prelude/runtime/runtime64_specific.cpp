@@ -271,14 +271,14 @@ void SKIP_unsetenv(char* name) {
   }
 }
 
-void SKIP_memory_init(int pargc, char** pargv);
+void SKIP_memory_init(int pargc, char** pargv, char use_lock);
 void sk_persist_consts();
 
 void sk_init(int pargc, char** pargv) {
   sk_saved_obstack_t* saved;
   argc = pargc;
   argv = pargv;
-  SKIP_memory_init(pargc, pargv);
+  SKIP_memory_init(pargc, pargv, /* use_lock = */ 1);
   saved = SKIP_new_Obstack();
   SKIP_initializeSkip();
   sk_persist_consts();

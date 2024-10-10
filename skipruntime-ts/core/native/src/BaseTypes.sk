@@ -41,7 +41,7 @@ base class LazyCompute {
   fun compute(self: LazyCollection, key: SKJSON.CJSON): Array<SKJSON.CJSON>;
 }
 
-base class PValue uses Show {
+base class PValue uses Show, Orderable {
   children =
   | PInt(Int)
   | PFloat(Float)

@@ -157,6 +157,30 @@ fun toSessionName(reactiveAuth: Array<UInt8>): String {
   }
 }
 
+fun paramsToString(params: Map<String, PValue>): String {
+  vec = mutable Vector[];
+  params.each((k, v) -> vec.push(`${k}:${v}`));
+  `{${vec.join(",")}}`
+}
+
+fun toResoureId(
+  resource: String,
+  params: Map<String, PValue>,
+  reactiveAuth: ?Array<UInt8>,
+): String {
+  strParams = base64(paramsToString(params));
+  `${resource}_${strParams}_${reactiveAuth.map(toSessionName).default("")}`;
+}
+
+fun toSuppliedResoureId(
+  supplier: String,
+  resource: String,
+  params: Map<String, PValue>,
+  reactiveAuth: ?Array<UInt8>,
+): String {
+  `${supplier}_${toResoureId(resource, params, reactiveAuth)}`;
+}
+
 fun collectionForName(name: String): Collection {
   Collection::forName(name, JSONKeyConverter(), JSONFileConverter())
 }

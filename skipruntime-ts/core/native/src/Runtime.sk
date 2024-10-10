@@ -1,6 +1,24 @@
 module SkipRuntime;
 
-class Params(value: Map<String, PValue>) extends SKStore.File
+class Params(value: Map<String, PValue>) extends SKStore.File uses Orderable {
+  fun compare(other: Params): Order {
+    keys = this.value.keys().collect(Array).sorted();
+    okeys = other.value.keys().collect(Array).sorted();
+    kcomp = keys.compare(okeys);
+    if (kcomp == EQ()) {
+      for (key in keys) {
+        vcomp = this.value.get(key).compare(other.value.get(key));
+        if (vcomp != EQ()) {
+          break vcomp
+        }
+      } else {
+        EQ()
+      }
+    } else {
+      kcomp
+    }
+  }
+}
 
 class ResourceCollections(
   value: SKStore.EHandle<SKStore.SID, ResourceInfo>,
@@ -40,12 +58,14 @@ class ResourceCollection(value: Collection) extends SKStore.File
 
 class ResourceKey(
   name: String,
-  params: SKJSON.CJObject,
+  params: Params,
   reactiveAuth: ?Array<UInt8>,
 ) extends SKStore.Key {
   //
   fun toString(): String {
-    `${this.name}:${this.params.prettyPrint()}`
+    `${this.name}:${paramsToString(
+      this.params.value,
+    )}:toSessionName(this.reactiveAuth)`
   }
 }
 
@@ -171,7 +191,11 @@ fun initService(service: Service): Result<void, .Exception> {
                 context,
                 nDirname,
                 (_ctx, writer, key, _) ~> {
-                  resourceId = `response_${SKStore.genSym(0)}`;
+                  resourceId = toResoureId(
+                    key.name,
+                    key.params.value,
+                    key.reactiveAuth,
+                  );
                   writer.set(key, SKStore.StringFile(resourceId));
                 },
               );
@@ -185,7 +209,7 @@ fun initService(service: Service): Result<void, .Exception> {
                 try {
                   resourceId = it.first.value;
                   resourceBuilder = service.resources.get(key.name);
-                  resource = resourceBuilder.build(params(key.params));
+                  resource = resourceBuilder.build(key.params.value);
                   allCollections = mutable Map[];
                   inputCollections.each((k, c) -> allCollections.add(k, c));
                   serviceCollections
@@ -396,7 +420,12 @@ fun useExternalCollection(
       .fromSome();
 
     externalSupplier = remoteCollections.get(supplier);
-    collectionId = `collection_${SKStore.genSym(0)}`;
+    collectionId = toSuppliedResoureId(
+      supplier,
+      resource,
+      params,
+      reactiveAuth,
+    );
     dirName = subDirName(context, collectionId);
     paramsDir = dirName.sub("params");
     dataDir = dirName.sub("data");
@@ -415,9 +444,21 @@ fun useExternalCollection(
         name = mutable Vector<String>[];
         it.first.value.each((k, v) -> name.push(`${k}:${v}`));
         storeDir = dirName.sub(base64(name.join("|")));
-        store = context.mkdir(k ~> k, f ~> f, storeDir, Array[]);
-        store.onDelete(
-          context,
+        store = context.mkdir(
+          k ~> k,
+          f ~> f,
+          storeDir,
+          Array[],
+          true,
+          Some(
+            LinkToResource(
+              externalSupplier,
+              CollectionWriter(storeDir),
+              resource,
+              it.first.value,
+              reactiveAuth,
+            ),
+          ),
           Some(
             CloseResource(
               externalSupplier,
@@ -425,15 +466,6 @@ fun useExternalCollection(
               it.first.value,
               reactiveAuth,
             ),
-          ),
-        );
-        context.postpone(
-          LinkToResource(
-            externalSupplier,
-            CollectionWriter(storeDir),
-            resource,
-            it.first.value,
-            reactiveAuth,
           ),
         );
         writer.set(key, Handle(store));
@@ -916,7 +948,7 @@ fun closeReactiveResource(
   session = toSessionName(reactiveAuth.default(Array[]));
   rDirName = SKStore.DirName::create(`/sk_prv/resources/session/${session}/`);
   context.maybeGetEagerDir(rDirName).each(_ -> {
-    rObject = ResourceKey(resource, jsonParams(params), reactiveAuth);
+    rObject = ResourceKey(resource, Params(params), reactiveAuth);
     resourceHdl = SKStore.EHandle(
       ResourceKey::keyType,
       SKStore.IntFile::type,
@@ -1055,7 +1087,7 @@ private fun createResource_(
   );
   context.update();
   rDirName = SKStore.DirName::create(`/sk_prv/resources/session/${session}/`);
-  rObject = ResourceKey(resource, jsonParams(params), reactiveAuth);
+  rObject = ResourceKey(resource, Params(params), reactiveAuth);
   resourceHdl = SKStore.EHandle(
     ResourceKey::keyType,
     SKStore.IntFile::type,

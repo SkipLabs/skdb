@@ -342,8 +342,8 @@ export class Utils {
       message?.split("\n").forEach((line) => {
         const matches = [...line.matchAll(/external:([0-9]+)/g)].sort(
           (v1: string[], v2: string[]) => {
-            const i1 = parseInt(v1[1]);
-            const i2 = parseInt(v2[1]);
+            const i1 = parseInt(v1[1]!); // matched regexp has a pair of parens
+            const i2 = parseInt(v2[1]!);
             if (i2 < i1) {
               return 1;
             }
@@ -549,7 +549,8 @@ export class Utils {
           ? this.importString(skMessage)
           : "SKStore Internal error";
       let lines = message.split("\n");
-      if (lines[0].startsWith("external:")) {
+      if (lines[0]!.startsWith("external:")) {
+        // only "".split("") is the empty array
         let external = lines.shift()!;
         message = lines.join("\n");
         let id = parseInt(external.substring(9));
@@ -600,7 +601,8 @@ export class Utils {
     );
     let errStack = this.stacks.get(skExc);
     let lines = message.split("\n");
-    if (lines[0].startsWith("external:")) {
+    if (lines[0]!.startsWith("external:")) {
+      // only "".split("") is the empty array
       let external = lines.shift()!;
       let id = parseInt(external.substring(9));
       if (this.state.exceptions.has(id)) {
@@ -656,7 +658,7 @@ export class Utils {
           return lineBuffer;
         }
       }
-      lineBuffer.push(this.stdin[this.current_stdin]);
+      lineBuffer.push(this.stdin[this.current_stdin]!); // checked by preceding if
       this.current_stdin++;
     }
     this.current_stdin++;
@@ -666,7 +668,7 @@ export class Utils {
   readStdInToEnd = () => {
     let lineBuffer = new Array<int>();
     while (this.current_stdin < this.stdin.length) {
-      lineBuffer.push(this.stdin[this.current_stdin]);
+      lineBuffer.push(this.stdin[this.current_stdin]!); // checked by while condition
       this.current_stdin++;
     }
     return lineBuffer;
@@ -908,11 +910,11 @@ export function metadata(offset: number): Metadata {
   const stack = new Error().stack!.split("\n");
   // Skip "Error" and metadata call
   const internalOffset = 2;
-  const info = /\((.*):(\d+):(\d+)\)$/.exec(stack[internalOffset + offset]);
+  const info = /\((.*):(\d+):(\d+)\)$/.exec(stack[internalOffset + offset]!)!;
   const metadata = {
-    filepath: info![1],
-    line: parseInt(info![2]),
-    column: parseInt(info![3]),
+    filepath: info[1]!,
+    line: parseInt(info[2]!),
+    column: parseInt(info[3]!),
   };
   return metadata;
 }

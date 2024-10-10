@@ -33,7 +33,11 @@ class SkipHttpAccessV1 {
     ports: number[] = [3587],
     private creds: Protocol.Creds,
   ) {
-    this.defaultPort = ports[0];
+    let defaultPort = ports[0];
+    if (defaultPort == undefined) {
+      throw new Error("At least one port is required.");
+    }
+    this.defaultPort = defaultPort;
     this.runtimes = {};
     for (const port of ports) {
       this.runtimes[port] = new SkipRESTRuntime({ host: "localhost", port });
@@ -45,9 +49,13 @@ class SkipHttpAccessV1 {
   }
 
   async writeMany(data: Write[], port?: number) {
-    const promises = data.map((w) =>
-      this.runtimes[port ?? this.defaultPort].patch(w.collection, w.entries),
-    );
+    const runtime = this.runtimes[port ?? this.defaultPort];
+    if (runtime == undefined) {
+      throw new Error("Invalid port " + port);
+    }
+    const promises = data.map((w) => {
+      runtime.patch(w.collection, w.entries);
+    });
     if (promises.length == 1) {
       return promises[0];
     }
@@ -55,12 +63,14 @@ class SkipHttpAccessV1 {
   }
 
   async deteleMany(data: Delete[], port?: number) {
+    const runtime = this.runtimes[port ?? this.defaultPort];
+    if (runtime == undefined) {
+      throw new Error("Invalid port " + port);
+    }
     const promises: Promise<void>[] = [];
     for (const x of data) {
       for (const key of x.keys) {
-        promises.push(
-          this.runtimes[port ?? this.defaultPort].deleteKey(x.collection, key),
-        );
+        promises.push(runtime.deleteKey(x.collection, key));
       }
     }
     if (promises.length == 1) {
@@ -78,6 +88,9 @@ class SkipHttpAccessV1 {
       await Protocol.exportKey(this.creds.publicKey),
     );
     const runtime = this.runtimes[port ?? this.defaultPort];
+    if (runtime == undefined) {
+      throw new Error("Invalid port " + port);
+    }
     const reactive = await runtime.head(resource, params, publicKey);
     if (!this.client) {
       this.client = await connect(
@@ -132,7 +145,7 @@ class Session {
       this.error("The scenario as no more entries.");
       return false;
     }
-    const step = this.scenario[this.current++];
+    const step = this.scenario[this.current++]!; // checked by preceding if
     console.log(">>", step.type, JSON.stringify(step.payload));
     this.perform(step);
     return this.current < this.scenario.length;
@@ -171,7 +184,7 @@ class Player {
       this.error(`The scenario ${idx.toString()} does not exist`);
       return false;
     } else {
-      const scenario = this.scenarios[idx - 1];
+      const scenario = this.scenarios[aidx]!; // checked by enclosing if
       this.running = new Session(scenario, this.send, this.error);
       return true;
     }
@@ -269,7 +282,7 @@ class Player {
       const matches = [...line.matchAll(pattern[0])];
       if (matches.length > 0) {
         done = true;
-        const args = matches[0].map((v) => v.toString());
+        const args = matches[0]!.map((v) => v.toString()); // each match is nonempty
         args.shift();
         pattern[1].apply(null, args);
       }
@@ -338,7 +351,7 @@ export async function run(scenarios: Step[][], ports: number[] = [3587]) {
         const matches = [...line.matchAll(pattern[0])];
         if (matches.length > 0) {
           done = true;
-          const args = matches[0].map((v) => v.toString());
+          const args = matches[0]!.map((v) => v.toString()); // each match is nonempty
           args.shift();
           pattern[1].apply(null, args);
         }

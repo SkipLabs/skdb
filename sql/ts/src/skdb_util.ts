@@ -32,7 +32,7 @@ export class ExternalFuns {
   }
 
   call<V>(funId: number, jso: object) {
-    return this.externalFuns[funId](jso) as V;
+    return this.externalFuns[funId]!(jso) as V;
   }
 }
 
@@ -55,14 +55,14 @@ export class SKDBTable extends Array<Record<string, unknown>> {
         `Can't extract scalar: query yielded ${cols.length} columns`,
       );
     }
-    return row[cols[0]];
+    return row[cols[0]!];
   }
 
   onlyRow(): Record<string, unknown> {
     if (this.length != 1) {
       throw new Error(`Can't extract only row: got ${this.length} rows`);
     }
-    return this[0];
+    return this[0]!;
   }
 
   firstRow(): Record<string, unknown> | undefined {
@@ -91,7 +91,7 @@ export class SKDBTable extends Array<Record<string, unknown>> {
     if (cols.length > 1) {
       throw new Error("Too many columns");
     }
-    const col = cols[0];
+    const col = cols[0]!;
     return this.column(col);
   }
 

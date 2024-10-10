@@ -6,20 +6,18 @@ SCRIPT_DIR=$(shell dirname $(shell realpath $(firstword $(MAKEFILE_LIST))))
 
 .PHONY: check-src
 check-src: build
-	echo "make: Entering directory '${SCRIPT_DIR}/ts'"
-	cd ts/ && npm run lint
-	echo "make: Leaving directory '${SCRIPT_DIR}/ts'"
+	../bin/cd_sh ts "npm run lint"
 
 .PHONY: check-tests
-check-tests: eslint
-	cd ts/tests && npm install && npm run build && npm run lint
+check-tests:
+	../bin/cd_sh ts/tests "npm install && npm run build && npm run lint"
 
 .PHONY: check-all
 check-all: check-src check-tests
 
 .PHONY: build
 build:
-	cd .. && npm i && npm run build
+	../bin/cd_sh .. "npm install && npm run build"
 
 .PHONY: clean
 clean:

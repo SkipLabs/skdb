@@ -85,7 +85,7 @@ class Service implements SkipService {
     context: Context,
     inputCollections: Record<string, EagerCollection<string, TJSON>>,
   ): Record<string, EagerCollection<TJSON, TJSON>> {
-    const cells = inputCollections["cells"];
+    const cells = inputCollections["cells"]!;
     // Use lazy dir to create eval dependency graph
     // Its calls it self to get other computed cells
     const evaluator = context.lazy(ComputeExpression, cells);

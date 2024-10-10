@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# Script for use from Makefiles to change to a directory and execute a command
+# For example: cd_sh subdir "cmd1 arg1 && cmd2 arg2"
+
+set -e
+
+dir=$1
+shift
+cmd=( "$@" )
+
+echo "make: Entering directory '$dir'"
+cd "$dir"
+bash -c "${cmd[@]}"
+echo "make: Leaving directory '$dir'"

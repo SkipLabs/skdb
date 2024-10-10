@@ -456,7 +456,7 @@ class Stack {
 
   get(): Opt<ptr<Internal.Context>> {
     if (this.stack.length == 0) return null;
-    return this.stack[this.stack.length - 1];
+    return this.stack[this.stack.length - 1]!;
   }
 
   pop(): void {

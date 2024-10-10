@@ -311,7 +311,7 @@ export class SKDBSyncImpl implements SKDBSync {
 
     const colIndex = new Map<string, number>();
     colNames.forEach((v, i) => {
-      colIndex.set(v, i);
+      colIndex.set(v!, i);
     });
     while (valueIndex < valuesArray.length) {
       const buffer = [];
@@ -320,7 +320,7 @@ export class SKDBSyncImpl implements SKDBSync {
         if (valueIndex >= valuesArray.length) break;
         const values: unknown[] = [];
         let valuesSize = 0;
-        const obj = valuesArray[valueIndex];
+        const obj = valuesArray[valueIndex]!;
         for (const fieldName in obj) {
           if (!colIndex.has(fieldName)) {
             throw new Error("Field not found: " + fieldName);

@@ -65,13 +65,13 @@ build/init.sql: sql/privacy/init.sql
 update-js-deps:
 	find . -name node_modules -not -prune -or -name target -not -prune -or -name package.json -exec sh -c 'cd $$(dirname "$$0"); bun update --latest' {} \;
 
-CHECK_TARGETS=$(patsubst %/Skargo.toml,check-%,$(shell ls -1 */Skargo.toml))
-
-check-%:
-	cd $* && skargo check
-
 .PHONY: check
-check: $(CHECK_TARGETS)
+check:
+	find * -name Skargo.toml -exec sh -c 'bin/cd_sh $$(dirname {}) "skargo check"' \;
+
+.PHONY: check-ts
+check-ts:
+	bin/check-ts.sh
 
 .PHONY: clean
 clean:
@@ -233,4 +233,3 @@ test-wasm:
 
 .PHONY: test-skfs
 test-skfs: sktest-prelude
-

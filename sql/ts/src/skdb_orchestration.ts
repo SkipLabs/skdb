@@ -1650,7 +1650,7 @@ class SKDBServer implements RemoteSKDB {
             if (!currentTable) {
               if (line.startsWith("^")) {
                 count = 0;
-                currentTable = line.split(" ")[0].substring(1);
+                currentTable = line.split(" ")[0]!.substring(1);
               }
             } else {
               if (line.startsWith("^") || line.startsWith(":")) {
@@ -1675,7 +1675,7 @@ class SKDBServer implements RemoteSKDB {
                 }
                 count = 0;
                 currentTable = line.startsWith("^")
-                  ? line.split(" ")[0].substring(1)
+                  ? line.split(" ")[0]!.substring(1)
                   : undefined;
               } else {
                 count++;

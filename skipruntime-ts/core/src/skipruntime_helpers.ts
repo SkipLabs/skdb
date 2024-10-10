@@ -148,7 +148,7 @@ function toId(
 ): string {
   const strparams: string[] = [];
   for (const key of Object.keys(params).sort()) {
-    strparams.push(`${key}:${params[key].toString()}`);
+    strparams.push(`${key}:${params[key]!.toString()}`);
   }
   const hex = reactiveAuth ? Buffer.from(reactiveAuth).toString("hex") : "";
   return `[${strparams.join(",")}]${hex}`;

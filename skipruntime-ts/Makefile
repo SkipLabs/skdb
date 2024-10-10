@@ -2,31 +2,27 @@ SHELL := /bin/bash
 
 SKARGO_PROFILE?=release
 
-SCRIPT_DIR=$(shell dirname $(shell realpath $(firstword $(MAKEFILE_LIST))))
-
 
 .PHONY: check-src
-check-src: bunbuild
-	echo "make: Entering directory '${SCRIPT_DIR}/core'"
-	cd core && bun run lint
-	echo "make: Leaving directory '${SCRIPT_DIR}/core'"
+check-src:
+	../bin/cd_sh core "bun run tsc && bun run lint"
+	../bin/cd_sh client "bun run tsc && bun run lint"
+	../bin/cd_sh server "bun run tsc && bun run lint"
 
 .PHONY: check-examples
-check-examples: bunbuild
-	echo "make: Entering directory '${SCRIPT_DIR}/examples'"
-	cd examples && bun run lint
-	echo "make: Leaving directory '${SCRIPT_DIR}/examples'"
+check-examples:
+	../bin/cd_sh examples "bun run tsc && bun run lint"
 
 .PHONY: check-all
 check-all: bunbuild check-src check-examples
 
 .PHONY: build
 build:
-	cd .. && npm install && npm run build
+	../bin/cd_sh .. "npm install && npm run build"
 
 .PHONY: bunbuild
 bunbuild:
-	cd .. && bun install && bun run build
+	../bin/cd_sh .. "bun install && npm run build"
 
 bunrun-%: bunbuild
 	bun run examples/$*.ts
@@ -48,8 +44,8 @@ nodeserver-%: build
 
 .PHONY: clean
 clean:
-	cd .. && make clean
+	make -C .. clean
 
 .PHONY: test
 test: bunbuild
-	cd core && bun run test
+	../bin/cd_sh core "bun run test"

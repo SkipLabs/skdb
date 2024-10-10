@@ -71,7 +71,7 @@ class LinksImpl implements Links {
         const m = date
           .toLocaleDateString(undefined, { hour12: true, hour: "numeric" })
           .split(" ");
-        return utils.exportString(m[m.length - 1]);
+        return utils.exportString(m[m.length - 1]!);
       }
       if (str == "c" || str == "X" || str == "x" || str == "r") {
         // Not defined

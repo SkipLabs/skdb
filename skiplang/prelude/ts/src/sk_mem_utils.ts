@@ -72,6 +72,7 @@ export class MemFS implements FileSystem {
   private fileDescrs: Map<string, number>;
   private fileDescrNbr: int;
   private files: Array<File>;
+  // invariant: range(fileDescrs) ⊆ domain(files)
 
   constructor() {
     this.fileDescrs = new Map();
@@ -87,9 +88,9 @@ export class MemFS implements FileSystem {
     let existing = this.fileDescrs.get(filename);
     if (existing != undefined) {
       if (options.create && options.create_new) {
-        throw new Error("The file '" + filename + "' already exist");
+        throw new Error("The file '" + filename + "' already exists");
       }
-      this.files[existing].open(options);
+      this.files[existing]!.open(options); // invariant
       return existing;
     }
     let fd = this.fileDescrNbr;
@@ -108,14 +109,18 @@ export class MemFS implements FileSystem {
   }
 
   writeToFile(fd: int, content: string) {
-    this.files[fd].write(content);
+    let file = this.files[fd];
+    if (file == undefined) {
+      throw new Error("Invalid file descriptor " + fd);
+    }
+    file.write(content);
   }
 
   appendToFile(filename: string, content: string) {
     let fd = this.fileDescrs.get(filename);
     let file: File;
     if (fd != undefined) {
-      file = this.files[fd];
+      file = this.files[fd]!; // invariant
     } else {
       file = new File();
       let fd = this.fileDescrNbr;
@@ -129,15 +134,27 @@ export class MemFS implements FileSystem {
   }
 
   closeFile(fd: int) {
-    this.files[fd].close();
+    let file = this.files[fd];
+    if (file == undefined) {
+      throw new Error("Invalid file descriptor " + fd);
+    }
+    file.close();
   }
 
   write(fd: int, content: string) {
-    return this.files[fd].write(content);
+    let file = this.files[fd];
+    if (file == undefined) {
+      throw new Error("Invalide file descriptor " + fd);
+    }
+    return file.write(content);
   }
 
   read(fd: int, len: int): string | null {
-    return this.files[fd].read(len) ?? null;
+    let file = this.files[fd];
+    if (file == undefined) {
+      throw new Error("Invalide file descriptor " + fd);
+    }
+    return file.read(len) ?? null;
   }
 }
 

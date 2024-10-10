@@ -213,21 +213,21 @@ if (values.dev) {
   }
 
   const schemeAndRest = host.split("://", 2);
-  const hostAndPort = schemeAndRest[schemeAndRest.length - 1].split(":", 2);
+  const hostAndPort = schemeAndRest[schemeAndRest.length - 1]!.split(":", 2);
 
   if (hostAndPort.length < 1) {
     console.log("Invalid host");
     process.exit(1);
   } else if (hostAndPort.length === 1) {
     dbCreds = await getCredsFromDevServer(
-      hostAndPort[0],
+      hostAndPort[0]!,
       3586,
       values.db as string,
     );
   } else {
     dbCreds = await getCredsFromDevServer(
-      hostAndPort[0],
-      parseInt(hostAndPort[1]),
+      hostAndPort[0]!,
+      parseInt(hostAndPort[1]!),
       values.db as string,
     );
   }
@@ -282,8 +282,8 @@ if (
   process.exit(1);
 }
 
-const firstPair = Object.entries(dbCreds)[0];
-const accessKey = (values["access-key"] ?? firstPair[0]) as string;
+const firstPair = Object.entries(dbCreds)[0]!;
+const accessKey = (values["access-key"] ?? firstPair[0]!) as string;
 const privateKey = dbCreds[accessKey] as string;
 
 if (!privateKey) {
@@ -314,7 +314,7 @@ const display = function (rows: Record<string, unknown>[]) {
     }
 
     const acc: string[] = [];
-    const keys = Object.keys(rows[0]);
+    const keys = Object.keys(rows[0]!);
 
     acc.push(keys.join("|"));
 
@@ -452,7 +452,7 @@ const remoteRepl = async function () {
       const [_, table] = query.split(" ", 2);
       try {
         const remote = await skdb.connectedRemote();
-        const schema = await remote!.tableSchema(table);
+        const schema = await remote!.tableSchema(table!);
         console.log(schema);
       } catch {
         console.error(`Could not find schema for ${table}.`);
@@ -464,7 +464,7 @@ const remoteRepl = async function () {
       const [_, view] = query.split(" ", 2);
       try {
         const remote = await skdb.connectedRemote();
-        const schema = await remote!.viewSchema(view);
+        const schema = await remote!.viewSchema(view!);
         console.log(schema);
       } catch {
         console.error(`Could not find schema for ${view}.`);

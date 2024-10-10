@@ -3,12 +3,12 @@ import type {
   LazyCompute,
   EagerCollection,
   LazyCollection,
-  Mapper,
-  NonEmptyIterator,
   TJSON,
   SkipService,
   Resource,
 } from "@skipruntime/core";
+
+import { ValueMapper } from "@skipruntime/core";
 
 import { runService } from "@skipruntime/server";
 
@@ -50,21 +50,16 @@ class ComputeExpression implements LazyCompute<string, string> {
   }
 }
 
-class CallCompute implements Mapper<string, TJSON, string, TJSON> {
-  constructor(private evaluator: LazyCollection<string, string>) {}
+class CallCompute extends ValueMapper<string, TJSON, TJSON> {
+  constructor(private evaluator: LazyCollection<string, string>) {
+    super();
+  }
 
-  mapElement(
-    key: string,
-    it: NonEmptyIterator<TJSON>,
-  ): Iterable<[string, TJSON]> {
-    const v = it.uniqueValue();
-    if (typeof v == "string" && v.startsWith("=")) {
-      return Array([key, this.evaluator.getOne(key)]);
+  mapValue(value: TJSON, key: string): TJSON {
+    if (typeof value == "string" && value.startsWith("=")) {
+      return this.evaluator.getOne(key);
     }
-    if (v == null) {
-      throw new Error("(sheet, cell) pair must be unique.");
-    }
-    return Array([key, v]);
+    return value;
   }
 }
 

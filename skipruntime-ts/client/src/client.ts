@@ -28,7 +28,7 @@ export type {
   Creds,
 };
 
-import WebSocket from 'ws';
+import WebSocket from "ws";
 
 import * as Protocol from "./protocol.js";
 

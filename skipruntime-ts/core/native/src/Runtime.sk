@@ -3,6 +3,12 @@ module SkipRuntime;
 const kKeyToKey: SKStore.Key ~> SKStore.Key = k ~> k;
 const kFileToFile: SKStore.File ~> SKStore.File = f ~> f;
 
+class ReadInCreatorException() extends Exception {
+  fun getMessage(): String {
+    "A collection cannot be read in it's creator."
+  }
+}
+
 class Params(value: Map<String, PValue>) extends SKStore.File uses Orderable {
   fun compare(other: Params): Order {
     keys = this.value.keys().collect(Array).sorted();
@@ -515,9 +521,13 @@ class Collection(
   fun getArray(key: SKJSON.CJSON): Array<SKJSON.CJSON> {
     getContext() match {
     | Some(context) ->
-      this.hdl.getArray(context, this.keyConverter.fromJSON(key)).map(
-        this.fileConverter.toJSON,
-      )
+      dir = context.unsafeGetEagerDir(this.hdl.dirName);
+      if (dir.creator == context.currentArrow()) {
+        throw ReadInCreatorException()
+      };
+      dir
+        .getArray(context, this.keyConverter.fromJSON(key))
+        .map(this.fileConverter.toJSON)
     | _ -> invariant_violation("Store context must be specified.")
     }
   }
@@ -528,13 +538,9 @@ class Collection(
    * @returns the value for this `key`, or null if no such value exists
    */
   fun maybeGetOne(key: SKJSON.CJSON): ?SKJSON.CJSON {
-    getContext() match {
-    | Some(context) ->
-      this.hdl.maybeGet(context, this.keyConverter.fromJSON(key)).map(
-        this.fileConverter.toJSON,
-      )
-    | _ -> invariant_violation("Store context must be specified.")
-    }
+    value = this.getArray(key);
+    if (value.isEmpty()) return None();
+    Some(value[0])
   }
 
   /**
@@ -668,7 +674,12 @@ class Collection(
    */
   fun size(): Int {
     getContext() match {
-    | Some(context) -> this.hdl.size(context)
+    | Some(context) ->
+      dir = context.unsafeGetEagerDir(this.hdl.dirName);
+      if (dir.creator == context.currentArrow()) {
+        throw ReadInCreatorException()
+      };
+      dir.size(context)
     | _ -> invariant_violation("Store context must be specified.")
     }
   }

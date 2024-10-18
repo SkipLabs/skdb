@@ -922,6 +922,9 @@ mutable class Context{
     convValue: File ~> V,
     dirName: DirName,
     content: Array<(K, V)> = Array[],
+    ignoreIfExists: Bool = false,
+    optOnCreate: ?Postponable = None(),
+    optOnDelete: ?Postponable = None(),
   ): EHandle<K, V> {
     this.mkdirMulti(
       dirName,
@@ -929,6 +932,9 @@ mutable class Context{
         (key, value) = kv;
         (key, Array[value])
       }),
+      ignoreIfExists,
+      optOnCreate,
+      optOnDelete,
     );
     EHandle(convKey, convValue, dirName)
   }
@@ -936,14 +942,22 @@ mutable class Context{
   mutable fun mkdirMulti(
     dirName: DirName,
     content: Array<(Key, Array<File>)> = Array[],
+    ignoreIfExists: Bool = false,
+    optOnCreate: ?Postponable = None(),
+    optOnDelete: ?Postponable = None(),
   ): void {
-    this.unsafeMaybeGetEagerDir(dirName).each(dir ->
+    this.unsafeMaybeGetEagerDir(dirName) match {
+    | Some(dir) ->
       if (dir.creator != this.currentArrow()) {
         // In eager dir, if several properties are invalidated in same tick
         // the delete could be called several time so the directory could exist
         throw DirAlreadyExists(dirName);
+      } else if (ignoreIfExists) {
+        this.!newDirs = this.newDirs.add(dirName);
+        return void
       }
-    );
+    | _ -> void
+    };
     vector: mutable Vector<FixedRow<Array<File>>> = mutable Vector[];
     time = this.timeStamp();
 
@@ -971,9 +985,18 @@ mutable class Context{
 
     totalSize = fixedData.data.size();
     creator = this.currentArrow();
-    dir = EagerDir{time, input => true, dirName, fixedData, totalSize, creator};
+    dir = EagerDir{
+      time,
+      input => true,
+      dirName,
+      fixedData,
+      totalSize,
+      creator,
+      optOnDelete,
+    };
     this.setDir(dirName, dir);
     this.!newDirs = this.newDirs.add(dirName);
+    optOnCreate.each(this.postpone)
   }
 
   mutable fun setDir(dirName: DirName, dir: Dir): void {

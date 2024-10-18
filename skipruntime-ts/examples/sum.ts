@@ -1,32 +1,27 @@
 import type {
   Context,
-  Mapper,
   EagerCollection,
   NonEmptyIterator,
   SkipService,
   Resource,
 } from "@skipruntime/core";
 
+import { ValuesMapper } from "@skipruntime/core";
+
 import { runService } from "@skipruntime/server";
 
-class Plus implements Mapper<string, number, string, number> {
-  mapElement(
-    key: string,
-    it: NonEmptyIterator<number>,
-  ): Iterable<[string, number]> {
-    return [[key, it.toArray().reduce((p, c) => p + c, 0)]];
+class Plus extends ValuesMapper<string, number, number> {
+  mapValues(values: NonEmptyIterator<number>): Iterable<number> {
+    return [values.toArray().reduce((p, c) => p + c, 0)];
   }
 }
 
-class Minus implements Mapper<string, number, string, number> {
-  mapElement(
-    key: string,
-    it: NonEmptyIterator<number>,
-  ): Iterable<[string, number]> {
+class Minus extends ValuesMapper<string, number, number> {
+  mapValues(values: NonEmptyIterator<number>): Iterable<number> {
     const acc = (p: number | null, c: number) => {
       return p !== null ? p - c : c;
     };
-    return [[key, it.toArray().reduce(acc, null) ?? 0]];
+    return [values.toArray().reduce(acc, null) ?? 0];
   }
 }
 

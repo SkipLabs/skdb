@@ -32,11 +32,12 @@ export type Param =
 
 /**
  * The type of a reactive function mapping over an arbitrary collection.
- * For each key & values in the input collection (of type K1/V1 respectively),
- * produces some key/value pairs for the output collection (of type K2/V2 respectively)
+ * For each key and values in the input collection (of types K1 and V1
+ * respectively), produces some key-value pairs for the output collection
+ * (of types K2 and V2 respectively)
  * @param key - a key found in the input collection
- * @param it - the values mapped to by `key` in the input collection
- * @returns an iterable of key/value pairs to output for the given input(s)
+ * @param it - the values associated with `key` in the input collection
+ * @returns an iterable of key-value pairs to output for the given input(s)
  */
 export interface Mapper<
   K1 extends TJSON,
@@ -48,13 +49,15 @@ export interface Mapper<
 }
 
 /**
- * A specialized form of `Mapper` which re-uses the input collection's key structure
- * in the output collection.
+ * A specialized form of `Mapper` which maps values one-by-one, reusing the
+ * input collection's key structure in the output collection. Use this form
+ * when the output values for a particular key can be produced by
+ * considering the input values one-by-one, without aggregation.
  *
- * For cases where the mapper just maps values and preserves the key structure, this
- * saves some boilerplate: instead of writing the fully general `mapElement` that
- * potentially modifies, adds, or removes keys, just implement the simpler `mapValue`
- * to transform values.
+ * For cases where the mapper just maps individual values and preserves the
+ * key structure, this saves some boilerplate: instead of writing the fully
+ * general `mapElement` that potentially modifies, adds, or removes keys,
+ * just implement the simpler `mapValue` to transform individual values.
  */
 export abstract class ValueMapper<
   K extends TJSON,
@@ -66,6 +69,31 @@ export abstract class ValueMapper<
 
   mapElement(key: K, it: NonEmptyIterator<V1>): Iterable<[K, V2]> {
     return it.toArray().map((v) => [key, this.mapValue(v, key)]);
+  }
+}
+
+/**
+ * A specialized form of `Mapper` which maps values to values, reusing the
+ * input collection's key structure in the output collection. Use this form
+ * when the output values for a particular key need to consider all the
+ * input values associated to the key.
+ *
+ * For cases where the mapper just maps values and preserves the key
+ * structure, this saves some boilerplate: instead of writing the fully
+ * general `mapElement` that potentially modifies, adds, or removes keys,
+ * just implement the simpler `mapValues` to transform the values associated
+ * with each key.
+ */
+export abstract class ValuesMapper<
+  K extends TJSON,
+  V1 extends TJSON,
+  V2 extends TJSON,
+> implements Mapper<K, V1, K, V2>
+{
+  abstract mapValues(values: NonEmptyIterator<V1>, key: K): Iterable<V2>;
+
+  mapElement(key: K, it: NonEmptyIterator<V1>): Iterable<[K, V2]> {
+    return Array.from(this.mapValues(it, key)).map((v) => [key, v]);
   }
 }
 

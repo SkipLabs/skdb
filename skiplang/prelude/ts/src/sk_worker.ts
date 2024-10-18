@@ -208,7 +208,7 @@ export class PromiseWorker {
       const parameters = fn.parameters.map((p) => {
         if (typeof p == "function") {
           let subscriptionId = new MessageId(this.source, ++this.lastId);
-          let wfn = (result: Return) => p.apply(null, result.value);
+          let wfn = (result: Return) => void p.apply(null, result.value);
           let key = asKey(subscriptionId);
           this.subscriptions.set(key, wfn);
           subscribed.add(key);

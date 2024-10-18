@@ -7,7 +7,7 @@ export class Wrappable {
 }
 
 class UnmanagedMessage extends Error {
-  constructor(msg: any) {
+  constructor(msg?: string) {
     super(msg);
   }
 }
@@ -241,7 +241,7 @@ export class PromiseWorker {
     this.onMessage = (message: MessageEvent) => {
       let data = Message.asReturn(message.data ?? message);
       if (!data) {
-        throw new UnmanagedMessage(message);
+        throw new UnmanagedMessage(JSON.stringify(message));
       } else {
         let result = data.payload as Return;
         let callback = this.callbacks.get(asKey(data.id));

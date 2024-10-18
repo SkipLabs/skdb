@@ -4,50 +4,50 @@ export type Opaque<Value, Tag> = Value & { [opaque]: Tag };
 declare const t: unique symbol;
 export type T<V> = { [t]: V };
 
-declare const raw: unique symbol;
-export type Raw = T<typeof raw>;
+declare const _Raw: unique symbol;
+export type Raw = T<typeof _Raw>;
 
-declare const void_: unique symbol;
-export type Void = T<typeof void_>;
+declare const _Void: unique symbol;
+export type Void = T<typeof _Void>;
 
-declare const byte: unique symbol;
-export type Byte = T<typeof byte>;
+declare const _Byte: unique symbol;
+export type Byte = T<typeof _Byte>;
 
-declare const uint32: unique symbol;
-export type UInt32 = T<typeof uint32>;
+declare const _Uint32: unique symbol;
+export type UInt32 = T<typeof _Uint32>;
 
-declare const float: unique symbol;
-export type Float = T<typeof float>;
+declare const _Float: unique symbol;
+export type Float = T<typeof _Float>;
 
-declare const str: unique symbol;
-export type String = T<typeof str>;
+declare const _String: unique symbol;
+export type String = T<typeof _String>;
 
-declare const exception: unique symbol;
-export type Exception = T<typeof exception>;
+declare const _Exception: unique symbol;
+export type Exception = T<typeof _Exception>;
 
-declare const obstack: unique symbol;
-export type Obstack = T<typeof obstack>;
+declare const _Obstack: unique symbol;
+export type Obstack = T<typeof _Obstack>;
 
 declare const p: unique symbol;
 
-declare const array: unique symbol;
-export type Array<Ty extends T<any>> = T<typeof array> & {
+declare const _Array: unique symbol;
+export type Array<Ty extends T<any>> = T<typeof _Array> & {
   [p]: (_: Ty) => Ty;
 };
 
-declare const vector: unique symbol;
-export type Vector<Ty extends T<any>> = T<typeof vector> & {
+declare const _Vector: unique symbol;
+export type Vector<Ty extends T<any>> = T<typeof _Vector> & {
   [p]: (_: Ty) => Ty;
 };
 
-declare const pair: unique symbol;
-export type Pair<Ty1 extends T<any>, Ty2 extends T<any>> = T<typeof pair> & {
+declare const _Pair: unique symbol;
+export type Pair<Ty1 extends T<any>, Ty2 extends T<any>> = T<typeof _Pair> & {
   [p]: [Ty1, Ty2];
 };
 
-declare const function_: unique symbol;
+declare const _Function: unique symbol;
 export type Function<Ty1 extends T<any>, Ty2 extends T<any>> = T<
-  typeof function_
+  typeof _Function
 > & {
   [p]: (_: Ty1) => Ty2;
 };

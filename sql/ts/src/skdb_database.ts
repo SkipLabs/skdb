@@ -13,6 +13,10 @@ import { SKDBTable } from "./skdb_util.js";
 import { SKDBGroupImpl } from "./skdb_group.js";
 import { connect } from "./skdb_orchestration.js";
 
+type DiffAcc = {
+  [key: string]: { since: bigint };
+};
+
 class SKDBMechanismImpl implements SKDBMechanism {
   writeCsv: (payload: string, source: string) => void;
   watermark: (replicationUid: string, table: string) => bigint;
@@ -88,9 +92,8 @@ class SKDBMechanismImpl implements SKDBMechanism {
       client.runLocal(["disconnect", session], "").trim();
     };
     this.diff = (session: string, watermarks: Map<string, bigint>) => {
-      const acc = {};
+      const acc: DiffAcc = {};
       for (const [table, wm] of watermarks.entries()) {
-        // @ts-ignore
         acc[table] = { since: wm };
       }
       const diffSpec = JSON.stringify(acc, (_key, value) =>

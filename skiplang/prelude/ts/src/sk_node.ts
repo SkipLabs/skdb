@@ -61,11 +61,16 @@ class Env implements Environment {
   fetch(url: URL | string) {
     let filename: string | URL;
     const cwd = process.cwd();
-    if (url && url instanceof URL && url.pathname) {
+    if (typeof url === "string") {
+      filename = url;
+    } else if (url && url instanceof URL && url.pathname) {
       filename = "./" + path.relative(cwd, url.pathname);
-      // @ts-ignore
-    } else if (url && url.default) {
-      // @ts-ignore
+    } else if (
+      url &&
+      // @ts-expect-error: Property 'default' does not exist on type 'URL'.
+      url.default
+    ) {
+      // @ts-expect-error: Property 'default' does not exist on type 'URL'.
       filename = "./" + path.relative(cwd, url.default as string);
     } else {
       filename = url;

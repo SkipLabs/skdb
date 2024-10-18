@@ -338,9 +338,10 @@ if (values["create-db"]) {
   const result = await remote.createDatabase(db);
   // b64 encode
   const newDbCreds = {};
-  //@ts-ignore
-  newDbCreds[result.accessKey] = Buffer.from(result.privateKey).toString(
-    "base64",
+  Object.defineProperty(
+    newDbCreds,
+    result.accessKey,
+    Buffer.from(result.privateKey).toString("base64"),
   );
   console.log(`Successfully created database: ${db}.`);
   console.log(`Credentials for ${db}: `, newDbCreds);
@@ -359,8 +360,8 @@ if (values["create-user"]) {
   // b64 encode
   const newDbCreds = {};
   const b64pk = Buffer.from(result.privateKey).toString("base64");
-  //@ts-ignore
-  newDbCreds[result.accessKey] = b64pk;
+  Object.defineProperty(newDbCreds, result.accessKey, b64pk);
+
   console.log("Successfully created user: ", newDbCreds);
 
   if (!values.dev) {

@@ -211,7 +211,7 @@ interface Exported {
   SKIP_get_version: () => number;
   skip_main: () => void;
   memory: Memory;
-  __heap_base: any;
+  __heap_base: number;
 }
 
 export interface WasmSupplier {

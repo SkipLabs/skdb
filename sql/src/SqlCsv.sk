@@ -160,6 +160,22 @@ fun parseCSVValue(kv: (Bool, String)): P.Value {
   }
 }
 
+fun parseCSV(str: String): Array<P.Value> {
+  values = mutable Vector[];
+  strIter = str.getIter();
+  next = () -> {
+    val = strIter.next();
+    val match {
+    | None() -> '\n'
+    | Some(x) -> x
+    }
+  };
+  for (value in lex(next)) {
+    values.push(value);
+  };
+  values.map(parseCSVValue).toArray();
+}
+
 fun reasonSchemaUnsupported(
   origContext: readonly SKStore.Context,
   table: String,
@@ -702,19 +718,7 @@ fun parseTableChange(
 
     // parse out the remainder of the line - the csv values
     str = line.sub(iter, line.length() - chars.size() - 1);
-    values = mutable Vector[];
-    strIter = str.getIter();
-    next = () -> {
-      val = strIter.next();
-      val match {
-      | None() -> '\n'
-      | Some(x) -> x
-      }
-    };
-    for (value in lex(next)) {
-      values.push(value);
-    };
-    cvalues = values.map(parseCSVValue);
+    cvalues = parseCSV(str);
     // empty params since no placeholders in skdb diff write-csv
     params: Map<String, P.Value> = Map[];
     SKDB.computeInsert(
@@ -723,7 +727,7 @@ fun parseTableChange(
       false,
       0,
       None(),
-      Array[cvalues.toArray()],
+      Array[cvalues],
       table,
       repeat,
     );

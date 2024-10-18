@@ -1,0 +1,248 @@
+module alias P = SQLParser;
+
+module Insight;
+
+private fun jserialise<T>(x: T): JSON.String {
+  ret = "";
+  capture = (s) -> !ret = s;
+  writer = mutable Debug.BufferedWriter(capture, Int::max);
+  inspect(x).print(writer);
+  writer.flush();
+  JSON.String(ret);
+}
+
+private fun jserialiseJson<T>(x: T): JSON.String {
+  ret = "";
+  capture = (s) -> !ret = s;
+  writer = mutable Debug.BufferedWriter(capture, Int::max);
+  inspect(x).printJSON(writer);
+  writer.flush();
+  JSON.String(ret);
+}
+
+private fun jserialiseStr(x: String): JSON.String {
+  JSON.String(x)
+}
+
+private fun jserialiseInt(x: Int): JSON.Number {
+  JSON.IntNumber(x)
+}
+
+private fun jserialiseFloat(x: Float): JSON.Number {
+  JSON.FloatNumber(x)
+}
+
+private fun jparseValue(v: String): SKDB.CValue {
+  JSON.decode(v) match {
+  | _ -> invariant_violation("TODO:")
+  }
+}
+
+private fun jserialiseValues(values: Array<?SKDB.CValue>): JSON.Array {
+  JSON.Array::createFromIterator(
+    values.iterator().map(v ->
+      v match {
+      | None() -> JSON.Null()
+      | Some(SKDB.CInt(x)) -> jserialiseInt(x)
+      | Some(SKDB.CFloat(x)) -> jserialiseFloat(x)
+      | Some(SKDB.CString(s)) -> jserialiseStr(s)
+      | Some(SKDB.CJSON(_)) -> invariant_violation("TODO: map to JSON")
+      | Some(SKDB.CType _) -> invariant_violation("TODO: map to something")
+      }
+    ),
+  )
+}
+
+private fun jserialiseKey(key: SKStore.Key): JSON.Value {
+  obj = mutable Map<String, JSON.Value>[];
+  key match {
+  | k @ SKDB.RowKey _ ->
+    obj!["type"] = jserialiseStr("row");
+    obj!["row"] = jserialiseValues(k.row.values)
+  | _ -> obj!["type"] = jserialiseStr("unknown")
+  };
+  obj!["key"] = jserialise(key);
+  JSON.Object(obj.chill())
+}
+
+private fun jserialiseFile(file: SKStore.File): JSON.Value {
+  obj = mutable Map<String, JSON.Value>[];
+  file match {
+  | SKDB.RowValues(values, _repeat) ->
+    obj!["type"] = jserialiseStr("row");
+    obj!["row"] = jserialiseValues(values)
+  | _ -> obj!["type"] = jserialiseStr("unknown")
+  };
+  obj!["key"] = jserialise(file);
+  JSON.Object(obj.chill())
+}
+
+private fun buildDepObject(
+  context: mutable SKStore.Context,
+  dirname: SKStore.DirName,
+  key: SKStore.Key,
+): ?JSON.Object {
+  obj = mutable Map<String, JSON.Value>[];
+  obj!["dir"] = JSON.String(dirname.dirName);
+  obj!["key"] = jserialiseKey(key);
+
+  dir = context.dirs.maybeGet(dirname) match {
+  | None() -> return None()
+  | Some(dir @ SKStore.EagerDir _) -> dir
+  | Some(_) -> invariant_violation("unsupported dir type")
+  };
+
+  obj!["dir_is_input"] = JSON.Bool(dir.input);
+
+  data = dir.unsafeGetAllDataIter(key); // iterator is empty if key does not exist
+
+  contributions = mutable Vector[];
+
+  for ((tick, source, writer, files) in data) {
+    contribution = mutable Map<String, JSON.Value>[];
+
+    contribution!["tick"] = jserialiseInt(tick.value);
+    contribution!["writer"] = jserialise(writer);
+
+    contribution!["files"] = JSON.Array::createFromIterator(
+      files.iterator().map(jserialiseFile),
+    );
+
+    contribution!["mapfns"] = JSON.Array::createFromIterator(
+      dir.parents.maybeGet(source.dirName) match {
+      | None() -> Array[].iterator()
+      | Some(fns) ->
+        fns
+          .iterator()
+          .filter(f ->
+            f match {
+            | (_, None(), _) -> true
+            | (
+              _,
+              Some(ranges),
+              _,
+            ) if (
+              ranges.any(range -> range.start <= key && key <= range.end)
+            ) ->
+              true
+            | _ -> false
+            }
+          )
+          .map(f -> {
+            (mapfn, _, _) = f;
+            mapfn
+          })
+          .map(jserialiseJson)
+      },
+    );
+
+    if (!dir.input) {
+      contribution!["source"] = buildDepObject(
+        context,
+        source.dirName,
+        source.baseName,
+      ).fromSome();
+    };
+
+    reads = mutable Vector[];
+    context.deps.idata.maybeGet(dirname) match {
+    | None() -> void
+    | Some(paths) ->
+      for (path in paths) {
+        context.deps.maybeGet(path) match {
+        | None() -> invariant_violation("Deps data structure is inconsistent")
+        | Some(
+          arrowKeys,
+        ) if (
+          arrowKeys.contains(
+            SKStore.ArrowKey(source.dirName, dirname, source.baseName),
+          )
+        ) ->
+          buildDepObject(context, path.dirName, path.baseName) match {
+          | None() -> void
+          | Some(o) -> reads.push(o)
+          }
+        | _ -> void
+        }
+      }
+    };
+    contribution!["reads"] = JSON.Array(reads.chill());
+
+    contributions.push(JSON.Object(contribution.chill()));
+  };
+
+  obj!["contributions"] = JSON.Array(contributions.chill());
+  Some(JSON.Object(obj.chill()));
+}
+
+fun lookupKeyFromPrimary(
+  context: mutable SKStore.Context,
+  tableName: String,
+  primary: String,
+): ?SKStore.Key {
+  table = SKDB.getTable(context, 0, P.Name::create(tableName));
+  primaryIdx = for ((i, type) in table.schema.items()) {
+    if (type.primary is Some _) {
+      break i
+    }
+  } else {
+    invariant_violation(
+      "Trying to find row using primary key on table without primary key index",
+    )
+  };
+  indexEntry = SKDB.makeIndexEntry(table.name, primaryIdx);
+  indexTable = SKDB.getIndexByColNbr(context);
+  indexes = indexTable.unsafeGetArray(context, indexEntry);
+  invariant(indexes.size() > 0);
+  index = indexes[0];
+  indexDir = context.unsafeGetEagerDir(index.dirName);
+  primaryKey = Some(jparseValue(primary));
+  startKey = SKDB.RowKey::create(
+    SKDB.RowValues::create(Array[primaryKey], 1),
+    index.fields,
+  );
+  iter = indexDir.unsafeGetFileIter(Some(startKey));
+  loop {
+    (key, valueIter) = iter.next() match {
+    | None() -> break void
+    | Some(x) -> x
+    };
+    rowKey = SKDB.RowKey::keyType(key);
+    valueIter.next() match {
+    | None() -> continue
+    | _ -> void
+    };
+    if (rowKey.getRowValues().getValue(0) != primaryKey) break void;
+    return Some(rowKey)
+  };
+  None()
+}
+
+fun keyFromCSV(
+  context: mutable SKStore.Context,
+  csv: String,
+  tableName: String,
+): ?SKStore.Key {
+  table = SKDB.getTable(context, 0, P.Name::create(tableName));
+  ptoc = (p) ->
+    p match {
+    | P.VNull() -> None()
+    | P.VInt(x) -> Some(SKDB.CInt(x))
+    | P.VFloat(x) -> Some(SKDB.CFloat(x))
+    | P.VString(x) -> Some(SKDB.CString(x))
+    | _ -> invariant_violation("Unable to convert to cvalue")
+    };
+  pvalues = SKCSV.parseCSV(csv);
+  Some(SKDB.RowKey(SKDB.RowValues(pvalues.map(ptoc), 1), table.kinds))
+}
+
+fun upstream(
+  context: mutable SKStore.Context,
+  dirname: SKStore.DirName,
+  key: SKStore.Key,
+): void {
+  obj = buildDepObject(context, dirname, key).fromSome();
+  print_string(obj.encode());
+}
+
+module end;

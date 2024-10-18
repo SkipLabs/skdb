@@ -319,6 +319,14 @@ untracked fun main(): void {
           Cli.Arg::string("table").positional().required().about("Table name"),
         ),
     )
+    .subcommand(
+      Cli.Command("insight")
+        .about("SKStore and SKDB debugging and monitoring")
+        .arg(Cli.Arg::string("dir").required().about("Directory to inspect"))
+        .arg(
+          Cli.Arg::string("csv-row").required().about("Row to trace, as CSV"),
+        ),
+    )
     .help();
 
   //  try {
@@ -362,6 +370,7 @@ untracked fun main(): void {
       | "can-mirror" -> execCanMirror
       | "replay" -> execReplay
       | "toggle-view" -> execToggleView
+      | "insight" -> execInsight
       | "connected-as" -> execSetClientContext
       | _ -> invariant_violation(`Unknown subcommand ${subcmd}`)
       }
@@ -778,6 +787,30 @@ fun execToggleView(args: Cli.ParseResults, _options: SKDB.Options): void {
     };
     SKStore.CStop(None())
   })
+}
+
+fun execInsight(args: Cli.ParseResults, options: SKDB.Options): void {
+  ensureContext(args);
+
+  SKDB.runSql(options, origContext ~> {
+    context = origContext.mclone();
+
+    dirInput = args.getString("dir");
+    rowInput = args.getString("csv-row");
+
+    dirname = SKStore.DirName::create(dirInput);
+    iter = dirInput.getIter();
+    _ = iter.next();
+    table = dirInput.sub(iter, dirInput.length() - 2);
+
+    key = Insight.keyFromCSV(context, rowInput, table) match {
+    | Some(k) -> k
+    | None() -> invariant_violation("Could not determine the key")
+    };
+    Insight.upstream(context, dirname, key);
+
+    SKStore.CStop(None())
+  });
 }
 
 module end;
